@@ -20,10 +20,10 @@ if __name__ == '__main__':
 
     if args.mode == 'train':
         print(model.train())
-        model.save_model(os.path.join(config.data_dir, 'ws.cluster'))
+        model.save_model('models/ws.cluster')
     elif args.mode == 'predict':
         with open(os.path.join(config.data_dir, 'captions/val_1.json')) as f:
             data = json.load(f)
 
-        model.load_model(os.path.join(config.data_dir, 'ws.cluster'))
-        model.get_windows_sizes(data)
+        model.load_model('models/ws.cluster')
+        print(model.get_windows_sizes(data))

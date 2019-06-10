@@ -30,7 +30,7 @@ class WindowsSizeModel:
 
     def get_windows_sizes(self, videos_data):
         centers = self.cluster.cluster_centers_
-        result = [[c * v[1]['duration'] for c in centers] for v in videos_data.items()]
+        result = [centers * v[1]['duration'] for v in videos_data.items()]
         return result
 
     def load_model(self, path):
