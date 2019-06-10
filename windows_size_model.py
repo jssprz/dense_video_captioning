@@ -23,7 +23,7 @@ class WindowsSizeModel:
                 fragment_len = t[1]-t[0]
                 x.append(fragment_len/duration)
 
-        self.cluster = KMeans(n_clusters=total_counts//len(data()))
+        self.cluster = KMeans(n_clusters=total_counts//len(data))
         self.cluster.fit(x)
         return self.cluster.cluster_centers_
 
