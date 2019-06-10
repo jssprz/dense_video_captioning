@@ -34,9 +34,9 @@ class WindowsSizeModel:
         return result
 
     def load_model(self, path):
-        with open(path, 'r') as f:
+        with open(path, 'rb') as f:
             self.cluster = pickle.load(f)
 
     def save_model(self, path):
-        with open(path, 'w') as f:
+        with open(path, 'wb') as f:
             pickle.dump(self.cluster, f)
