@@ -1,0 +1,41 @@
+import os
+import json
+import pickle
+
+from sklearn.cluster import KMeans
+
+
+class WindowsSizeModel:
+    def __init__(self, configuration):
+        self.config = configuration
+
+    def train(self):
+        annotations_path = os.path.join(self.config.data_dir, 'captions/train.json')
+        with open(annotations_path) as f:
+            data = json.load(f)
+
+        total_counts = 0
+        x = []
+        for v in data.items():
+            duration = v['duration']
+            total_counts += len(v['timestamps'])
+            for t in v['timestamps']:
+                fragment_len = t[1]-t[0]
+                x.append(fragment_len/duration)
+
+        self.cluster = KMeans(n_clusters=total_counts//len(data()))
+        self.cluster.fit(x)
+        return self.cluster.cluster_centers_
+
+    def get_windows_sizes(self, videos_data):
+        centers = self.cluster.cluster_centers_
+        result = [[c * v['duration'] for c in centers] for v in videos_data.items()]
+        return result
+
+    def load_model(self, path):
+        with open(path, 'r') as f:
+            self.cluster = pickle.load(f)
+
+    def save_model(self, path):
+        with open(path, 'w') as f:
+            pickle.dump(self.cluster, f)
