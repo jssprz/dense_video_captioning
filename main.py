@@ -2,8 +2,8 @@ import os
 import argparse
 import json
 
-from . import configuration_file as cf
-from . import windows_size_model as wsm
+from configuration_file import ConfigurationFile
+from windows_size_model import WindowsSizeModel
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Train a captioning model for a specific dataset.')
@@ -14,9 +14,9 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    config = cf.ConfigurationFile(args.config, 'WINDOW-SIZE-MODEL')
+    config = ConfigurationFile(args.config, 'WINDOW-SIZE-MODEL')
 
-    model = wsm.WindowsSizeModel(config)
+    model = WindowsSizeModel(config)
 
     if args.mode == 'train':
         print(model.train())
