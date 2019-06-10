@@ -17,9 +17,9 @@ class WindowsSizeModel:
         total_counts = 0
         x = []
         for v in data.items():
-            duration = v['duration']
-            total_counts += len(v['timestamps'])
-            for t in v['timestamps']:
+            duration = v[1]['duration']
+            total_counts += len(v[1]['timestamps'])
+            for t in v[1]['timestamps']:
                 fragment_len = t[1]-t[0]
                 x.append(fragment_len/duration)
 
@@ -29,7 +29,7 @@ class WindowsSizeModel:
 
     def get_windows_sizes(self, videos_data):
         centers = self.cluster.cluster_centers_
-        result = [[c * v['duration'] for c in centers] for v in videos_data.items()]
+        result = [[c * v[1]['duration'] for c in centers] for v in videos_data.items()]
         return result
 
     def load_model(self, path):
