@@ -2,6 +2,7 @@ import os
 import json
 import pickle
 
+import numpy as np
 from sklearn.cluster import KMeans
 
 
@@ -24,7 +25,7 @@ class WindowsSizeModel:
                 x.append(fragment_len/duration)
 
         self.cluster = KMeans(n_clusters=total_counts//len(data))
-        self.cluster.fit(x)
+        self.cluster.fit(np.array(x).reshape(-1, 1))
         return self.cluster.cluster_centers_
 
     def get_windows_sizes(self, videos_data):
