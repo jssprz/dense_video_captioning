@@ -14,7 +14,7 @@ import torch
 import torch.optim as optim
 from tensorboardX import SummaryWriter
 
-from utils import decode_from_tokens, load_texts, evaluate_from_tokens, get_trainer_str, get_sem_tagger_str, get_syn_embedd_str, get_avscn_decoder_str, get_semsynan_decoder_str, get_mm_str, get_vncl_cell_str
+from utils import decode_from_tokens, load_texts, evaluate_from_tokens, densecap_evaluate_from_tokens, get_trainer_str, get_sem_tagger_str, get_syn_embedd_str, get_avscn_decoder_str, get_semsynan_decoder_str, get_mm_str, get_vncl_cell_str
 from vocabulary import Vocabulary
 from configuration_dict import ConfigDict
 from loader import get_dense_loader
@@ -23,7 +23,7 @@ from loss import DenseCaptioningLoss
 
 
 class Trainer:
-    def __init__(self, trainer_config, dense_captioner_config, modules_config, device):
+    def __init__(self, trainer_config, dense_captioner_config, modules_config):
         self.trainer_config = trainer_config
         self.modules_config = modules_config
 
@@ -63,7 +63,7 @@ class Trainer:
         # print(self.exp_name, '\n')
         print('Process id {}'.format(os.getpid()), '\n')
         
-        if device == 'gpu' and torch.cuda.is_available():
+        if trainer_config.device == 'gpu' and torch.cuda.is_available():
             freer_gpu_id = get_freer_gpu()
             self.device = torch.device('cuda:{}'.format(freer_gpu_id))
             torch.cuda.empty_cache()
@@ -76,8 +76,8 @@ class Trainer:
 
 
 class DenseVideo2TextTrainer(Trainer):
-    def __init__(self, trainer_config, dense_captioner_config, modules_config, dataset_folder, result_folder, device):
-        super(DenseVideo2TextTrainer, self).__init__(trainer_config, dense_captioner_config, modules_config, device)
+    def __init__(self, trainer_config, dense_captioner_config, modules_config, dataset_folder, result_folder):
+        super(DenseVideo2TextTrainer, self).__init__(trainer_config, dense_captioner_config, modules_config)
 
         self.dataset_folder = dataset_folder
 
@@ -105,7 +105,7 @@ class DenseVideo2TextTrainer(Trainer):
         # self.__load_fusion_ground_truth_captions()
 
         # load vocabulary
-        with open(os.path.join(dataset_folder, 'new_dense_corpus2.pkl'), "rb") as f:
+        with open(os.path.join(dataset_folder, 'dense_corpus.pkl'), "rb") as f:
             self.corpus = pickle.load(f)
             idx2op_dict = self.corpus[4] 
             idx2word_dict = self.corpus[6]
@@ -131,8 +131,7 @@ class DenseVideo2TextTrainer(Trainer):
         self.__init_dense_loader()
 
         # Load ground-truth for computing evaluation metrics
-        # self.__load_ground_truth_programs()
-        # self.__load_ground_truth_captions()
+        self.__load_ground_truth()
 
         # Model
         print('\nInitializing the Model...')
@@ -146,7 +145,7 @@ class DenseVideo2TextTrainer(Trainer):
                                               progs_vocab=self.programs_vocab,
                                               caps_vocab=self.caps_vocab,
                                               pretrained_we=pretrained_we,
-                                              device=device)
+                                              device=self.device)
 
         # Optimizer
         print('\nInitializing the Optimizer...')
@@ -183,23 +182,23 @@ class DenseVideo2TextTrainer(Trainer):
         self.vocab.add_sentences(corpus)
         print('Vocabulary has {} words.'.format(len(self.vocab)))
 
-    def __load_ground_truth_programs(self):
+    def __load_ground_truth(self):
         # this is the ground truth captions
-        self.ref_programs = {'val_1': {}}
+        self.ref_programs, self.ref_captions, self.ref_densecaps = {}, {}, {}
         
-        ref_txt_path = {'val_1': os.path.join(self.dataset_folder,'val_1_ref_captions.txt')}
+        ref_progams_txt_path = {'val_1': os.path.join(self.dataset_folder,'val_1_ref_programs.txt')}
+        ref_captions_txt_path = {'val_1': os.path.join(self.dataset_folder,'val_1_ref_captions.txt')}
+        ref_densecap_json_path = {'val_1': os.path.join(self.dataset_folder,'val_1_ref_densecap.json')}
         
         for phase in ['val_1']:
-            self.ref_programs[phase] = load_texts(ref_txt_path[phase])
+            self.ref_programs[phase] = load_texts(ref_progams_txt_path[phase])
+            self.ref_captions[phase] = load_texts(ref_captions_txt_path[phase])
+            with open(ref_densecap_json_path[phase], 'r') as f:
+                self.ref_densecaps[phase] = json.load(f)
 
-    def __load_ground_truth_captions(self):
-        # this is the ground truth captions
-        self.ref_captions = {'val_1': {}}
-        
-        ref_txt_path = {'val_1': os.path.join(self.dataset_folder,'val_1_ref_programs.txt')}
-        
-        for phase in ['val_1']:
-            self.ref_captions[phase] = load_texts(ref_txt_path[phase])
+            # self.ref_programs[phase] = {k:self.ref_programs[phase][k] for k in range(3)}
+            # self.ref_captions[phase] = {k:self.ref_captions[phase][k] for k in range(33844, 33844+8)}
+            # self.ref_densecaps[phase] = {str(k):self.ref_densecaps[phase][str(k)] for k in range(3)}
 
     def __load_fusion_ground_truth_captions(self):
         configs = [#ConfigurationFile('config.ini', 'MSVD-sem-syn-cn-max'), 
@@ -330,8 +329,7 @@ class DenseVideo2TextTrainer(Trainer):
         bsz = video_feats[0].size(0)
 
         # Move all tensors to device
-        for i,f in enumerate(video_feats):
-            video_feats[i] = f.to(self.device)
+        video_feats = [f.to(self.device) for f in video_feats]
         gt_intervals = gt_intervals.to(self.device)
         gt_captions = gt_captions.to(self.device)
         gt_pos = gt_pos.to(self.device)
@@ -357,7 +355,7 @@ class DenseVideo2TextTrainer(Trainer):
         self.optimizer.zero_grad()
 
         with torch.set_grad_enabled(phase == 'train'):
-            program, captions, intervals, caps_count = self.dense_captioner(video_feats, feats_count, teacher_forcing_ratio, gt_program, gt_captions, gt_intervals)
+            prog_logits, program, caps_logits, captions, intervals, caps_count = self.dense_captioner(video_feats, feats_count, teacher_forcing_ratio, gt_program, gt_captions, gt_intervals)
             # video_encoded = self.encoder(cnn_feats, c3d_feats, i3d_feats, eco_feats, eco_sem_feats, tsm_sem_feats, cnn_globals, cnn_sem_globals, tags_globals, res_eco_globals)
             
             # outputs, tokens = self.decoder(video_encoded, targets if phase == 'train' else None, teacher_forcing_ratio)
@@ -369,7 +367,7 @@ class DenseVideo2TextTrainer(Trainer):
             # targets = torch.cat([targets[j][:target_lens[j]] for j in range(bsz)], dim=0)
 
             # Evaluate the loss function
-            loss = self.criterion(gt_captions, gt_cap_lens, captions, gt_program, gt_prog_len, program, gt_intervals, intervals, gt_caps_count, caps_count)
+            loss = self.criterion(gt_captions, gt_cap_lens, caps_logits, gt_program, gt_prog_len, prog_logits, gt_intervals, intervals, gt_caps_count, caps_count)
 
             # if not use_rl:
             #     if type(self.criterion) is SentenceLengthLoss:
@@ -432,7 +430,7 @@ class DenseVideo2TextTrainer(Trainer):
             loss.backward()
             self.optimizer.step()
         
-        return loss, program, captions
+        return loss, program, captions, intervals
         
     def __evaluate(self, predicted_sentences, phase):
         scores = score(self.ground_truth[phase], predicted_sentences)
@@ -440,7 +438,7 @@ class DenseVideo2TextTrainer(Trainer):
         scores['All_Metrics'] = sum([scores[k] * weights[k] for k in scores.keys()])
         return scores
 
-    def __report_results(self, metrics_results, predicted_sentences, phase, epoch, save_checkpoints_dir):
+    def __process_results(self, metrics_results, predicted_sentences, phase, epoch, save_checkpoints_dir):
         self.logger.info('{} set metrics: {}'.format(phase, metrics_results))
         for name, result in metrics_results.items():
             self.writer.add_scalar('data/end2end/{}-{}'.format(phase, name), result, epoch)
@@ -490,12 +488,12 @@ class DenseVideo2TextTrainer(Trainer):
                                             'METEOR': (0, 0), 'ROUGE_L': (0, 0), 'CIDEr': (0, 0), 'SPICE': (0, 0), 'All_Metrics': (0, 0)}
 
         self.dense_captioner.to(self.device)
-        print('\nParameters of Dense Captioner model:\n')
-        total_size = 0
-        for n, p in self.dense_captioner.named_parameters():
-            print(n, p.size(), p.device)
-            total_size += torch.numel(p)
-        print(' total size: ', (total_size*8)/(1024**3), '\n')        
+        # print('\nParameters of Dense Captioner model:\n')
+        # total_size = 0
+        # for n, p in self.dense_captioner.named_parameters():
+        #     print(n, p.size(), p.device)
+        #     total_size += torch.numel(p)
+        # print(' total size: ', (total_size*8)/(1024**3), '\n')        
 
         # Start training process
         self.early_stop, self.last_saved_epoch = 0, -1
@@ -517,11 +515,11 @@ class DenseVideo2TextTrainer(Trainer):
 
                 # predicted_sentences = {}
                 loss_count = 0
-                all_programs, all_captions, all_video_ids = [], [], []
-                for i, (vidx, cidxs, cnn, c3d, feats_count, intervals, caps_count, captions, pos, upos, cap_lens, progs, prog_lens) in enumerate(self.loaders[phase], start=1):
+                all_programs, all_captions, all_prog_ids, all_caps_ids, all_intervals, all_tstamps = [], [], [], [], [], []
+                for i, (vidx, cidxs, cnn, c3d, feats_count, tstamps, intervals, caps_count, captions, pos, upos, cap_lens, progs, prog_lens) in enumerate(self.loaders[phase], start=1):
                     video_feats = [cnn, c3d]
                     use_rl = False
-                    loss, program, captions = self.__process_batch(video_feats, feats_count, intervals, caps_count, captions, pos, upos, cap_lens, progs, prog_lens, 
+                    loss, program, captions, intervals = self.__process_batch(video_feats, feats_count, intervals, caps_count, captions, pos, upos, cap_lens, progs, prog_lens, 
                                                                         teacher_forcing_ratio, phase, use_rl=use_rl)
                     loss_count += loss.item()
 
@@ -531,11 +529,17 @@ class DenseVideo2TextTrainer(Trainer):
                     sys.stdout.write('\rEpoch:{0:03d} Phase:{1:6s} Iter:{2:04d}/{3:04d} Loss:{4:10.4f} lr:{5:.6f}'.format(epoch, phase, i, len(self.loaders[phase]), loss.item(), lrs[0]))
                     
                     if phase != 'train':
+                        # save programs and the videos' idx for computing evaluation metrics
                         all_programs.append(program.to('cpu'))
                         all_prog_ids.append(vidx)
 
-                        all_captions.append(captions.to('cpu'))
+                        # save captions and the captions' idx for computing evaluation metrics (only the first caps_count captions are evaluated)
+                        all_captions.append((captions.to('cpu'), caps_count))
                         all_caps_ids.append(cidxs)
+
+                        # save intervals for computing evaluation metrics
+                        all_intervals.append(intervals.to('cpu'))
+                        all_tstamps.append(tstamps)
                         
                         # for predicted_tokens, vid in zip(outputs, video_ids):
                         #     predicted_sentences[vid] = [self.__decode_from_tokens(predicted_tokens)]
@@ -554,11 +558,17 @@ class DenseVideo2TextTrainer(Trainer):
                     # predicted_sentences = pool.apply_async(self.__get_sentences, [all_outputs, all_video_ids])
 
                     if cap_metrics_results is not None:
+                        # get async results
                         cap_metrics_results, pred_caps = cap_metrics_results.get()
                         prog_metrics_results, pred_progs = prog_metrics_results.get()
+                        densecap_metrics_results, pred_intervals = densecap_metrics_results.get()
 
-                        self.__report_results(cap_metrics_results, pred_caps, prog_metrics_results, pred_progs, phase, epoch-1, save_checkpoints_dir)
+                        # process results, saving the checkpoint if any improvement occurs
+                        self.__process_results(cap_metrics_results, pred_caps, phase, epoch-1, save_checkpoints_dir)
+                        self.__process_results(prog_metrics_results, pred_progs, phase, epoch-1, save_checkpoints_dir)
+                        self.__process_results(densecap_metrics_results, densecap_metrics_results, phase, epoch-1, save_checkpoints_dir)
 
+                        # report results if any improvement occurs
                         if self.early_stop == 0:
                             log_msg = f'\n IMPROVEMENT ON {phase} e{epoch} !\n'
                             log_msg += '\t captioning metrics:'
@@ -569,11 +579,17 @@ class DenseVideo2TextTrainer(Trainer):
                             print(log_msg, '\n')
                             self.logger.info(log_msg)
                     
-                    prog_metrics_results = parallel_pool.apply_async(evaluate_from_tokens, [self.programs_vocab, all_programs, all_prog_ids, self.ref_programs[phase]])
-                    cap_metrics_results = parallel_pool.apply_async(evaluate_from_tokens, [self.caps_vocab, all_captions, all_caps_ids, self.ref_captions[phase]])
-                    # metrics_results, predicted_sentences = evaluate(all_outputs, all_video_ids)
+                    # prog_metrics_results = parallel_pool.apply_async(evaluate_from_tokens, [self.programs_vocab, all_programs, all_prog_ids, self.ref_programs[phase]])
+                    # cap_metrics_results = parallel_pool.apply_async(evaluate_from_tokens, [self.caps_vocab, all_captions, all_caps_ids, self.ref_captions[phase]])
+                    # densecap_metrics_results = parallel_pool.apply_async(densecap_evaluate_from_tokens, [self.caps_vocab, all_intervals, all_captions, all_caps_ids, self.ref_densecaps[phase]])
+                    print('evaluating progs...')
+                    # prog_metrics_results = evaluate_from_tokens(self.programs_vocab, all_programs, all_prog_ids, self.ref_programs[phase])
+                    print('evaluating captions (basic)...')
+                    # cap_metrics_results = evaluate_from_tokens(self.caps_vocab, all_captions, all_caps_ids, self.ref_captions[phase])
+                    print('evaluating captions (dense)...')
+                    densecap_metrics_results = densecap_evaluate_from_tokens(self.caps_vocab, all_prog_ids, all_tstamps, all_intervals, all_captions, self.ref_densecaps[phase])
                                                      
-                time_phases[phase] += time.clock() - time_start_epoch
+                time_phases[phase] += time.perf_counter() - time_start_epoch
                 
             log_msg = '\n'
             for k, v in loss_phases.items(): 
@@ -584,9 +600,14 @@ class DenseVideo2TextTrainer(Trainer):
             # vid = video_ids[0]
             # log_msg += '\n[vid {}]:\nWE: {}\nGT: {}'.format(vid, predicted_sentences[vid], self.ground_truth['valid'][vid])
             sys.stdout.write(log_msg+'\n')
-                
+
+            # check if the training must be early sopped    
             if epoch >= min_num_epochs and self.early_stop >= early_stop_limit * 2:
-                metrics_results, predicted_sentences = metrics_results.get()
+                # get async results
+                cap_metrics_results, pred_caps = cap_metrics_results.get()
+                prog_metrics_results, pred_progs = prog_metrics_results.get()
+                densecap_metrics_results, pred_intervals = densecap_metrics_results.get()
+
                 self.__report_results(metrics_results, predicted_sentences, phase, epoch-1, save_checkpoints_dir)
                 msg = '----early stopped at epoch {} after {} without any improvement-----'.format(epoch, early_stop_limit)
                 self.logger.debug(msg)
@@ -656,7 +677,7 @@ if __name__ == '__main__':
                       'mm_config': mm_config,
                       'vncl_cell_config': vncl_cell_config}
     # modules_config = [sem_tagger_config, syn_embedd_config, avscn_dec_config, semsynan_dec_config, vncl_cell_config]
-    trainer = DenseVideo2TextTrainer(trainer_config, dense_captioner_config, modules_config, args.dataset_folder, args.output_folder, 'cpu')    
+    trainer = DenseVideo2TextTrainer(trainer_config, dense_captioner_config, modules_config, args.dataset_folder, args.output_folder)    
 
     print('Training.........')
     best_results = trainer.train_model(resume=False, 

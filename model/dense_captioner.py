@@ -299,7 +299,7 @@ class DenseCaptioner(nn.Module):
         if end_idx is not None:
             for i, (s, e) in enumerate(zip(start_idx, end_idx)):
                 if (e-s) > self.max_clip_len:
-                    indices = torch.linspace(s, e, steps=self.max_clip_len, dtype=torch.long)
+                    indices = torch.linspace(s, min(e, v_feats[0].size(1)-1), steps=self.max_clip_len, dtype=torch.long)
                     f1 = v_feats[0][i, indices, :]
                     f2 = v_feats[1][i, indices, :]
                 else: 
@@ -313,7 +313,7 @@ class DenseCaptioner(nn.Module):
 
         return torch.stack(pool), feats 
 
-    def __step__(self, t, video_features, use_teacher_forcing):
+    def __step__(self, t, video_features):
         self.v_p_q_pool, self.v_p_q_feats = self.get_clip_feats(video_features, self.p, self.q)
         v_q_w_pool, _ = self.get_clip_feats(video_features, self.q, self.q + self.future_steps)
 
@@ -323,7 +323,7 @@ class DenseCaptioner(nn.Module):
     def forward(self, video_features, feats_count, teacher_forcing_p=.5, gt_program=None, gt_captions=None, gt_intervals=None):
         # initialize
         program, bs = [], video_features[0].size(0)
-        program, captions, intervals = torch.zeros_like(gt_program), torch.zeros_like(gt_captions), torch.zeros_like(gt_intervals, dtype=torch.float, requires_grad=True)
+        program, captions, intervals = torch.zeros_like(gt_program), torch.zeros_like(gt_captions), torch.zeros_like(gt_intervals, dtype=torch.float, requires_grad=self.training)
         prog_logits = torch.zeros(program.size(0), program.size(1), self.progs_vocab_size)
         caps_logits = torch.zeros(captions.size(0), captions.size(1), captions.size(2), self.caps_vocab_size)
         caps_count = torch.zeros(bs, dtype=torch.int8)
@@ -336,7 +336,7 @@ class DenseCaptioner(nn.Module):
         seq_pos, max_len = 0, gt_program.size(1)
         while seq_pos < max_len:
             use_teacher_forcing = True if random.random() < teacher_forcing_p or seq_pos == 0 else False
-            self.__step__(seq_pos, video_features, use_teacher_forcing)
+            self.__step__(seq_pos, video_features)
 
             if self.training:
                 if use_teacher_forcing:
@@ -352,8 +352,12 @@ class DenseCaptioner(nn.Module):
                     # (batch_size)
                     a_id = torch.multinomial(torch.softmax(self.a_logits, dim=1), 1).squeeze(1)
             elif self.test_sample_max:
+                # in testing phase select the instruction ids with the max probability,
+                # (batch_size)
                 a_id = self.a_logits.max(1)[1]
             else:
+                # in testing phase sample instructions from probability distribution
+                # (batch_size)
                 a_id = torch.multinomial(torch.softmax(self.a_logits, dim=1), 1)
 
             program[:, seq_pos] = a_id
@@ -405,7 +409,18 @@ class DenseCaptioner(nn.Module):
                         cap = torch.multinomial(torch.softmax(cap, dim=1), 1).squeeze(1)
                         # (sub-batch_size x max-cap-len)
                         cap = cap.view(cap_logits.size(0), cap_logits.size(1))
-
+                elif self.test_sample_max:
+                    # select the words ids with the max probability,
+                    # (sub-batch_size x max-cap-len)
+                    cap = cap_logits.max(2)[1]
+                else:
+                    # sample words from probability distribution
+                    # (sub-batch_size*max-cap-len x caps_vocab_size)
+                    cap = cap_logits.view(-1, self.caps_vocab_size)
+                    # (sub-batch_size*max-cap-len)
+                    cap = torch.multinomial(torch.softmax(cap, dim=1), 1).squeeze(1)
+                    # (sub-batch_size x max-cap-len)
+                    cap = cap.view(cap_logits.size(0), cap_logits.size(1))
 
                 # TODO: sort visual and textual information according to the caption's length
 
@@ -430,6 +445,6 @@ class DenseCaptioner(nn.Module):
 
             seq_pos += 1
         
-        return prog_logits, caps_logits, intervals, caps_count
+        return prog_logits, program, caps_logits, captions, intervals, caps_count
 
             

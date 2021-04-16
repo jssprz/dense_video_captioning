@@ -5,9 +5,10 @@ import torch.nn as nn
 
 sys.path.append('video_description_eval/coco-caption')
 from video_description_eval.evaluate import score
+from video_description_eval.densecap_eval import densecap_score
 
 
-def decode_from_tokens(tokens, vocab):
+def decode_from_tokens(vocab, tokens):
   words = []
   for token in tokens:
     if token.item() == vocab('<eos>'):
@@ -19,22 +20,47 @@ def decode_from_tokens(tokens, vocab):
 def get_sentences(vocab, outputs, idxs):
     pred_sentences = {}
     for batch_outs, batch_idxs in zip(outputs, idxs):
+      if torch.is_tensor(batch_outs):
         for pred_tokens, idx in zip(batch_outs, batch_idxs):
-            pred_sentences[idx] = [decode_from_tokens(vocab, pred_tokens)]
+          print('tensor case', pred_tokens.size())
+          pred_sentences[idx.item()] = [decode_from_tokens(vocab, pred_tokens)]
+      elif type(batch_outs) is tuple:
+        for v_output, v_caps_count, v_cidxs in zip(batch_outs[0], batch_outs[1], batch_idxs):
+          for pred_tokens, cidx in zip(v_output[:v_caps_count], v_cidxs[:v_caps_count]):
+            print('tuple case', pred_tokens.size())
+            pred_sentences[cidx.item()] = [decode_from_tokens(vocab, pred_tokens)]
+      else:
+        raise TypeError(f'wrong type {type(batch_outs)} for batch outputs')
     return pred_sentences
 
 
 def get_scores(pred_sentences, ground_truth):
-    scores = score(ground_truth, pred_sentences)
-    weights = {'Bleu_1':0., 'Bleu_2': 0.0, 'Bleu_3': 0.0, 'Bleu_4': 1.4, 'CIDEr': 1.17, 'METEOR': 2., 'ROUGE_L':1.}
-    scores['All_Metrics'] = sum([scores[k] * weights[k] for k in scores.keys()])
-    return scores            
+  scores = score(ground_truth, pred_sentences)
+  weights = {'Bleu_1':0., 'Bleu_2': 0.0, 'Bleu_3': 0.0, 'Bleu_4': 1.4, 'CIDEr': 1.17, 'METEOR': 2., 'ROUGE_L':1.}
+  scores['All_Metrics'] = sum([scores[k] * weights[k] for k in scores.keys()])
+  return scores            
 
 
 def evaluate_from_tokens(vocab, outputs, idxs, ground_truth):
-    pred_sentences = get_sentences(vocab, outputs, idxs)
-    metrics_results = get_scores(pred_sentences, ground_truth)
-    return metrics_results, predicted_sentences
+  pred_sentences = get_sentences(vocab, outputs, idxs)
+  metrics_results = get_scores(pred_sentences, ground_truth)
+  return metrics_results, predicted_sentences
+
+
+def densecap_evaluate_from_tokens(vocab, vidxs, tstamps, pred_intervals, pred_caps, ground_truth_dict):
+  prediction = {}
+  for batch_pred_intervals, batch_pred_caps, batch_vidxs, batch_tstamps in zip(pred_intervals, pred_caps, vidxs, tstamps):
+    for v_intervals, v_caps, v_caps_count, vidx, v_tstamps in zip(batch_pred_intervals, batch_pred_caps[0], batch_pred_caps[1], batch_vidxs, batch_tstamps):
+      prediction[vidx] = {'timestamps': [(v_tstamps[i], v_tstamps[j]) for i,j in v_intervals],
+                          'sentences': [decode_from_tokens(vocab, pred_tokens) for pred_tokens in v_caps]}
+
+  scores = densecap_score(args={'tiou': [0.3, 0.5, 0.7, 0.9], 
+                                'max_proposals_per_video': 1000, 
+                                'verbose': True}, 
+                          ref=ground_truth_dict, hypo=prediction)
+  weights = {'Bleu_1':0., 'Bleu_2': 0.0, 'Bleu_3': 0.0, 'Bleu_4': 1.4, 'CIDEr': 1.17, 'METEOR': 2., 'ROUGE_L':1.}
+  scores['All_Metrics'] = sum([scores[k] * weights[k] for k in scores.keys()])
+  return scores
 
 
 def evaluate_from_sentences(pred_sentences, ground_truth):
@@ -57,7 +83,7 @@ def load_ground_truth_captions(reference_txt_path):
 
 def load_texts(path):
   result_dict = {}
-  for line in list(open(path, 'r')):
+  for line in list(open(path, 'r', encoding="utf8")):
     row = line.split('\t')
     idx = int(row[0])
     sentence = row[1].strip()
