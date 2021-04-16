@@ -269,8 +269,8 @@ class DenseVideo2TextTrainer(Trainer):
         print('Initializing data loaders...')
 
         # open the h5 file with visual features
-        h5_path='data/test4_train.h5' # os.path.join(self.dataset_folder, self.trainer_config.features_filename)
-        h5 = h5py.File(h5_path, 'r')
+        # h5_path = os.path.join(self.dataset_folder, self.trainer_config.features_filename)
+        h5 = h5py.File(self.trainer_config.h5_file_path, 'r')
         dataset = h5[self.trainer_config.dataset_name]
 
         # get train split data

@@ -1,0 +1,8 @@
+https://s06.imfd.cl/04/github-data/DenseCap/ActivityNet/val_1_ref_densecap.json
+https://s06.imfd.cl/04/github-data/DenseCap/ActivityNet/val_1_ref_captions.txt
+https://s06.imfd.cl/04/github-data/DenseCap/ActivityNet/val_1_ref_programs.txt
+https://s06.imfd.cl/04/github-data/DenseCap/ActivityNet/val_2_ref_densecap.json
+https://s06.imfd.cl/04/github-data/DenseCap/ActivityNet/val_2_ref_captions.txt
+https://s06.imfd.cl/04/github-data/DenseCap/ActivityNet/val_2_ref_programs.txt
+https://s06.imfd.cl/04/github-data/DenseCap/ActivityNet/config.json
+https://s06.imfd.cl/04/github-data/DenseCap/ActivityNet/dense_corpus.pkl
