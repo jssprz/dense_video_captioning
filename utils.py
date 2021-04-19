@@ -3,6 +3,7 @@ import os
 
 import torch
 import torch.nn as nn
+import numpy as np
 
 sys.path.append('video_description_eval/coco-caption')
 from video_description_eval.evaluate import score
