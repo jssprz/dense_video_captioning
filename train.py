@@ -268,11 +268,6 @@ class DenseVideo2TextTrainer(Trainer):
     def __init_dense_loader(self):
         print('Initializing data loaders...')
 
-        # open the h5 file with visual features
-        # h5_path = os.path.join(self.dataset_folder, self.trainer_config.features_filename)
-        h5 = h5py.File(self.trainer_config.h5_file_path, 'r')
-        dataset = h5[self.trainer_config.dataset_name]
-
         # get train split data
         print(' initializing train split data loader...')
         vidxs, cidxs, intervals_t, caps_count_t, fps, progs_t, prog_lens, caps_t, pos_t, upos_t, cap_lens_t = self.__extract_split_data_from_corpus(split=0)
@@ -283,7 +278,10 @@ class DenseVideo2TextTrainer(Trainer):
         self.last_interval_end = torch.max(intervals_t.view(-1, 2)[:,1])
 
         # get train loader
-        train_loader = get_dense_loader(h5_dataset=dataset, vidxs=vidxs, cidxs=cidxs, intervals=intervals_t, caps_count=caps_count_t, 
+        # h5_path = os.path.join(self.dataset_folder, self.trainer_config.features_filename)
+        self.h5_train = h5py.File(self.trainer_config.train_h5_file_path, 'r')
+        train_dataset = self.h5_train[self.trainer_config.h5_file_group_name]
+        train_loader = get_dense_loader(h5_dataset=train_dataset, vidxs=vidxs, cidxs=cidxs, intervals=intervals_t, caps_count=caps_count_t, 
                                         captions=caps_t, pos=pos_t, upos=upos_t, cap_lens=cap_lens_t, progs=progs_t, 
                                         prog_lens=prog_lens, batch_size=self.trainer_config.batch_size, train=True)
         
@@ -297,7 +295,9 @@ class DenseVideo2TextTrainer(Trainer):
         # self.last_interval_end = max(self.last_interval_end, torch.max(intervals_t.view(-1, 2)[:,1]))
 
         # get valid loader
-        val_loader = get_dense_loader(h5_dataset=dataset, vidxs=vidxs, cidxs=cidxs, intervals=intervals_t, caps_count=caps_count_t, 
+        self.h5_val = h5py.File(self.trainer_config.valid_h5_file_path, 'r')
+        val_dataset = self.h5_val[self.trainer_config.h5_file_group_name]
+        val_loader = get_dense_loader(h5_dataset=val_dataset, vidxs=vidxs, cidxs=cidxs, intervals=intervals_t, caps_count=caps_count_t, 
                                       captions=caps_t, pos=pos_t, upos=upos_t, cap_lens=cap_lens_t, progs=progs_t, 
                                       prog_lens=prog_lens, batch_size=self.trainer_config.batch_size*2, train=False)
 
@@ -616,8 +616,14 @@ class DenseVideo2TextTrainer(Trainer):
                 
             self.writer.add_scalar('data/end2end/learning-rate', self.optimizer.param_groups[0]['lr'], epoch)                
             self.lr_scheduler.step()
-            
+
+        # close h5 files
+        self.h5_train.close()
+        self.h5_val.close()
+
+        # log best results
         self.logger.info('Best results: {}'.format(str(self.best_metrics)))
+        
         return self.best_metrics
 
 
@@ -680,8 +686,14 @@ if __name__ == '__main__':
     trainer = DenseVideo2TextTrainer(trainer_config, dense_captioner_config, modules_config, args.dataset_folder, args.output_folder)    
 
     print('Training.........')
-    best_results = trainer.train_model(resume=False, 
-                                       checkpoint_path='',
-                                       early_stop_limit=10)
+    try:
+        best_results = trainer.train_model(resume=False, 
+                                           checkpoint_path='',
+                                           early_stop_limit=10)
+    except Exception(e):
+        print(f'An error occurred during training/validation process: {e}')
+    
+    trainer.h5_train.close()
+    trainer.h5_val.close()
 
     print('Best results in the test set: {}'.format(str(best_results)))
