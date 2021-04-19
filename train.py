@@ -14,7 +14,7 @@ import torch
 import torch.optim as optim
 from tensorboardX import SummaryWriter
 
-from utils import decode_from_tokens, load_texts, evaluate_from_tokens, densecap_evaluate_from_tokens, get_trainer_str, get_sem_tagger_str, get_syn_embedd_str, get_avscn_decoder_str, get_semsynan_decoder_str, get_mm_str, get_vncl_cell_str
+from utils import get_freer_gpu, decode_from_tokens, load_texts, evaluate_from_tokens, densecap_evaluate_from_tokens, get_trainer_str, get_sem_tagger_str, get_syn_embedd_str, get_avscn_decoder_str, get_semsynan_decoder_str, get_mm_str, get_vncl_cell_str
 from vocabulary import Vocabulary
 from configuration_dict import ConfigDict
 from loader import get_dense_loader
@@ -690,10 +690,10 @@ if __name__ == '__main__':
         best_results = trainer.train_model(resume=False, 
                                            checkpoint_path='',
                                            early_stop_limit=10)
+        print('Best results in the test set: {}'.format(str(best_results)))
     except Exception as e:
         print(f'An error occurred during training/validation process: {e}')
-    
-    trainer.h5_train.close()
-    trainer.h5_val.close()
+        trainer.h5_train.close()
+        trainer.h5_val.close()
 
-    print('Best results in the test set: {}'.format(str(best_results)))
+    print('--- END ---')
