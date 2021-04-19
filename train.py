@@ -690,7 +690,7 @@ if __name__ == '__main__':
         best_results = trainer.train_model(resume=False, 
                                            checkpoint_path='',
                                            early_stop_limit=10)
-    except Exception(e):
+    except Exception as e:
         print(f'An error occurred during training/validation process: {e}')
     
     trainer.h5_train.close()
