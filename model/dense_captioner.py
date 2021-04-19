@@ -10,7 +10,7 @@ from model.embeddings.visual_semantic import MultiModal
 
 
 class VNCLCell(nn.Module):
-    def __init__(self, x_size, v_size, mm_size, vh_size, h1_size, h2_size, drop_p=.5, 
+    def __init__(self, x_size, v_size, mm_size, vh_size, h1_size, h2_size, drop_p=.5,
                  have_bn=False, var_dropout='per-gate'):
         super(VNCLCell, self).__init__()
 
@@ -61,7 +61,7 @@ class VNCLCell(nn.Module):
         self.W_f_2 = get_init_weights((mm_size, h1_size))
         self.W_o_2 = get_init_weights((mm_size, h1_size))
         self.W_c_2 = get_init_weights((mm_size, h1_size))
-        
+
         self.W_i_3 = get_init_weights((h1_size, h2_size))
         self.W_f_3 = get_init_weights((h1_size, h2_size))
         self.W_o_3 = get_init_weights((h1_size, h2_size))
@@ -77,32 +77,32 @@ class VNCLCell(nn.Module):
         self.U_f_2 = get_init_weights((mm_size, h1_size))
         self.U_o_2 = get_init_weights((mm_size, h1_size))
         self.U_c_2 = get_init_weights((mm_size, h1_size))
-        
+
         self.U_i_3 = get_init_weights((h1_size, h2_size))
         self.U_f_3 = get_init_weights((h1_size, h2_size))
         self.U_o_3 = get_init_weights((h1_size, h2_size))
         self.U_c_3 = get_init_weights((h1_size, h2_size))
-        
+
         self.b_i = Parameter(torch.zeros(h2_size))
-        self.b_f = Parameter(torch.zeros(h2_size))        
-        self.b_o = Parameter(torch.zeros(h2_size))        
+        self.b_f = Parameter(torch.zeros(h2_size))
+        self.b_o = Parameter(torch.zeros(h2_size))
         self.b_c = Parameter(torch.zeros(h2_size))
-        
+
         self.have_bn = have_bn
         if have_bn:
             self.bn = nn.LayerNorm(hidden_size)
-        
+
         self.__init_layers()
-        
+
     def __init_layers(self):
         for m in self.modules():
             if type(m) == nn.Linear:
                 nn.init.xavier_normal_(m.weight)
-    
+
     def __dropout(self, x, keep_prob, mask_for):
         # if not self.training or keep_prob >= 1.:
         #     return x
-        
+
         # if mask_for in self.dropM:
         #     mask = self.dropM[mask_for]
         # else:
@@ -111,17 +111,17 @@ class VNCLCell(nn.Module):
 
         #     # op2
         #     mask = x.new_empty(x.size(), requires_grad=False).bernoulli_(keep_prob)
-            
+
         #     self.dropM[mask_for] = mask
-            
+
         # assert x.device == mask.device, 'mask and x must be in the same device'
-        
+
         # return x.masked_fill(mask==0, 0) * (1.0 / keep_prob)
         return x
-        
+
     def precompute_dots_4_m(self, m, var_drop_p):
         self.dropM = {}
-                
+
         keep_prob = 1 - var_drop_p
         if self.var_dropout == 'per-gate':
             # use a distinct mask for each gate
@@ -135,7 +135,7 @@ class VNCLCell(nn.Module):
             m_f = self.__dropout(m, keep_prob, 's')
             m_o = self.__dropout(m, keep_prob, 's')
             m_c = self.__dropout(m, keep_prob, 's')
-        
+
         # (batch_size x h1_size)
         self.temp2_i = m_i @ self.C_i_2
         self.temp2_f = m_f @ self.C_f_2
@@ -147,21 +147,21 @@ class VNCLCell(nn.Module):
         self.temp4_f = m_f @ self.W_f_2
         self.temp4_o = m_o @ self.W_o_2
         self.temp4_c = m_c @ self.W_c_2
-                                
+
     def __compute_gate(self, activation, temp1, temp2, temp3, temp4, temp5, temp6, Wc, Cc, Uc, b):
         z = (temp1 * temp2) @ Cc
         x = (temp3 * temp4) @ Wc
         h = (temp5 * temp6) @ Uc
-        
+
         # assert torch.all(torch.tensor([x.device == t.device for t in [v,h,b]])), 'all tensor must be in the same device ({}, {}, {}, {})'.format(x.device, v.device, h.device, b.device)
-        
+
         logits = z + x + h + b
-        
+
         if self.have_bn:
             logits = self.bn(logits)
-        
+
         return activation(logits)
-    
+
     # def step(self, s, rnn_h, rnn_c, decoder_input, encoder_hidden, encoder_outputs, var_drop_p):
     def forward(self, prev_h, prev_c, x, m, v1, v2, var_drop_p):
         keep_prob = 1 - var_drop_p
@@ -223,7 +223,7 @@ class VNCLCell(nn.Module):
         temp1_o = ((v1 @ self.V_o_1) * (v2 @ self.V_o_2)) @ self.C_o_1
         temp1_c = ((v1 @ self.V_c_1) * (v2 @ self.V_c_2)) @ self.C_c_1
 
-        # (batch_size x rnn_hidden_size)        
+        # (batch_size x rnn_hidden_size)
         temp3_i = x_i @ self.W_i_1
         temp3_f = x_f @ self.W_f_1
         temp3_o = x_o @ self.W_o_1
@@ -250,7 +250,7 @@ class VNCLCell(nn.Module):
         # (batch_size x hidden_size)
         new_c = f * prev_c + i * c
         new_h = o * torch.tanh(prev_c)
-        
+
         return new_h, new_c 
 
 
@@ -319,17 +319,17 @@ class DenseCaptioner(nn.Module):
 
         self.h, self.c = self.rnn_cell(self.h, self.c, self.a_logits, self.prev_match, self.v_p_q_pool, v_q_w_pool, var_drop_p=.1)
         self.a_logits = self.fc(self.h)
-        
+
     def forward(self, video_features, feats_count, teacher_forcing_p=.5, gt_program=None, gt_captions=None, gt_intervals=None):
         # initialize
-        program, bs = [], video_features[0].size(0)
+        program, bs, device = [], video_features[0].size(0), video_features[0].device
         program, captions, intervals = torch.zeros_like(gt_program), torch.zeros_like(gt_captions), torch.zeros_like(gt_intervals, dtype=torch.float, requires_grad=self.training)
         prog_logits = torch.zeros(program.size(0), program.size(1), self.progs_vocab_size)
         caps_logits = torch.zeros(captions.size(0), captions.size(1), captions.size(2), self.caps_vocab_size)
         caps_count = torch.zeros(bs, dtype=torch.int8)
-        self.p, self.q, self.a_logits = torch.zeros(bs, dtype=torch.int), torch.ones(bs, dtype=torch.int), torch.zeros(bs, self.progs_vocab_size).fill_(-1)
-        self.h, self.c, self.prev_match = torch.zeros(bs, self.h_size), torch.zeros(bs, self.h_size), torch.zeros(bs, self.mm_size)
-        
+        self.p, self.q, self.a_logits = torch.zeros(bs, dtype=torch.int), torch.ones(bs, dtype=torch.int), torch.zeros(bs, self.progs_vocab_size).fill_(-1).to(device)
+        self.h, self.c, self.prev_match = torch.zeros(bs, self.h_size).to(device), torch.zeros(bs, self.h_size).to(device), torch.zeros(bs, self.mm_size).to(device)
+
         # precomputing weights related to the prev_match only
         self.rnn_cell.precompute_dots_4_m(self.prev_match, var_drop_p=.1)
 
@@ -392,7 +392,7 @@ class DenseCaptioner(nn.Module):
 
                 # generate captions
                 cap_logits = self.clip_captioner(clip_feats, clip_global, teacher_forcing_p, gt)
-                
+
                 if self.training:
                     use_teacher_forcing = True if random.random() < teacher_forcing_p or seq_pos == 0 else False
                     if use_teacher_forcing:
@@ -432,7 +432,7 @@ class DenseCaptioner(nn.Module):
 
                 # compute the multimodal representation
                 match = self.mm_enc(clip_feats, clip_global, cap, cap_len, cap_bow)
-                
+
                 # save captions in the list of each video that was described in this step
                 for i, c, c_logits, m in zip(vidx_to_describe, cap, cap_logits, match):
                     captions[i, caps_count[i], :] = c
@@ -444,7 +444,5 @@ class DenseCaptioner(nn.Module):
                 self.rnn_cell.precompute_dots_4_m(self.prev_match, var_drop_p=.1)
 
             seq_pos += 1
-        
-        return prog_logits, program, caps_logits, captions, intervals, caps_count
 
-            
+        return prog_logits, program, caps_logits, captions, intervals, caps_count

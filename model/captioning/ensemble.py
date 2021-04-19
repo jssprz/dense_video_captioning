@@ -31,7 +31,7 @@ class ClipEncoder(nn.Module):
                                                   pretrained_model_path=syn_embedd_config.v_enc_config.pretrained_model_path)
 
     def forward(self, v_feats, v_global):
-        v_feats_cat = torch.cat([f for f in v_feats], dim=2)
+        v_feats_cat = torch.cat(v_feats, dim=2)
         return v_feats_cat, v_global, self.sem_model(v_global)[1], self.syn_model(v_feats[0], v_feats[1], v_global)
 
 
@@ -65,7 +65,7 @@ class Ensemble(nn.Module):
         encoding = self.encoder(v_feats, v_global) 
         
         # ensemble decoders
-        logits = torch.zeros(v_global.size(0), gt_captions.size(1), self.out_size)
+        logits = torch.zeros(v_global.size(0), gt_captions.size(1), self.out_size).to(v_feats[0].device)
         for dec in self.decoders:
             ls, _ = dec(encoding, teacher_forcing_p, gt_captions)
             logits += ls
