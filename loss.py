@@ -130,4 +130,4 @@ class DenseCaptioningLoss(nn.Module):
         losses = torch.tensor([cap_loss, prog_loss, iou_loss], requires_grad=True)
         loss = torch.sum(self.scores * losses)
 
-        return loss
+        return loss, cap_loss, prog_loss, iou_loss
