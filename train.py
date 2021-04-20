@@ -367,7 +367,7 @@ class DenseVideo2TextTrainer(Trainer):
             # targets = torch.cat([targets[j][:target_lens[j]] for j in range(bsz)], dim=0)
 
             # Evaluate the loss function
-            loss = self.criterion(gt_captions, gt_cap_lens, caps_logits, gt_program, gt_prog_len, prog_logits, gt_intervals, intervals, gt_caps_count, caps_count)
+            loss, cap_loss, prog_loss, iou_loss = self.criterion(gt_captions, gt_cap_lens, caps_logits, gt_program, gt_prog_len, prog_logits, gt_intervals, intervals, gt_caps_count, caps_count)
 
             # if not use_rl:
             #     if type(self.criterion) is SentenceLengthLoss:
@@ -430,7 +430,7 @@ class DenseVideo2TextTrainer(Trainer):
             loss.backward()
             self.optimizer.step()
 
-        return loss, program, captions, intervals
+        return loss, cap_loss, prog_loss, iou_loss, program, captions, intervals
 
     def __evaluate(self, predicted_sentences, phase):
         scores = score(self.ground_truth[phase], predicted_sentences)
@@ -519,14 +519,24 @@ class DenseVideo2TextTrainer(Trainer):
                 for i, (vidx, cidxs, cnn, c3d, feats_count, tstamps, intervals, caps_count, captions, pos, upos, cap_lens, progs, prog_lens) in enumerate(self.loaders[phase], start=1):
                     video_feats = [cnn, c3d]
                     use_rl = False
-                    loss, program, captions, intervals = self.__process_batch(video_feats, feats_count, intervals, caps_count, captions, pos, upos, cap_lens, progs, prog_lens, 
-                                                                        teacher_forcing_ratio, phase, use_rl=use_rl)
+                    loss, cap_loss, prog_loss, iou_loss, program, captions, intervals = self.__process_batch(video_feats, feats_count, intervals, caps_count, captions, pos, upos, 
+                                                                                                             cap_lens, progs, prog_lens, teacher_forcing_ratio, phase, use_rl=use_rl)
                     loss_count += loss.item()
 
                     self.writer.add_scalar('data/end2end/{}-iters-loss'.format(phase), loss, epoch * len(self.loaders[phase]) + i)
+                    self.writer.add_scalar('data/end2end/{}-iters-cap_loss'.format(phase), cap_loss, epoch * len(self.loaders[phase]) + i)
+                    self.writer.add_scalar('data/end2end/{}-iters-prog_loss'.format(phase), prog_loss, epoch * len(self.loaders[phase]) + i)
+                    self.writer.add_scalar('data/end2end/{}-iters-iou_loss'.format(phase), iou_loss, epoch * len(self.loaders[phase]) + i)
 
                     lrs = self.lr_scheduler.get_last_lr()
-                    sys.stdout.write('\rEpoch:{0:03d} Phase:{1:6s} Iter:{2:04d}/{3:04d} Loss:{4:10.4f} lr:{5:.6f}'.format(epoch, phase, i, len(self.loaders[phase]), loss.item(), lrs[0]))
+                    sys.stdout.write('\rEpoch:{0:03d} Phase:{1:6s} Iter:{2:04d}/{3:04d} lr:{4:.6f} Loss:{5:10.4f} (cap-loss:{6:10.4f} prog-loss:{7:10.4f} iou-loss:{8:10.4f})'.format(epoch, 
+                                                                                                                                                                                      phase, i, 
+                                                                                                                                                                                      len(self.loaders[phase]), 
+                                                                                                                                                                                      lrs[0], 
+                                                                                                                                                                                      loss.item(), 
+                                                                                                                                                                                      cap_loss.item(), 
+                                                                                                                                                                                      prog_loss.item(), 
+                                                                                                                                                                                      iou_loss.item))
 
                     if phase != 'train':
                         # save programs and the videos' idx for computing evaluation metrics
