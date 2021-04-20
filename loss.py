@@ -9,7 +9,7 @@ class SentenceLengthLoss(nn.Module):
         self.beta = beta
         self.reduction= reduction
         self.crit = nn.NLLLoss(reduction='sum')
-        
+
     def forward(self, logits, targets, lens, rewards=None):
         if rewards is None:
             mask = torch.cat([l.repeat(l) for l in lens], dim=0).unsqueeze(1).to(logits.device)
@@ -20,9 +20,9 @@ class SentenceLengthLoss(nn.Module):
             mask2 = torch.cat([r.repeat(self.max_words) for r in rewards], dim=0).unsqueeze(1)
             wighted_log_probs = torch.reciprocal((mask1 * mask2) ** self.beta) * torch.log_softmax(logits, dim=1)
             loss = self.crit(wighted_log_probs, targets)
-            
+
         if self.reduction=='mean':
-            return loss / lens.size(0) 
+            return loss / lens.size(0)
         elif self.reduction=='sum':
             return loss
 
@@ -35,22 +35,24 @@ class IoULoss(nn.Module):
     def forward(self, pred_intervals, gt_intervals):
         # compute intersection
         intersection = torch.zeros(pred_intervals.size(0))
-        M = torch.max(torch.cat((pred_intervals[:,0], gt_intervals[:,0]), dim=1))
-        m = torch.min(torch.cat((pred_intervals[:,1], gt_intervals[:,1]), dim=1))        
+        M = torch.max(torch.cat((pred_intervals[:,0], gt_intervals[:,0]), dim=1), dim=1)[0]
+        m = torch.min(torch.cat((pred_intervals[:,1], gt_intervals[:,1]), dim=1), dim=1)[0]
         intersection = (m-M).clamp(min=0)
+        print('intersec:', intersection)
 
         # compute union
-        m = torch.min(torch.cat((pred_intervals[:,0], gt_intervals[:,0]), dim=1))
-        M = torch.max(torch.cat((pred_intervals[:,1], gt_intervals[:,1]), dim=1))
+        m = torch.min(torch.cat((pred_intervals[:,0], gt_intervals[:,0]), dim=1), dim=1)[0]
+        M = torch.max(torch.cat((pred_intervals[:,1], gt_intervals[:,1]), dim=1), dim=1)[0]
         union = M-m
+        print('union:', union)
 
         # compute IoU
         loss = torch.sum(torch.reciprocal(union) * intersection)
 
         if self.reduction=='mean':
-            return loss / pred_intervals.size(0) 
-        elif self.reduction=='sum':
-            return loss
+            return 1 -  loss / pred_intervals.size(0)
+        elif self.reduction=='sum': 
+            return pred_intervals.size(0) - loss
 
 
 class DenseCaptioningLoss(nn.Module):
