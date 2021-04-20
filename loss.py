@@ -35,15 +35,15 @@ class IoULoss(nn.Module):
     def forward(self, pred_intervals, gt_intervals):
         # compute intersection
         intersection = torch.zeros(pred_intervals.size(0))
-        M = torch.max(torch.cat((pred_intervals[:,0], gt_intervals[:,0]), dim=1), dim=1)[0]
-        m = torch.min(torch.cat((pred_intervals[:,1], gt_intervals[:,1]), dim=1), dim=1)[0]
-        intersection = (m-M).clamp(min=0)
+        max_min = torch.max(torch.stack([pred_intervals[:,0], gt_intervals[:,0]]), dim=0)[0]
+        min_max = torch.min(torch.stack([pred_intervals[:,1], gt_intervals[:,1]]), dim=0)[0]
+        intersection = (min_max - max_min).clamp(min=0)
         print('intersec:', intersection)
 
         # compute union
-        m = torch.min(torch.cat((pred_intervals[:,0], gt_intervals[:,0]), dim=1), dim=1)[0]
-        M = torch.max(torch.cat((pred_intervals[:,1], gt_intervals[:,1]), dim=1), dim=1)[0]
-        union = M-m
+        min_min = torch.min(torch.stack([pred_intervals[:,0], gt_intervals[:,0]]), dim=0)[0]
+        max_max = torch.max(torch.stack([pred_intervals[:,1], gt_intervals[:,1]]), dim=0)[0]
+        union = max_max - min_min
         print('union:', union)
 
         # compute IoU
@@ -82,7 +82,7 @@ class DenseCaptioningLoss(nn.Module):
         # intervals_loss function
         if config.iloss == 'IoU':
             self.intervals_loss = IoULoss(reduction=config.iloss_reduction)
-        
+
         # multimodal_loss function
         # if mmloss == 'MSE':
         #     self.multimodal_loss = nn.MSELoss(reduction=config.mmloss_reduction)
@@ -109,6 +109,14 @@ class DenseCaptioningLoss(nn.Module):
         # straighten the target captions (remove the part of the pad) and then flatten it
         # (total_len_of_captions)
         gt_captions = torch.cat([gt_captions[j, i, :gt_cap_lens[j,i]].flatten() for j in range(bs) for i in range(gt_caps_count[j])], dim=0)
+
+        # straighten the output intervals (removing the part of the pad)
+        # (total_num_captions x 2)
+        pred_intervals = torch.cat([pred_intervals[j, :gt_caps_count[j], :] for j in range(bs)], dim=0)
+
+        # straighten the target intervals (removing the part of the pad)
+        # (total_num_captions x 2)
+        gt_intervals = torch.cat([gt_intervals[j, :gt_caps_count[j], :] for j in range(bs)], dim=0)
 
         # straighten the lens of target captions (remove the part of the pad) and then flatten it
         # (total_num_captions)
