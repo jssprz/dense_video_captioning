@@ -294,7 +294,7 @@ class DenseCaptioner(nn.Module):
                                        device=device)
 
     def get_clip_feats(self, v_feats, start_idx, end_idx=None):
-        feats = [torch.zeros(f.size(0), self.max_clip_len, f.size(2)) for f in v_feats]
+        feats = [torch.zeros(f.size(0), self.max_clip_len, f.size(2)).to(f.device) for f in v_feats]
         pool = []
         if end_idx is not None:
             for i, (s, e) in enumerate(zip(start_idx, end_idx)):
@@ -302,7 +302,7 @@ class DenseCaptioner(nn.Module):
                     indices = torch.linspace(s, min(e, v_feats[0].size(1)-1), steps=self.max_clip_len, dtype=torch.long)
                     f1 = v_feats[0][i, indices, :]
                     f2 = v_feats[1][i, indices, :]
-                else: 
+                else:
                     f1 = v_feats[0][i, s:e, :]
                     f2 = v_feats[1][i, s:e, :]
 
@@ -311,7 +311,7 @@ class DenseCaptioner(nn.Module):
 
                 pool.append(torch.cat((torch.mean(f1, dim=0), torch.mean(f2, dim=0))))
 
-        return torch.stack(pool), feats 
+        return torch.stack(pool), feats
 
     def __step__(self, t, video_features):
         self.v_p_q_pool, self.v_p_q_feats = self.get_clip_feats(video_features, self.p, self.q)
@@ -323,9 +323,9 @@ class DenseCaptioner(nn.Module):
     def forward(self, video_features, feats_count, teacher_forcing_p=.5, gt_program=None, gt_captions=None, gt_intervals=None):
         # initialize
         program, bs, device = [], video_features[0].size(0), video_features[0].device
-        program, captions, intervals = torch.zeros_like(gt_program), torch.zeros_like(gt_captions), torch.zeros_like(gt_intervals, dtype=torch.float, requires_grad=self.training)
-        prog_logits = torch.zeros(program.size(0), program.size(1), self.progs_vocab_size)
-        caps_logits = torch.zeros(captions.size(0), captions.size(1), captions.size(2), self.caps_vocab_size)
+        program, captions, intervals = torch.zeros_like(gt_program), torch.zeros_like(gt_captions), torch.zeros_like(gt_intervals, dtype=torch.float)
+        prog_logits = torch.zeros(program.size(0), program.size(1), self.progs_vocab_size).to(device)
+        caps_logits = torch.zeros(captions.size(0), captions.size(1), captions.size(2), self.caps_vocab_size).to(device)
         caps_count = torch.zeros(bs, dtype=torch.int8)
         self.p, self.q, self.a_logits = torch.zeros(bs, dtype=torch.int), torch.ones(bs, dtype=torch.int), torch.zeros(bs, self.progs_vocab_size).fill_(-1).to(device)
         self.h, self.c, self.prev_match = torch.zeros(bs, self.h_size).to(device), torch.zeros(bs, self.h_size).to(device), torch.zeros(bs, self.mm_size).to(device)
@@ -366,7 +366,7 @@ class DenseCaptioner(nn.Module):
             # updates the p and q positions for each video, and save sub-batch of video clips to be described
             intervals_to_describe, vidx_to_describe = [], []
             for i, a in enumerate(a_id):
-                if a == 2: 
+                if a == 2:
                     # skip
                     self.p[i] += 1
                     self.q[i] = self.p[i] + 1
@@ -385,7 +385,7 @@ class DenseCaptioner(nn.Module):
                 clip_feats = [feats[vidx_to_describe, :, :] for feats in self.v_p_q_feats]
                 clip_global = self.v_p_q_pool[vidx_to_describe, :]
 
-                # TODO: get ground-truth captions according to the position of p and q and the interval associated to each gt caption 
+                # TODO: get ground-truth captions according to the position of p and q and the interval associated to each gt caption
 
                 # get ground-truth captions according to the number of captions that have been generated per video
                 gt = torch.stack([gt_captions[i][min(gt_captions.size(1)-1, caps_count[i])] for i in vidx_to_describe])
@@ -428,7 +428,7 @@ class DenseCaptioner(nn.Module):
                 cap_len = torch.IntTensor(cap.size(0)).fill_(cap.size(1))
 
                 # compute caption's bow, the make_bow_vector can also compute the caption len
-                cap_bow = torch.stack([make_bow_vector(c, self.caps_vocab_size) for c in cap])
+                cap_bow = torch.stack([make_bow_vector(c, self.caps_vocab_size) for c in cap]).to(device)
 
                 # compute the multimodal representation
                 match = self.mm_enc(clip_feats, clip_global, cap, cap_len, cap_bow)

@@ -12,7 +12,7 @@ class SentenceLengthLoss(nn.Module):
         
     def forward(self, logits, targets, lens, rewards=None):
         if rewards is None:
-            mask = torch.cat([l.repeat(l) for l in lens], dim=0).unsqueeze(1)
+            mask = torch.cat([l.repeat(l) for l in lens], dim=0).unsqueeze(1).to(logits.device)
             wighted_log_probs = torch.reciprocal(mask ** self.beta) * torch.log_softmax(logits, dim=1)
             loss = self.crit(wighted_log_probs, targets)
         else:

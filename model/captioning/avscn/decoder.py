@@ -9,10 +9,10 @@ from model.captioning.attention import Attention
 
 
 class SCNAttnDecoder(nn.Module):
-    def __init__(self, in_seq_length, n_feats, n_tags, embedding_size, 
+    def __init__(self, in_seq_length, n_feats, n_tags, embedding_size,
                  h_size, rnn_in_size, rnn_h_size, vocab, device, encoder_num_layers,
                  encoder_bidirectional, pretrained_embedding=None, rnn_cell='gru', num_layers=1,
-                 drop_p=0.5, beam_size=10, temperature=1.0, train_sample_max=False, 
+                 drop_p=0.5, beam_size=10, temperature=1.0, train_sample_max=False,
                  test_sample_max=True, beam_search_logic='bfs'):
         super(SCNAttnDecoder, self).__init__()
         self.h_size = h_size
@@ -35,9 +35,9 @@ class SCNAttnDecoder(nn.Module):
         # Components
         self.in_v_drop = nn.Dropout(drop_p)
         self.in_s_drop = nn.Dropout(drop_p)
-        
+
         if pretrained_embedding is not None:
-            self.embedding = nn.Embedding.from_pretrained(pretrained_embedding)    
+            self.embedding = nn.Embedding.from_pretrained(pretrained_embedding)
         else:
             self.embedding = nn.Embedding(self.output_size, embedding_size)
         self.embedd_drop = nn.Dropout(drop_p)
@@ -110,7 +110,7 @@ class SCNAttnDecoder(nn.Module):
         temp1_f = decoder_input @ self.Wa_f
         temp1_o = decoder_input @ self.Wa_o
         temp1_c = decoder_input @ self.Wa_c
-            
+
         # (batch_size x rnn_h_size)
         temp6_i = rnn_h @ self.Ua_i
         temp6_f = rnn_h @ self.Ua_f
@@ -127,7 +127,7 @@ class SCNAttnDecoder(nn.Module):
         rnn_c = f * rnn_c + i * c
         rnn_h = o * torch.tanh(rnn_c)
 
-        return rnn_h, rnn_c 
+        return rnn_h, rnn_c
 
     def forward_fn(self, v_pool, s_tags, encoder_h, encoder_outputs, captions, teacher_forcing_p=0.5):
         batch_size = encoder_outputs.size(0)
@@ -136,7 +136,7 @@ class SCNAttnDecoder(nn.Module):
         decoder_input = Variable(torch.Tensor(batch_size, self.embedding_size).fill_(0)).to(self.device)
 
         if type(encoder_h) is tuple:
-            # (encoder_n_layers * encoder_num_directions x batch_size x h_size) -> (encoder_n_layers x encoder_num_directions x batch_size x h_size) 
+            # (encoder_n_layers * encoder_num_directions x batch_size x h_size) -> (encoder_n_layers x encoder_num_directions x batch_size x h_size)
             rnn_h = encoder_h[0].view(self.encoder_num_layers, self.encoder_num_directions, batch_size, self.h_size)
             rnn_c = encoder_h[1].view(self.encoder_num_layers, self.encoder_num_directions, batch_size, self.h_size)
 
@@ -156,12 +156,12 @@ class SCNAttnDecoder(nn.Module):
                 temp = []
                 for tokens_seqs, word_logits_seqs, log_probs, rnn_h in next_nodes:
                     decoder_input = tokens_seqs[-1]
-                    
+
                     if step:
                         # (batch_size x 1) -> (batch_size x embedding_size)
                         decoder_input = self.embedding(decoder_input).squeeze(1)
                         decoder_input = self.embedd_drop(decoder_input)
-                        
+
                     rnn_h, rnn_c = self.step(rnn_h, rnn_c, decoder_input, encoder_h, encoder_outputs)
 
                     # compute word_logits
@@ -185,7 +185,7 @@ class SCNAttnDecoder(nn.Module):
                     for j in range(self.beam_size):
                         temp.append((tokens_seqs + [sample_ids[:,j].unsqueeze(1)],
                                      word_logits_seqs + [word_logits],
-                                     log_probs + torch.mean(sample_log_probs[:,j]).item() / self.out_seq_length, 
+                                     log_probs + torch.mean(sample_log_probs[:,j]).item() / self.out_seq_length,
                                      rnn_h.clone()))
 
                 next_nodes = sorted(temp, reverse=True, key=lambda x: x[2])[:self.beam_size]
@@ -222,11 +222,11 @@ class SCNAttnDecoder(nn.Module):
             return torch.cat([o.unsqueeze(1) for o in outputs], dim=1).contiguous(), None
 
     def forward(self, encoding, teacher_forcing_p=.5, gt_captions=None):
-        return self.forward_fn(v_pool=videos_encodes[3], 
-                               s_tags=videos_encodes[2], 
-                               encoder_h=videos_encodes[1], 
-                               encoder_outputs=videos_encodes[0], 
-                               captions=captions, 
+        return self.forward_fn(v_pool=videos_encodes[3],
+                               s_tags=videos_encodes[2],
+                               encoder_h=videos_encodes[1],
+                               encoder_outputs=videos_encodes[0],
+                               captions=captions,
                                teacher_forcing_p=teacher_forcing_p)
 
     def sample(self, videos_encodes):
@@ -259,41 +259,41 @@ class AVSCNDecoder(nn.Module):
         self.in_s_drop = nn.Dropout(config.drop_p)
 
         if pretrained_we is not None:
-            self.embedding = nn.Embedding.from_pretrained(pretrained_we)    
+            self.embedding = nn.Embedding.from_pretrained(pretrained_we)
         else:
             self.embedding = nn.Embedding(self.output_size, embedding_size)
         self.embedd_drop = nn.Dropout(config.drop_p)
-        
-        self.semantic_layer = SCNAttnDecoder(config.in_seq_length, 
+
+        self.semantic_layer = SCNAttnDecoder(config.in_seq_length,
                                              config.n_feats,
                                              config.n_tags, config.embedding_size,
                                              config.h_size,
                                              config.rnn_in_size,
-                                             config.rnn_h_size, vocab, device, 
-                                             config.encoder_num_layers, 
-                                             config.encoder_bidirectional, 
-                                             pretrained_we, 
-                                             config.rnn_cell, config.num_layers, 
-                                             config.drop_p, config.beam_size, 
-                                             config.temperature, 
-                                             config.train_sample_max, 
-                                             config.test_sample_max, 
+                                             config.rnn_h_size, vocab, device,
+                                             config.encoder_num_layers,
+                                             config.encoder_bidirectional,
+                                             pretrained_we,
+                                             config.rnn_cell, config.num_layers,
+                                             config.drop_p, config.beam_size,
+                                             config.temperature,
+                                             config.train_sample_max,
+                                             config.test_sample_max,
                                              config.beam_search_logic)
 
         # change n_feats and n_tags only
-        self.visual_layer = SCNAttnDecoder(config.in_seq_length, 
-                                           config.n_tags, 
-                                           config.n_feats, config.embedding_size, 
-                                           config.h_size, config.rnn_in_size, 
-                                           config.rnn_h_size, vocab, device, 
-                                           config.encoder_num_layers, 
-                                           config.encoder_bidirectional, 
-                                           pretrained_we, 
-                                           config.rnn_cell, config.num_layers, 
-                                           config.drop_p, config.beam_size, 
-                                           config.temperature, 
-                                           config.train_sample_max, 
-                                           config.test_sample_max, 
+        self.visual_layer = SCNAttnDecoder(config.in_seq_length,
+                                           config.n_tags,
+                                           config.n_feats, config.embedding_size,
+                                           config.h_size, config.rnn_in_size,
+                                           config.rnn_h_size, vocab, device,
+                                           config.encoder_num_layers,
+                                           config.encoder_bidirectional,
+                                           pretrained_we,
+                                           config.rnn_cell, config.num_layers,
+                                           config.drop_p, config.beam_size,
+                                           config.temperature,
+                                           config.train_sample_max,
+                                           config.test_sample_max,
                                            config.beam_search_logic)
 
         self.attn1 = Attention(self.in_seq_length, self.embedding_size, self.h_size, self.num_layers, self.num_directions, mode='soft')
@@ -347,7 +347,7 @@ class AVSCNDecoder(nn.Module):
         decoder_input = torch.zeros(batch_size, self.embedding_size).to(self.device)
 
         # if type(encoder_h) is tuple:
-        #     # (encoder_n_layers * encoder_num_directions x batch_size x h_size) -> (encoder_n_layers x encoder_num_directions x batch_size x h_size) 
+        #     # (encoder_n_layers * encoder_num_directions x batch_size x h_size) -> (encoder_n_layers x encoder_num_directions x batch_size x h_size)
         #     rnn_h = encoder_h[0].view(self.encoder_num_layers, self.encoder_num_directions, batch_size, self.h_size)
         #     rnn_c = encoder_h[1].view(self.encoder_num_layers, self.encoder_num_directions, batch_size, self.h_size)
 
@@ -359,13 +359,13 @@ class AVSCNDecoder(nn.Module):
 
         # rnn_h = Variable(torch.cat([rnn_h[-i,0,:,:] for i in range(self.num_layers, 0, -1)], dim=0)).to(self.device)
 
-        semantic_h = torch.zeros(batch_size, self.h_size)
-        semantic_c = torch.zeros(batch_size, self.h_size)
+        semantic_h = torch.zeros(batch_size, self.h_size).to(self.device)
+        semantic_c = torch.zeros(batch_size, self.h_size).to(self.device)
 
-        visual_h = torch.zeros(batch_size, self.h_size)
-        visual_c = torch.zeros(batch_size, self.h_size)
+        visual_h = torch.zeros(batch_size, self.h_size).to(self.device)
+        visual_c = torch.zeros(batch_size, self.h_size).to(self.device)
 
-        rnn_h = torch.zeros(batch_size, self.h_size)
+        rnn_h = torch.zeros(batch_size, self.h_size).to(self.device)
         # rnn_c = torch.zeros(batch_size, self.h_size)
 
         outputs = []
@@ -446,8 +446,8 @@ class AVSCNDecoder(nn.Module):
 
     def forward(self, encoding, teacher_forcing_p=.5, gt_captions=None):
         return self.forward_fn(v_feats=encoding[0],
-                               v_pool=encoding[1], 
-                               s_tags=encoding[2], 
+                               v_pool=encoding[1],
+                               s_tags=encoding[2],
                                teacher_forcing_p=teacher_forcing_p,
                                gt_captions=gt_captions)
 
