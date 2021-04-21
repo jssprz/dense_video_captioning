@@ -309,14 +309,6 @@ class DenseVideo2TextTrainer(Trainer):
 
         self.loaders = {'train': train_loader, 'val_1': val_loader}
 
-    def __decode_from_tokens(self, tokens):
-        words = []
-        for token in tokens:
-            if token.item() == self.vocab('<eos>'):
-                break
-            words.append(self.vocab.idx_to_word(token.item()))
-        return ' '.join(words)
-
     def __get_sentences(self, all_outputs, all_video_ids):
         predicted_sentences = {}
         for outputs, video_ids in zip(all_outputs, all_video_ids):
@@ -368,7 +360,7 @@ class DenseVideo2TextTrainer(Trainer):
 
             # Evaluate the loss function
             loss, cap_loss, prog_loss, iou_loss = self.criterion(gt_captions, gt_cap_lens, caps_logits, gt_program, gt_prog_len, prog_logits, gt_intervals, intervals, gt_caps_count, caps_count)
-
+            # print(caps_count)
             # if not use_rl:
             #     if type(self.criterion) is SentenceLengthLoss:
             #         loss = self.criterion(outputs.view(-1, len(self.vocab)), targets.view(-1), target_lens)
@@ -430,7 +422,7 @@ class DenseVideo2TextTrainer(Trainer):
             loss.backward()
             self.optimizer.step()
 
-        return loss, cap_loss, prog_loss, iou_loss, program, captions, intervals
+        return loss, cap_loss, prog_loss, iou_loss, program, captions, intervals, caps_count
 
     def __evaluate(self, predicted_sentences, phase):
         scores = score(self.ground_truth[phase], predicted_sentences)
@@ -438,28 +430,26 @@ class DenseVideo2TextTrainer(Trainer):
         scores['All_Metrics'] = sum([scores[k] * weights[k] for k in scores.keys()])
         return scores
 
-    def __process_results(self, metrics_results, predicted_sentences, phase, epoch, save_checkpoints_dir):
-        self.logger.info('{} set metrics: {}'.format(phase, metrics_results))
+    def __process_results(self, metrics_results, prediction, phase, epoch, save_checkpoints_dir, component):
+        self.logger.info(f'{phase} set metrics for {component}: {metrics_results}')
         for name, result in metrics_results.items():
-            self.writer.add_scalar('data/end2end/{}-{}'.format(phase, name), result, epoch)
-            if self.best_metrics[phase][name][1] < result:
-                self.best_metrics[phase][name] = (epoch, result)
+            self.writer.add_scalar(f'end2end/{phase}-{component}-{name}', result, epoch)
+            if name in self.best_metrics[component][phase] and self.best_metrics[component][phase][name][1] < result:
+                self.best_metrics[component][phase][name] = (epoch, result)
                 if name in ['Bleu_4','METEOR', 'ROUGE_L', 'CIDEr', 'All_Metrics']:
                     self.early_stop = 0
-                if name == 'METEOR' and phase == 'valid':
+                    with open(os.path.join(save_checkpoints_dir, f'chkpt_{epoch}_{component}_output.json'), 'w') as f:
+                        json.dump(prediction, f)
+                if component=='densecap' and name == 'METEOR' and phase == 'valid':
                     torch.save(obj={'epoch': epoch,
                                     'dense_captioner': self.dense_captioner.state_dict(),
                                     'optimizer': self.optimizer.state_dict(),
-                                    'prog_best_metrics': self.prog_best_metrics,
-                                    'cap_best_metrics': self.cap_best_metrics},
-                               f=os.path.join(save_checkpoints_dir, f'captioning_chkpt_{epoch}.pkl'.format))
-
-                    with open(os.path.join(save_checkpoints_dir, f'captioning_chkpt_{epoch}_output.json'), 'w') as f:
-                        json.dump(predicted_sentences, f)
+                                    'best_metrics': self.best_metrics},
+                               f=os.path.join(save_checkpoints_dir, f'chkpt_{epoch}.pkl'))
 
                     # remove previously saved
                     if self.last_saved_epoch != -1:
-                        os.remove(os.path.join(save_checkpoints_dir, f'captioning_chkpt_{self.last_saved_epoch}.pkl'))
+                        os.remove(os.path.join(save_checkpoints_dir, f'chkpt_{self.last_saved_epoch}.pkl'))
                     self.last_saved_epoch = epoch
 
     def train_model(self, resume=False, checkpoint_path=None, min_num_epochs=50, early_stop_limit=10):
@@ -474,18 +464,17 @@ class DenseVideo2TextTrainer(Trainer):
         if resume and os.path.exists(checkpoint_path):
             checkpoint = torch.load(checkpoint_path, map_location='cpu')
             begin_epoch = checkpoint['epoch']
-            self.prog_best_metrics = checkpoint['prog_best_metrics']
-            self.cap_best_metrics = checkpoint['cap_best_metrics']
-            self.dense_captioner.load_state_dict(checkpoint['dense_captioner'])
+            self.best_metrics = checkpoint['best_metrics']
         else:
             begin_epoch = 0
-            self.prog_best_metrics, self.cap_best_metrics = {}, {}
+            self.best_metrics = {'programmer': {}, 'captioning': {}, 'densecap': {}}
             for p in ['val_1']:
-                self.prog_best_metrics[p] = {'Bleu_1': (0, 0), 'Bleu_2': (0, 0), 'Bleu_3': (0, 0), 'Bleu_4': (0, 0),
+                self.best_metrics['programmer'][p] = {'Bleu_1': (0, 0), 'Bleu_2': (0, 0), 'Bleu_3': (0, 0), 'Bleu_4': (0, 0),
                                              'METEOR': (0, 0), 'ROUGE_L': (0, 0), 'CIDEr': (0, 0), 'SPICE': (0, 0), 'All_Metrics': (0, 0)}
-            for p in ['val_1']:
-                self.cap_best_metrics[p] = {'Bleu_1': (0, 0), 'Bleu_2': (0, 0), 'Bleu_3': (0, 0), 'Bleu_4': (0, 0),
-                                            'METEOR': (0, 0), 'ROUGE_L': (0, 0), 'CIDEr': (0, 0), 'SPICE': (0, 0), 'All_Metrics': (0, 0)}
+                self.best_metrics['captioning'][p] = {'Bleu_1': (0, 0), 'Bleu_2': (0, 0), 'Bleu_3': (0, 0), 'Bleu_4': (0, 0),
+                                             'METEOR': (0, 0), 'ROUGE_L': (0, 0), 'CIDEr': (0, 0), 'SPICE': (0, 0), 'All_Metrics': (0, 0)}
+                self.best_metrics['densecap'][p] = {'Bleu_1': (0, 0), 'Bleu_2': (0, 0), 'Bleu_3': (0, 0), 'Bleu_4': (0, 0),
+                                             'METEOR': (0, 0), 'ROUGE_L': (0, 0), 'CIDEr': (0, 0), 'SPICE': (0, 0), 'All_Metrics': (0, 0)}
 
         self.dense_captioner.to(self.device)
         print('\nParameters of Dense Captioner model:\n')
@@ -504,7 +493,7 @@ class DenseVideo2TextTrainer(Trainer):
 
             k = self.trainer_config.convergence_speed_factor
             teacher_forcing_ratio = max(.6, k / (k + np.exp(epoch / k)))  # inverse sigmoid decay
-            self.writer.add_scalar('data/end2end/teacher_forcing_ratio', teacher_forcing_ratio, epoch)
+            self.writer.add_scalar('end2end/teacher_forcing_ratio', teacher_forcing_ratio, epoch)
 
             loss_phases = {'train': 0, 'val_1': 0}
             for phase in ['train', 'val_1']:
@@ -516,27 +505,32 @@ class DenseVideo2TextTrainer(Trainer):
                 # predicted_sentences = {}
                 loss_count = 0
                 all_programs, all_captions, all_prog_ids, all_caps_ids, all_intervals, all_tstamps = [], [], [], [], [], []
-                for i, (vidx, cidxs, cnn, c3d, feats_count, tstamps, intervals, caps_count, captions, pos, upos, cap_lens, progs, prog_lens) in enumerate(self.loaders[phase], start=1):
+                for i, (vidx, cidxs, cnn, c3d, feats_count, tstamps, gt_intervals, gt_caps_count, gt_caps, gt_pos, gt_upos, gt_cap_lens, gt_prog, gt_prog_len) in enumerate(self.loaders[phase], start=1):
                     video_feats = [cnn, c3d]
                     use_rl = False
-                    loss, cap_loss, prog_loss, iou_loss, program, captions, intervals = self.__process_batch(video_feats, feats_count, intervals, caps_count, captions, pos, upos, 
-                                                                                                             cap_lens, progs, prog_lens, teacher_forcing_ratio, phase, use_rl=use_rl)
+                    loss, cap_loss, prog_loss, iou_loss, program, captions, intervals, caps_count = self.__process_batch(video_feats, feats_count, gt_intervals, gt_caps_count, gt_caps, gt_pos, gt_upos,
+                                                                                                             gt_cap_lens, gt_prog, gt_prog_len, teacher_forcing_ratio, phase, use_rl=use_rl)
                     loss_count += loss.item()
 
-                    self.writer.add_scalar('data/end2end/{}-iters-loss'.format(phase), loss, epoch * len(self.loaders[phase]) + i)
-                    self.writer.add_scalar('data/end2end/{}-iters-cap_loss'.format(phase), cap_loss, epoch * len(self.loaders[phase]) + i)
-                    self.writer.add_scalar('data/end2end/{}-iters-prog_loss'.format(phase), prog_loss, epoch * len(self.loaders[phase]) + i)
-                    self.writer.add_scalar('data/end2end/{}-iters-iou_loss'.format(phase), iou_loss, epoch * len(self.loaders[phase]) + i)
+                    self.writer.add_scalar('end2end/{}-iters-loss'.format(phase), loss, epoch * len(self.loaders[phase]) + i)
+                    self.writer.add_scalar('end2end/{}-iters-cap_loss'.format(phase), cap_loss, epoch * len(self.loaders[phase]) + i)
+                    self.writer.add_scalar('end2end/{}-iters-prog_loss'.format(phase), prog_loss, epoch * len(self.loaders[phase]) + i)
+                    self.writer.add_scalar('end2end/{}-iters-iou_loss'.format(phase), iou_loss, epoch * len(self.loaders[phase]) + i)
 
                     lrs = self.lr_scheduler.get_last_lr()
-                    sys.stdout.write('\rEpoch:{0:03d} Phase:{1:6s} Iter:{2:04d}/{3:04d} lr:{4:.6f} Loss:{5:10.4f} (cap-loss:{6:10.4f} prog-loss:{7:10.4f} iou-loss:{8:10.4f})'.format(epoch, 
-                                                                                                                                                                                      phase, i, 
-                                                                                                                                                                                      len(self.loaders[phase]), 
-                                                                                                                                                                                      lrs[0], 
-                                                                                                                                                                                      loss.item(), 
-                                                                                                                                                                                      cap_loss.item(), 
-                                                                                                                                                                                      prog_loss.item(), 
-                                                                                                                                                                                      iou_loss.item()))
+                    sys.stdout.write('\rEpoch:{0:03d} Phase:{1:6s} Iter:{2:04d}/{3:04d} lr:{4:.6f} Loss:{5:9.4f} [cap-loss:{6:9.4f} prog-loss:{7:9.4f} iou-loss:{8:9.4f}]'.format(epoch, phase, i, 
+                                                                                                                                                                                  len(self.loaders[phase]), 
+                                                                                                                                                                                  lrs[0], loss.item(), 
+                                                                                                                                                                                  cap_loss.item(), 
+                                                                                                                                                                                  prog_loss.item(), 
+                                                                                                                                                                                  iou_loss.item()))
+
+                    pred, gt = decode_from_tokens(self.programs_vocab, program[0]), decode_from_tokens(self.programs_vocab, gt_prog[0])
+                    print('\nPRED PROG:', pred)
+                    print('\nPRED INTERV:', intervals[0, :gt_caps_count[0]])
+                    print('\nGT PROG:', gt)
+                    print('\nGT INTERV:', gt_intervals[0, :gt_caps_count[0]])
+                    print('\ndiff:', len(pred.split(' ')) - len(gt.split(' ')))
 
                     if phase != 'train':
                         # save programs and the videos' idx for computing evaluation metrics
@@ -544,7 +538,7 @@ class DenseVideo2TextTrainer(Trainer):
                         all_prog_ids.append(vidx)
 
                         # save captions and the captions' idx for computing evaluation metrics (only the first caps_count captions are evaluated)
-                        all_captions.append((captions.to('cpu'), caps_count))
+                        all_captions.append((captions.to('cpu'), caps_count, gt_caps_count))
                         all_caps_ids.append(cidxs)
 
                         # save intervals for computing evaluation metrics
@@ -561,7 +555,7 @@ class DenseVideo2TextTrainer(Trainer):
 
                 avg_loss = loss_count/len(self.loaders[phase])
                 loss_phases[phase] = avg_loss
-                self.writer.add_scalar('data/end2end/{}-epochs-avg-loss'.format(phase), avg_loss, epoch)
+                self.writer.add_scalar('end2end/{}-epochs-avg-loss'.format(phase), avg_loss, epoch)
 
                 if phase != 'train':
                     self.early_stop += 1
@@ -569,23 +563,28 @@ class DenseVideo2TextTrainer(Trainer):
 
                     if cap_metrics_results is not None:
                         # get async results
-                        cap_metrics_results, pred_caps = cap_metrics_results.get()
-                        prog_metrics_results, pred_progs = prog_metrics_results.get()
-                        densecap_metrics_results, pred_intervals = densecap_metrics_results.get()
+                        # cap_metrics_results, pred_caps = cap_metrics_results.get()
+                        # prog_metrics_results, pred_progs = prog_metrics_results.get()
+                        # densecap_metrics_results, pred_intervals = densecap_metrics_results.get()
 
                         # process results, saving the checkpoint if any improvement occurs
-                        self.__process_results(cap_metrics_results, pred_caps, phase, epoch-1, save_checkpoints_dir)
-                        self.__process_results(prog_metrics_results, pred_progs, phase, epoch-1, save_checkpoints_dir)
-                        self.__process_results(densecap_metrics_results, densecap_metrics_results, phase, epoch-1, save_checkpoints_dir)
+                        self.__process_results(cap_metrics_results, pred_caps, phase, epoch-1, save_checkpoints_dir, 'programmer')
+                        self.__process_results(prog_metrics_results, pred_progs, phase, epoch-1, save_checkpoints_dir, 'captioning')
+                        self.__process_results(densecap_metrics_results, pred_intervals, phase, epoch-1, save_checkpoints_dir, 'densecap')
 
                         # report results if any improvement occurs
                         if self.early_stop == 0:
-                            log_msg = f'\n IMPROVEMENT ON {phase} e{epoch} !\n'
-                            log_msg += '\t captioning metrics:'
-                            for k, (e, v) in self.cap_best_metrics[phase].items():
-                                log_msg += '\t\t{0}: ({1:03d}, {2:.3f}) \n'.format(k, e, v)
-                            for k, (e, v) in self.cap_best_metrics[phase].items():
-                                log_msg += '\t\t{0}: ({1:03d}, {2:.3f}) \n'.format(k, e, v)
+                            log_msg = f'\n IMPROVEMENT ON {phase} e{epoch} !'
+                            
+                            log_msg += '\n\t Programmer metrics: \n\t\t'
+                            '\t'.join([f'{k}: ({e:03d}, {v:.3f})' for k, (e, v) in self.best_metrics['programmer'][phase].items()])
+                            
+                            log_msg += '\n\t Captioning metrics: \n\t\t'
+                            '\t'.join([f'{k}: ({e:03d}, {v:.3f})' for k, (e, v) in self.best_metrics['captioning'][phase].items()])
+                            
+                            log_msg += '\n\t DenseCaptioning metrics: \n\t\t'
+                            '\t'.join([f'{k}: ({e:03d}, {v:.3f})' for k, (e, v) in self.best_metrics['densecap'][phase].items()])
+
                             print(log_msg, '\n')
                             self.logger.info(log_msg)
 
@@ -593,11 +592,11 @@ class DenseVideo2TextTrainer(Trainer):
                     # cap_metrics_results = parallel_pool.apply_async(evaluate_from_tokens, [self.caps_vocab, all_captions, all_caps_ids, self.ref_captions[phase]])
                     # densecap_metrics_results = parallel_pool.apply_async(densecap_evaluate_from_tokens, [self.caps_vocab, all_intervals, all_captions, all_caps_ids, self.ref_densecaps[phase]])
                     print('evaluating progs...')
-                    # prog_metrics_results = evaluate_from_tokens(self.programs_vocab, all_programs, all_prog_ids, self.ref_programs[phase])
+                    prog_metrics_results, pred_progs = evaluate_from_tokens(self.programs_vocab, all_programs, all_prog_ids, self.ref_programs[phase])
                     print('evaluating captions (basic)...')
-                    # cap_metrics_results = evaluate_from_tokens(self.caps_vocab, all_captions, all_caps_ids, self.ref_captions[phase])
+                    cap_metrics_results, pred_caps = evaluate_from_tokens(self.caps_vocab, all_captions, all_caps_ids, self.ref_captions[phase])
                     print('evaluating captions (dense)...')
-                    densecap_metrics_results = densecap_evaluate_from_tokens(self.caps_vocab, all_prog_ids, all_tstamps, all_intervals, all_captions, self.ref_densecaps[phase])
+                    densecap_metrics_results, pred_intervals = densecap_evaluate_from_tokens(self.caps_vocab, all_prog_ids, all_tstamps, all_intervals, all_captions, self.ref_densecaps[phase])
 
                 time_phases[phase] += time.perf_counter() - time_start_epoch
 
@@ -614,17 +613,20 @@ class DenseVideo2TextTrainer(Trainer):
             # check if the training must be early sopped
             if epoch >= min_num_epochs and self.early_stop >= early_stop_limit * 2:
                 # get async results
-                cap_metrics_results, pred_caps = cap_metrics_results.get()
-                prog_metrics_results, pred_progs = prog_metrics_results.get()
-                densecap_metrics_results, pred_intervals = densecap_metrics_results.get()
+                # cap_metrics_results, pred_caps = cap_metrics_results.get()
+                # prog_metrics_results, pred_progs = prog_metrics_results.get()
+                # densecap_metrics_results, pred_intervals = densecap_metrics_results.get()
 
-                self.__report_results(metrics_results, predicted_sentences, phase, epoch-1, save_checkpoints_dir)
+                self.__process_results(cap_metrics_results, pred_caps, phase, epoch-1, save_checkpoints_dir, 'programmer')
+                self.__process_results(prog_metrics_results, pred_progs, phase, epoch-1, save_checkpoints_dir, 'captioning')
+                self.__process_results(densecap_metrics_results, pred_intervals, phase, epoch-1, save_checkpoints_dir, 'densecap')
+
                 msg = '----early stopped at epoch {} after {} without any improvement-----'.format(epoch, early_stop_limit)
                 self.logger.debug(msg)
                 print(msg)
                 break
 
-            self.writer.add_scalar('data/end2end/learning-rate', self.optimizer.param_groups[0]['lr'], epoch)
+            self.writer.add_scalar('end2end/learning-rate', self.optimizer.param_groups[0]['lr'], epoch)
             self.lr_scheduler.step()
 
         # close h5 files
@@ -698,8 +700,8 @@ if __name__ == '__main__':
     print('Training.........')
 #    try:
     best_results = trainer.train_model(resume=False,
-                                           checkpoint_path='',
-                                           early_stop_limit=10)
+                                       checkpoint_path='',
+                                       early_stop_limit=trainer_config.early_stop_limit)
     print('Best results in the test set: {}'.format(str(best_results)))
 #    except Exception as e:
 #        print(f'An error occurred during training/validation process: {e}')

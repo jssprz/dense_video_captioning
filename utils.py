@@ -25,17 +25,18 @@ def decode_from_tokens(vocab, tokens):
   return ' '.join(words)
 
 
-def get_sentences(vocab, outputs, idxs):
+def get_sentences(vocab, outputs, gt_idxs):
     pred_sentences = {}
-    for batch_outs, batch_idxs in zip(outputs, idxs):
+    for batch_outs, batch_gt_idxs in zip(outputs, gt_idxs):
       if torch.is_tensor(batch_outs):
-        for pred_tokens, idx in zip(batch_outs, batch_idxs):
-          print('tensor case', pred_tokens.size())
-          pred_sentences[idx.item()] = [decode_from_tokens(vocab, pred_tokens)]
+        for pred_tokens, gt_idx in zip(batch_outs, batch_gt_idxs):
+          # print('tensor case', pred_tokens.size())
+          pred_sentences[gt_idx.item()] = [decode_from_tokens(vocab, pred_tokens)]
       elif type(batch_outs) is tuple:
-        for v_output, v_caps_count, v_cidxs in zip(batch_outs[0], batch_outs[1], batch_idxs):
-          for pred_tokens, cidx in zip(v_output[:v_caps_count], v_cidxs[:v_caps_count]):
-            print('tuple case', pred_tokens.size())
+        for v_output, v_caps_count, v_gt_caps_count, v_cidxs in zip(batch_outs[0], batch_outs[1], batch_outs[2], batch_gt_idxs):
+          count = min(v_caps_count, v_gt_caps_count)
+          for pred_tokens, cidx in zip(v_output[:count], v_cidxs[:count]):
+            # print('tuple case', pred_tokens.size())
             pred_sentences[cidx.item()] = [decode_from_tokens(vocab, pred_tokens)]
       else:
         raise TypeError(f'wrong type {type(batch_outs)} for batch outputs')
@@ -49,26 +50,43 @@ def get_scores(pred_sentences, ground_truth):
   return scores            
 
 
-def evaluate_from_tokens(vocab, outputs, idxs, ground_truth):
-  pred_sentences = get_sentences(vocab, outputs, idxs)
+def evaluate_from_tokens(vocab, outputs, gt_idxs, ground_truth):
+  pred_sentences = get_sentences(vocab, outputs, gt_idxs)
+  
+  # sanity
+  for idx in ground_truth.keys():
+    if idx not in pred_sentences:
+      pred_sentences[idx] = ['']
+  
   metrics_results = get_scores(pred_sentences, ground_truth)
-  return metrics_results, predicted_sentences
+  return metrics_results, pred_sentences
 
 
 def densecap_evaluate_from_tokens(vocab, vidxs, tstamps, pred_intervals, pred_caps, ground_truth_dict):
   prediction = {}
   for batch_pred_intervals, batch_pred_caps, batch_vidxs, batch_tstamps in zip(pred_intervals, pred_caps, vidxs, tstamps):
     for v_intervals, v_caps, v_caps_count, vidx, v_tstamps in zip(batch_pred_intervals, batch_pred_caps[0], batch_pred_caps[1], batch_vidxs, batch_tstamps):
-      prediction[vidx] = {'timestamps': [(v_tstamps[i], v_tstamps[j]) for i,j in v_intervals],
-                          'sentences': [decode_from_tokens(vocab, pred_tokens) for pred_tokens in v_caps]}
+      # if v_caps_count > 0:
+      # prediction[str(vidx.item())] = [{'sentence': 'hola a todos', 'timestamp': [0., 1.]}, {'sentence': 'hello world', 'timestamp': [1., 2.]}]
+      
+      prediction[str(vidx.item())] = [{
+                                        'sentence': decode_from_tokens(vocab, pred_tokens), 
+                                        'timestamp': [v_tstamps[int(i[0])], v_tstamps[int(i[1])]]
+                                      }
+                                      for i, pred_tokens in zip(v_intervals[:v_caps_count], v_caps[:v_caps_count])]
+      
+      # prediction[vidx] =  {'timestamps': [(v_tstamps[i[0]], v_tstamps[i[1]]) for i in v_intervals[:v_caps_count]],
+      #                     'sentences': [decode_from_tokens(vocab, pred_tokens) for pred_tokens in v_caps[:v_caps_count]]}
+
+  # print(prediction)
 
   scores = densecap_score(args={'tiou': [0.3, 0.5, 0.7, 0.9], 
                                 'max_proposals_per_video': 1000, 
                                 'verbose': True}, 
                           ref=ground_truth_dict, hypo=prediction)
-  weights = {'Bleu_1':0., 'Bleu_2': 0.0, 'Bleu_3': 0.0, 'Bleu_4': 1.4, 'CIDEr': 1.17, 'METEOR': 2., 'ROUGE_L':1.}
-  scores['All_Metrics'] = sum([scores[k] * weights[k] for k in scores.keys()])
-  return scores
+  weights = {'Bleu_1':0., 'Bleu_2': 0.0, 'Bleu_3': 0.0, 'Bleu_4': 1.4, 'CIDEr': 1.17, 'METEOR': 2., 'ROUGE_L':1., 'Recall': 1., 'Precision': 1.}
+  scores['All_Metrics'] = sum([scores[k] * weights[k] for k in scores.keys() if k in weights])
+  return scores, prediction
 
 
 def evaluate_from_sentences(pred_sentences, ground_truth):
