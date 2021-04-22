@@ -698,14 +698,14 @@ if __name__ == '__main__':
     trainer = DenseVideo2TextTrainer(trainer_config, dense_captioner_config, modules_config, args.dataset_folder, args.output_folder)
 
     print('Training.........')
-#    try:
+    # try:
     best_results = trainer.train_model(resume=False,
                                        checkpoint_path='',
                                        early_stop_limit=trainer_config.early_stop_limit)
     print('Best results in the test set: {}'.format(str(best_results)))
-#    except Exception as e:
-#        print(f'An error occurred during training/validation process: {e}')
-#        trainer.h5_train.close()
-#        trainer.h5_val.close()
+    # except Exception as e:
+    #     print(f'An error occurred during training/validation process: {e}')
+    #     trainer.h5_train.close()
+    #     trainer.h5_val.close()
 
     print('--- END ---')

@@ -10,21 +10,27 @@ class SentenceLengthLoss(nn.Module):
         self.reduction= reduction
         self.crit = nn.NLLLoss(reduction='sum')
 
-    def forward(self, logits, targets, lens, rewards=None):
-        if rewards is None:
+    def forward(self, logits, targets, lens=None, rewards=None):
+        if (lens is None) and (rewards is None):
+            log_probs = torch.log_softmax(logits, dim=1)
+            loss = self.crit(log_probs, targets)
+            if self.reduction=='mean':
+                return loss / logits.size(0)
+        elif rewards is None:
             mask = torch.cat([l.repeat(l) for l in lens], dim=0).unsqueeze(1).to(logits.device)
             wighted_log_probs = torch.reciprocal(mask ** self.beta) * torch.log_softmax(logits, dim=1)
             loss = self.crit(wighted_log_probs, targets)
+            if self.reduction=='mean':
+                return loss / lens.size(0)
         else:
             mask1 = torch.cat([l.repeat(self.max_words) for l in lens], dim=0).unsqueeze(1)
             mask2 = torch.cat([r.repeat(self.max_words) for r in rewards], dim=0).unsqueeze(1)
             wighted_log_probs = torch.reciprocal((mask1 * mask2) ** self.beta) * torch.log_softmax(logits, dim=1)
             loss = self.crit(wighted_log_probs, targets)
+            if self.reduction=='mean':
+                return loss / lens.size(0)
 
-        if self.reduction=='mean':
-            return loss / lens.size(0)
-        elif self.reduction=='sum':
-            return loss
+        return loss  # self.reduction=='sum'
 
 
 class IoULoss(nn.Module):
@@ -87,10 +93,10 @@ class DenseCaptioningLoss(nn.Module):
         # if mmloss == 'MSE':
         #     self.multimodal_loss = nn.MSELoss(reduction=config.mmloss_reduction)
 
-        if config.learn_scores:
-            self.scores = nn.Parameter(torch.Tensor(config.combination_scores))
+        if config.learn_comb_weights:
+            self.comb_weights = nn.Parameter(torch.Tensor(config.comb_weights))
         else:
-            self.scores = torch.tensor(config.combination_scores)
+            self.comb_weights = torch.tensor(config.comb_weights)
 
     def forward(self, gt_captions, gt_cap_lens, pred_captions, gt_program, gt_prog_len, pred_program, 
                 gt_intervals, pred_intervals, gt_caps_count, pred_caps_count, mm_v_encs=None, mm_t_encs=None):
@@ -131,13 +137,22 @@ class DenseCaptioningLoss(nn.Module):
         gt_program = torch.cat([gt_program[j, :gt_prog_len[j]] for j in range(bs)], dim=0)
 
         # Compute All Loss Functions
-        cap_loss = self.captioning_loss(pred_captions, gt_captions, gt_cap_lens)
-        prog_loss = self.programer_loss(pred_program, gt_program, gt_prog_len)
+        
+        # captioning loss
+        # cap_loss = self.captioning_loss(pred_captions, gt_captions, gt_cap_lens)  # length-weighted
+        cap_loss = self.captioning_loss(pred_captions, gt_captions)  # CELoss
+
+        # programmer loss
+        # prog_loss = self.programer_loss(pred_program, gt_program, gt_prog_len)  # length-weighted
+        prog_loss = self.programer_loss(pred_program, gt_program)  # CELoss
+        
+        # tIoU loss of intervals
         iou_loss = self.intervals_loss(pred_intervals, gt_intervals)
+        
         # mm_loss = self.multimodal_loss(mm_v_encs, mm_t_encs)
 
         # combine and return losses
-        losses = torch.tensor([cap_loss, prog_loss, iou_loss], requires_grad=True)
-        loss = torch.sum(self.scores * losses)
+        losses = torch.tensor([cap_loss, prog_loss, iou_loss])
+        loss = torch.sum(self.comb_weights * losses)
 
         return loss, cap_loss, prog_loss, iou_loss
