@@ -44,20 +44,20 @@ class IoULoss(nn.Module):
         max_min = torch.max(torch.stack([pred_intervals[:,0], gt_intervals[:,0]]), dim=0)[0]
         min_max = torch.min(torch.stack([pred_intervals[:,1], gt_intervals[:,1]]), dim=0)[0]
         intersection = (min_max - max_min).clamp(min=0)
-        print('intersec:', intersection)
+        # print('intersec:', intersection)
 
         # compute union
         min_min = torch.min(torch.stack([pred_intervals[:,0], gt_intervals[:,0]]), dim=0)[0]
         max_max = torch.max(torch.stack([pred_intervals[:,1], gt_intervals[:,1]]), dim=0)[0]
         union = max_max - min_min
-        print('union:', union)
+        # print('union:', union)
 
         # compute IoU
         loss = torch.sum(torch.reciprocal(union) * intersection)
 
         if self.reduction=='mean':
             return 1 -  loss / pred_intervals.size(0)
-        elif self.reduction=='sum': 
+        elif self.reduction=='sum':
             return pred_intervals.size(0) - loss
 
 
@@ -98,13 +98,13 @@ class DenseCaptioningLoss(nn.Module):
         else:
             self.comb_weights = torch.tensor(config.comb_weights)
 
-    def forward(self, gt_captions, gt_cap_lens, pred_captions, gt_program, gt_prog_len, pred_program, 
+    def forward(self, gt_captions, gt_cap_lens, pred_captions, gt_program, gt_prog_len, pred_program,
                 gt_intervals, pred_intervals, gt_caps_count, pred_caps_count, mm_v_encs=None, mm_t_encs=None):
 
         bs, _, _, caps_vocab_size = pred_captions.size()
         progs_vocab_size = pred_captions.size(2)
 
-        print(pred_captions.requires_grad, pred_intervals.requires_grad)
+        # print(pred_captions.requires_grad, pred_intervals.requires_grad)
 
         #TODO: compute gt strighten in the Dataset for removing it from here
 
@@ -137,7 +137,7 @@ class DenseCaptioningLoss(nn.Module):
         gt_program = torch.cat([gt_program[j, :gt_prog_len[j]] for j in range(bs)], dim=0)
 
         # Compute All Loss Functions
-        
+
         # captioning loss
         # cap_loss = self.captioning_loss(pred_captions, gt_captions, gt_cap_lens)  # length-weighted
         cap_loss = self.captioning_loss(pred_captions, gt_captions)  # CELoss
@@ -145,14 +145,16 @@ class DenseCaptioningLoss(nn.Module):
         # programmer loss
         # prog_loss = self.programer_loss(pred_program, gt_program, gt_prog_len)  # length-weighted
         prog_loss = self.programer_loss(pred_program, gt_program)  # CELoss
-        
+
         # tIoU loss of intervals
         iou_loss = self.intervals_loss(pred_intervals, gt_intervals)
-        
+
         # mm_loss = self.multimodal_loss(mm_v_encs, mm_t_encs)
 
         # combine and return losses
-        losses = torch.tensor([cap_loss, prog_loss, iou_loss])
-        loss = torch.sum(self.comb_weights * losses)
+        # print(cap_loss.requires_grad, prog_loss.requires_grad, iou_loss.requires_grad)
+        # losses = torch.tensor([cap_loss, prog_loss])
+        # loss = torch.sum(self.comb_weights * losses)
+        loss = cap_loss + prog_loss
 
         return loss, cap_loss, prog_loss, iou_loss

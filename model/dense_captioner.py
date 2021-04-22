@@ -218,7 +218,7 @@ class VNCLCell(nn.Module):
             v2_o = self.__dropout(v2, keep_prob, 'v2')
             v2_c = self.__dropout(v2, keep_prob, 'v2')
 
-        temp1_i = ((v1 @ self.V_i_1) * (v2 @ self.V_i_2)) @ self.C_i_1 
+        temp1_i = ((v1 @ self.V_i_1) * (v2 @ self.V_i_2)) @ self.C_i_1
         temp1_f = ((v1 @ self.V_f_1) * (v2 @ self.V_f_2)) @ self.C_f_1
         temp1_o = ((v1 @ self.V_o_1) * (v2 @ self.V_o_2)) @ self.C_o_1
         temp1_c = ((v1 @ self.V_c_1) * (v2 @ self.V_c_2)) @ self.C_c_1
@@ -251,12 +251,12 @@ class VNCLCell(nn.Module):
         new_c = f * prev_c + i * c
         new_h = o * torch.tanh(prev_c)
 
-        return new_h, new_c 
+        return new_h, new_c
 
 
 class DenseCaptioner(nn.Module):
     def __init__(self, config, sem_tagger_config, syn_embedd_config, avscn_dec_config,
-                 semsynan_dec_config, mm_config, vncl_cell_config, progs_vocab, 
+                 semsynan_dec_config, mm_config, vncl_cell_config, progs_vocab,
                  caps_vocab, pretrained_we, device):
         super(DenseCaptioner, self).__init__()
 
@@ -269,13 +269,13 @@ class DenseCaptioner(nn.Module):
         self.progs_vocab_size = len(progs_vocab)
         self.caps_vocab_size = len(caps_vocab)
 
-        self.mm_enc = MultiModal(v_enc_config=mm_config.v_enc_config, 
+        self.mm_enc = MultiModal(v_enc_config=mm_config.v_enc_config,
                                  t_enc_config=mm_config.t_enc_config,
                                  out_size=mm_config.out_size,
                                  vocab_size=self.caps_vocab_size)
 
         self.rnn_cell = VNCLCell(x_size=self.progs_vocab_size,
-                                 v_size=config.cnn_feats_size+config.c3d_feats_size, 
+                                 v_size=config.cnn_feats_size+config.c3d_feats_size,
                                  mm_size=mm_config.out_size,
                                  vh_size=vncl_cell_config.vh_size,
                                  h1_size=vncl_cell_config.h1_size,
@@ -285,7 +285,7 @@ class DenseCaptioner(nn.Module):
         self.fc = nn.Linear(in_features=config.h_size, out_features=self.progs_vocab_size)
 
         self.clip_captioner = Ensemble(v_size=config.cnn_feats_size+config.c3d_feats_size,
-                                       sem_tagger_config=sem_tagger_config, 
+                                       sem_tagger_config=sem_tagger_config,
                                        syn_embedd_config=syn_embedd_config,
                                        avscn_dec_config=avscn_dec_config,
                                        semsynan_dec_config=semsynan_dec_config,
@@ -434,11 +434,12 @@ class DenseCaptioner(nn.Module):
                 match = self.mm_enc(clip_feats, clip_global, cap, cap_len, cap_bow)
 
                 # save captions in the list of each video that was described in this step
+                self.prev_match = torch.clone(self.prev_match)
                 for i, c, c_logits, m in zip(vidx_to_describe, cap, cap_logits, match):
                     captions[i, caps_count[i], :] = c
                     caps_logits[i, caps_count[i], :, :] = c_logits
                     caps_count[i] += 1
-                    self.prev_match[i] = m
+                    self.prev_match[i, :] = m
 
                 # reset rnn_cel weights, precomputing weights related to the prev_match only
                 self.rnn_cell.precompute_dots_4_m(self.prev_match, var_drop_p=.1)
