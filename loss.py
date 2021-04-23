@@ -9,7 +9,7 @@ class SentenceLengthLoss(nn.Module):
         self.beta = beta
         self.reduction= reduction
         if class_weights is not None:
-            self.crit = nn.NLLLoss(weight=torch.tensor(class_weights), reduction='sum')
+            self.crit = nn.NLLLoss(weight=class_weights, reduction='sum')
         else:
             self.crit = nn.NLLLoss(reduction='sum')
 
@@ -65,7 +65,7 @@ class IoULoss(nn.Module):
 
 
 class DenseCaptioningLoss(nn.Module):
-    def __init__(self, config, c_max_len, p_max_len):
+    def __init__(self, config, c_max_len, p_max_len, device):
         super(DenseCaptioningLoss, self).__init__()
 
         # captioning_loss function
@@ -86,9 +86,11 @@ class DenseCaptioningLoss(nn.Module):
         elif config.programer_loss == 'NLL':
             self.programer_loss = nn.NLLLoss(reduction=config.programer_loss_reduction)
         elif config.programer_loss == 'SentLen':
-            self.programer_loss = SentenceLengthLoss(p_max_len, class_weights=config.programer_loss_weights, beta=config.programer_loss_b, reduction=config.programer_loss_reduction)
+            class_weights = torch.tensor(config.programer_loss_weights).to(device)
+            self.programer_loss = SentenceLengthLoss(p_max_len, class_weights=class_weights, beta=config.programer_loss_b, reduction=config.programer_loss_reduction)
         elif config.programer_loss == 'XEnt':
-            self.programer_loss = nn.CrossEntropyLoss(weight=config.programer_loss_weights, reduction=config.programer_loss_reduction)
+            class_weights = torch.tensor(config.programer_loss_weights).to(device)
+            self.programer_loss = nn.CrossEntropyLoss(weight=class_weights, reduction=config.programer_loss_reduction)
         else:
             raise ValueError(f'wrong value \'{config.programer_loss}\' for the programer_loss option in Loss configuration')
 

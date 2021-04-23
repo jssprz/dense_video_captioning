@@ -175,7 +175,8 @@ class DenseVideo2TextTrainer(Trainer):
         # Loss function
         self.criterion = DenseCaptioningLoss(config=trainer_config.criterion_config,
                                              c_max_len=self.max_words,
-                                             p_max_len=self.max_prog)
+                                             p_max_len=self.max_prog,
+                                             device=self.device)
 
         print('\n****We are ready to start the training process****\n')
 
