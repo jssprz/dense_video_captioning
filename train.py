@@ -77,10 +77,11 @@ class Trainer:
 
 
 class DenseVideo2TextTrainer(Trainer):
-    def __init__(self, trainer_config, dense_captioner_config, modules_config, dataset_folder, result_folder):
+    def __init__(self, trainer_config, dense_captioner_config, modules_config, dataset_folder, out_folder):
         super(DenseVideo2TextTrainer, self).__init__(trainer_config, dense_captioner_config, modules_config)
 
         self.dataset_folder = dataset_folder
+        self.out_folder = out_folder
 
         # max_frames = 20 #20 30
         # # self.max_words = 30
@@ -495,7 +496,7 @@ class DenseVideo2TextTrainer(Trainer):
                     self.early_stop = 0
                     with open(os.path.join(save_checkpoints_dir, f'chkpt_{epoch}_{component}_output.json'), 'w') as f:
                         json.dump(prediction, f)
-                if component=='densecap' and name == 'METEOR' and phase == 'valid':
+                if component=='densecap' and name == 'METEOR' and phase == 'val_1':
                     torch.save(obj={'epoch': epoch,
                                     'dense_captioner': self.dense_captioner.state_dict(),
                                     'optimizer': self.optimizer.state_dict(),
@@ -512,7 +513,7 @@ class DenseVideo2TextTrainer(Trainer):
         # self.logger.info('Training captioning model on [{}] dataset with [{}] encoder and [{}] decoder'
         #                  .format(self.config.dataset_name, self.encoder_name, self.decoder_name))
 
-        save_checkpoints_dir = os.path.join('./models', self.trainer_config.str, self.datetime_str)
+        save_checkpoints_dir = os.path.join(self.out_folder, 'models', self.trainer_config.str, self.datetime_str)
         if not os.path.exists(save_checkpoints_dir):
             os.makedirs(save_checkpoints_dir)
 
@@ -631,16 +632,16 @@ class DenseVideo2TextTrainer(Trainer):
 
                         # report results if any improvement occurs
                         if self.early_stop == 0:
-                            log_msg = f'\n IMPROVEMENT ON {phase} e{epoch} !'
+                            log_msg = f'\n IMPROVEMENT ON {phase} at epoch {epoch} !'
                             
                             log_msg += '\n\t Programmer metrics: \n\t\t'
-                            '\t'.join([f'{k}: ({e:03d}, {v:.3f})' for k, (e, v) in self.best_metrics['programmer'][phase].items()])
+                            log_msg += '\t'.join([f'{k}: ({e:03d}, {v:.3f})' for k, (e, v) in self.best_metrics['programmer'][phase].items()])
                             
                             log_msg += '\n\t Captioning metrics: \n\t\t'
-                            '\t'.join([f'{k}: ({e:03d}, {v:.3f})' for k, (e, v) in self.best_metrics['captioning'][phase].items()])
+                            log_msg += '\t'.join([f'{k}: ({e:03d}, {v:.3f})' for k, (e, v) in self.best_metrics['captioning'][phase].items()])
                             
                             log_msg += '\n\t DenseCaptioning metrics: \n\t\t'
-                            '\t'.join([f'{k}: ({e:03d}, {v:.3f})' for k, (e, v) in self.best_metrics['densecap'][phase].items()])
+                            log_msg += '\t'.join([f'{k}: ({e:03d}, {v:.3f})' for k, (e, v) in self.best_metrics['densecap'][phase].items()])
 
                             print(log_msg, '\n')
                             self.logger.info(log_msg)
