@@ -525,8 +525,8 @@ class DenseVideo2TextTrainer(Trainer):
             begin_epoch = 0
             self.best_metrics = {'programmer': {}, 'captioning': {}, 'densecap': {}}
             for p in ['val_1']:
-                self.best_metrics['programmer'][p] = {'Bleu_1': (0, 0), 'Bleu_2': (0, 0), 'Bleu_3': (0, 0), 'Bleu_4': (0, 0),
-                                             'METEOR': (0, 0), 'ROUGE_L': (0, 0), 'CIDEr': (0, 0), 'SPICE': (0, 0), 'All_Metrics': (0, 0)}
+                # self.best_metrics['programmer'][p] = {'Bleu_1': (0, 0), 'Bleu_2': (0, 0), 'Bleu_3': (0, 0), 'Bleu_4': (0, 0),
+                #                              'METEOR': (0, 0), 'ROUGE_L': (0, 0), 'CIDEr': (0, 0), 'SPICE': (0, 0), 'All_Metrics': (0, 0)}
                 self.best_metrics['captioning'][p] = {'Bleu_1': (0, 0), 'Bleu_2': (0, 0), 'Bleu_3': (0, 0), 'Bleu_4': (0, 0),
                                              'METEOR': (0, 0), 'ROUGE_L': (0, 0), 'CIDEr': (0, 0), 'SPICE': (0, 0), 'All_Metrics': (0, 0)}
                 self.best_metrics['densecap'][p] = {'Bleu_1': (0, 0), 'Bleu_2': (0, 0), 'Bleu_3': (0, 0), 'Bleu_4': (0, 0),
@@ -543,7 +543,7 @@ class DenseVideo2TextTrainer(Trainer):
         # Start training process
         self.early_stop, self.last_saved_epoch = 0, -1
         time_phases = {'train': 0, 'val_1': 0}
-        cap_metrics_results, prog_metrics_results = None, None
+        prog_metrics_results, cap_metrics_results, densecap_metrics_results = None, None, None
         for epoch in range(begin_epoch, 1000):
             time_start_epoch = time.perf_counter()
 
@@ -626,7 +626,7 @@ class DenseVideo2TextTrainer(Trainer):
                         # densecap_metrics_results, pred_intervals = densecap_metrics_results.get()
 
                         # process results, saving the checkpoint if any improvement occurs
-                        self.__process_results(cap_metrics_results, pred_caps, phase, epoch-1, save_checkpoints_dir, 'programmer')
+                        # self.__process_results(cap_metrics_results, pred_caps, phase, epoch-1, save_checkpoints_dir, 'programmer')
                         self.__process_results(prog_metrics_results, pred_progs, phase, epoch-1, save_checkpoints_dir, 'captioning')
                         self.__process_results(densecap_metrics_results, pred_intervals, phase, epoch-1, save_checkpoints_dir, 'densecap')
 
@@ -634,8 +634,8 @@ class DenseVideo2TextTrainer(Trainer):
                         if self.early_stop == 0:
                             log_msg = f'\n IMPROVEMENT ON {phase} at epoch {epoch} !'
                             
-                            log_msg += '\n\t Programmer metrics: \n\t\t'
-                            log_msg += '\t'.join([f'{k}: ({e:03d}, {v:.3f})' for k, (e, v) in self.best_metrics['programmer'][phase].items()])
+                            # log_msg += '\n\t Programmer metrics: \n\t\t'
+                            # log_msg += '\t'.join([f'{k}: ({e:03d}, {v:.3f})' for k, (e, v) in self.best_metrics['programmer'][phase].items()])
                             
                             log_msg += '\n\t Captioning metrics: \n\t\t'
                             log_msg += '\t'.join([f'{k}: ({e:03d}, {v:.3f})' for k, (e, v) in self.best_metrics['captioning'][phase].items()])
@@ -649,8 +649,9 @@ class DenseVideo2TextTrainer(Trainer):
                     # prog_metrics_results = parallel_pool.apply_async(evaluate_from_tokens, [self.programs_vocab, all_programs, all_prog_ids, self.ref_programs[phase], False])
                     # cap_metrics_results = parallel_pool.apply_async(evaluate_from_tokens, [self.caps_vocab, all_captions, all_caps_ids, self.ref_captions[phase]])
                     # densecap_metrics_results = parallel_pool.apply_async(densecap_evaluate_from_tokens, [self.caps_vocab, all_intervals, all_captions, all_caps_ids, self.ref_densecaps[phase]])
-                    print('evaluating progs...')
-                    prog_metrics_results, pred_progs = evaluate_from_tokens(self.programs_vocab, all_programs, all_prog_ids, self.ref_programs[phase], False)
+                    
+                    # print('evaluating progs...')
+                    # prog_metrics_results, pred_progs = evaluate_from_tokens(self.programs_vocab, all_programs, all_prog_ids, self.ref_programs[phase], False)
                     print('evaluating captions (basic)...')
                     cap_metrics_results, pred_caps = evaluate_from_tokens(self.caps_vocab, all_captions, all_caps_ids, self.ref_captions[phase])
                     print('evaluating captions (dense)...')
@@ -675,8 +676,8 @@ class DenseVideo2TextTrainer(Trainer):
                 # prog_metrics_results, pred_progs = prog_metrics_results.get()
                 # densecap_metrics_results, pred_intervals = densecap_metrics_results.get()
 
-                self.__process_results(cap_metrics_results, pred_caps, phase, epoch-1, save_checkpoints_dir, 'programmer')
-                self.__process_results(prog_metrics_results, pred_progs, phase, epoch-1, save_checkpoints_dir, 'captioning')
+                # self.__process_results(prog_metrics_results, pred_caps, phase, epoch-1, save_checkpoints_dir, 'programmer')
+                self.__process_results(cap_metrics_results, pred_progs, phase, epoch-1, save_checkpoints_dir, 'captioning')
                 self.__process_results(densecap_metrics_results, pred_intervals, phase, epoch-1, save_checkpoints_dir, 'densecap')
 
                 msg = '----early stopped at epoch {} after {} without any improvement-----'.format(epoch, early_stop_limit)
