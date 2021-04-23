@@ -71,4 +71,4 @@ class Ensemble(nn.Module):
             logits += ls
         logits /= len(self.decoders)
 
-        return logits
+        return logits, encoding[2]

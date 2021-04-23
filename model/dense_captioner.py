@@ -320,10 +320,10 @@ class DenseCaptioner(nn.Module):
         self.h, self.c = self.rnn_cell(self.h, self.c, self.a_logits, self.prev_match, self.v_p_q_pool, v_q_w_pool, var_drop_p=.1)
         self.a_logits = self.fc(self.h)
 
-    def forward(self, video_features, feats_count, teacher_forcing_p=.5, gt_program=None, gt_captions=None, gt_intervals=None):
+    def forward(self, video_features, feats_count, prog_len=100, teacher_forcing_p=.5, gt_program=None, gt_captions=None, gt_sem_enc=None, gt_intervals=None):
         # initialize
         program, bs, device = [], video_features[0].size(0), video_features[0].device
-        program, captions, intervals = torch.zeros_like(gt_program), torch.zeros_like(gt_captions), torch.zeros_like(gt_intervals, dtype=torch.float)
+        program, captions, caps_sem_enc, intervals = torch.zeros_like(gt_program), torch.zeros_like(gt_captions), torch.zeros_like(gt_sem_enc), torch.zeros_like(gt_intervals, dtype=torch.float)
         prog_logits = torch.zeros(program.size(0), program.size(1), self.progs_vocab_size).to(device)
         caps_logits = torch.zeros(captions.size(0), captions.size(1), captions.size(2), self.caps_vocab_size).to(device)
         caps_count = torch.zeros(bs, dtype=torch.int8)
@@ -333,8 +333,13 @@ class DenseCaptioner(nn.Module):
         # precomputing weights related to the prev_match only
         self.rnn_cell.precompute_dots_4_m(self.prev_match, var_drop_p=.1)
 
-        seq_pos, max_len = 0, gt_program.size(1)
-        while seq_pos < max_len:
+        # condition for finishing the process, according if we are training or testing
+        condition = lambda i: i < prog_len
+        if not self.training:
+            condition = lambda i: torch.all(self.p == video_features[0].size(1) - 1)
+        
+        seq_pos = 0
+        while condition(seq_pos):
             use_teacher_forcing = True if random.random() < teacher_forcing_p or seq_pos == 0 else False
             self.__step__(seq_pos, video_features)
 
@@ -366,14 +371,14 @@ class DenseCaptioner(nn.Module):
             # updates the p and q positions for each video, and save sub-batch of video clips to be described
             intervals_to_describe, vidx_to_describe = [], []
             for i, a in enumerate(a_id):
-                if a == 2:
+                if a == 0:
                     # skip
                     self.p[i] += 1
                     self.q[i] = self.p[i] + 1
-                elif a == 3:
+                elif a == 1:
                     # enqueue
                     self.q[i] += 1
-                elif a == 4 and caps_count[i] < intervals.size(1):
+                elif a == 2 and caps_count[i] < intervals.size(1):
                     # generate, save interval to describe for constructiong a captioning sub-batch
                     vidx_to_describe.append(i)
                     intervals[i, caps_count[i], :] = torch.tensor([self.p[i], self.q[i]])
@@ -391,7 +396,7 @@ class DenseCaptioner(nn.Module):
                 gt = torch.stack([gt_captions[i][min(gt_captions.size(1)-1, caps_count[i])] for i in vidx_to_describe])
 
                 # generate captions
-                cap_logits = self.clip_captioner(clip_feats, clip_global, teacher_forcing_p, gt)
+                cap_logits, cap_sem_enc = self.clip_captioner(clip_feats, clip_global, teacher_forcing_p, gt)
 
                 if self.training:
                     use_teacher_forcing = True if random.random() < teacher_forcing_p or seq_pos == 0 else False
@@ -435,9 +440,10 @@ class DenseCaptioner(nn.Module):
 
                 # save captions in the list of each video that was described in this step
                 self.prev_match = torch.clone(self.prev_match)
-                for i, c, c_logits, m in zip(vidx_to_describe, cap, cap_logits, match):
+                for i, c, c_logits, c_sem_enc, m in zip(vidx_to_describe, cap, cap_logits, cap_sem_enc, match):
                     captions[i, caps_count[i], :] = c
                     caps_logits[i, caps_count[i], :, :] = c_logits
+                    caps_sem_enc[i, caps_count[i], :] = c_sem_enc
                     caps_count[i] += 1
                     self.prev_match[i, :] = m
 
@@ -446,4 +452,4 @@ class DenseCaptioner(nn.Module):
 
             seq_pos += 1
 
-        return prog_logits, program, caps_logits, captions, intervals, caps_count
+        return prog_logits, program, caps_logits, caps_sem_enc, captions, intervals, caps_count

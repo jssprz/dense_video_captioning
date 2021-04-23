@@ -66,28 +66,39 @@ class DenseCaptioningLoss(nn.Module):
         super(DenseCaptioningLoss, self).__init__()
 
         # captioning_loss function
-        if config.closs == 'MSE':
-            self.captioning_loss = nn.MSELoss(reduction=config.closs_reduction)
-        elif config.closs == 'NLL':
-            self.captioning_loss = nn.NLLLoss(reduction=config.closs_reduction)
-        elif config.closs == 'SentLen':
-            self.captioning_loss = SentenceLengthLoss(c_max_len, beta=config.closs_b, reduction=config.closs_reduction)
+        if config.captioning_loss == 'MSE':
+            self.captioning_loss = nn.MSELoss(reduction=config.captioning_loss_reduction)
+        elif config.captioning_loss == 'NLL':
+            self.captioning_loss = nn.NLLLoss(reduction=config.captioning_loss_reduction)
+        elif config.captioning_loss == 'SentLen':
+            self.captioning_loss = SentenceLengthLoss(c_max_len, beta=config.captioning_loss_b, reduction=config.captioning_loss_reduction)
+        elif config.captioning_loss == 'XEnt':
+            self.captioning_loss = nn.CrossEntropyLoss(reduction=config.captioning_loss_reduction)
         else:
-            self.captioning_loss = nn.CrossEntropyLoss(reduction=config.closs_reduction)
+            raise ValueError(f'wrong value \'{config.captioning_loss}\' for the captioning_loss option in Loss configuration')
 
         # programer_loss function
-        if config.ploss == 'MSE':
-            self.programer_loss = nn.MSELoss(reduction=config.ploss_reduction)
-        elif config.ploss == 'NLL':
-            self.programer_loss = nn.NLLLoss(reduction=config.ploss_reduction)
-        elif config.ploss == 'SentLen':
-            self.programer_loss = SentenceLengthLoss(p_max_len, beta=config.ploss_b, reduction=config.ploss_reduction)
+        if config.programer_loss == 'MSE':
+            self.programer_loss = nn.MSELoss(reduction=config.programer_loss_reduction)
+        elif config.programer_loss == 'NLL':
+            self.programer_loss = nn.NLLLoss(reduction=config.programer_loss_reduction)
+        elif config.programer_loss == 'SentLen':
+            self.programer_loss = SentenceLengthLoss(p_max_len, beta=config.programer_loss_b, reduction=config.programer_loss_reduction)
+        elif config.programer_loss == 'XEnt':
+            self.programer_loss = nn.CrossEntropyLoss(reduction=config.programer_loss_reduction)
         else:
-            self.programer_loss = nn.CrossEntropyLoss(reduction=config.ploss_reduction)
+            raise ValueError(f'wrong value \'{config.programer_loss}\' for the programer_loss option in Loss configuration')
+
+        if config.tagging_loss == 'BXEnt':
+            self.tagging_loss = nn.BCELoss(reduction=config.tagging_loss_reduction)
+        else:
+            raise ValueError(f'wrong value \'{config.tagging_loss}\' for the tagging_loss option in Loss configuration')
 
         # intervals_loss function
-        if config.iloss == 'IoU':
-            self.intervals_loss = IoULoss(reduction=config.iloss_reduction)
+        if config.intervals_loss == 'tIoU':
+            self.intervals_loss = IoULoss(reduction=config.intervals_loss_reduction)
+        else:
+            raise ValueError(f'wrong value \'{config.intervals_loss}\' for the intervals_loss option in Loss configuration')
 
         # multimodal_loss function
         # if mmloss == 'MSE':
@@ -98,7 +109,7 @@ class DenseCaptioningLoss(nn.Module):
         else:
             self.comb_weights = torch.tensor(config.comb_weights)
 
-    def forward(self, gt_captions, gt_cap_lens, pred_captions, gt_program, gt_prog_len, pred_program,
+    def forward(self, gt_captions, gt_cap_lens, pred_captions, gt_caps_sem_enc, pred_caps_sem_enc, gt_program, gt_prog_len, pred_program,
                 gt_intervals, pred_intervals, gt_caps_count, pred_caps_count, mm_v_encs=None, mm_t_encs=None):
 
         bs, _, _, caps_vocab_size = pred_captions.size()
@@ -138,13 +149,16 @@ class DenseCaptioningLoss(nn.Module):
 
         # Compute All Loss Functions
 
+        # programmer loss
+        # prog_loss = self.programer_loss(pred_program, gt_program, gt_prog_len)  # length-weighted
+        prog_loss = self.programer_loss(pred_program, gt_program)  # CELoss
+
         # captioning loss
         # cap_loss = self.captioning_loss(pred_captions, gt_captions, gt_cap_lens)  # length-weighted
         cap_loss = self.captioning_loss(pred_captions, gt_captions)  # CELoss
 
-        # programmer loss
-        # prog_loss = self.programer_loss(pred_program, gt_program, gt_prog_len)  # length-weighted
-        prog_loss = self.programer_loss(pred_program, gt_program)  # CELoss
+        # tagging loss
+        sem_enc_loss = self.tagging_loss(pred_caps_sem_enc, gt_caps_sem_enc)  # CELoss
 
         # tIoU loss of intervals
         iou_loss = self.intervals_loss(pred_intervals, gt_intervals)
@@ -157,4 +171,4 @@ class DenseCaptioningLoss(nn.Module):
         # loss = torch.sum(self.comb_weights * losses)
         loss = cap_loss + prog_loss
 
-        return loss, cap_loss, prog_loss, iou_loss
+        return loss, prog_loss, cap_loss, sem_enc_loss, iou_loss

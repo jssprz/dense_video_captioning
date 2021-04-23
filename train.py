@@ -7,6 +7,7 @@ import datetime
 import logging
 import time
 from multiprocessing import Pool
+import heapq
 
 import h5py
 import numpy as np
@@ -105,7 +106,7 @@ class DenseVideo2TextTrainer(Trainer):
         # self.__load_fusion_ground_truth_captions()
 
         # load vocabulary
-        with open(os.path.join(dataset_folder, 'dense_corpus.pkl'), "rb") as f:
+        with open(os.path.join(dataset_folder, 'dense_corpus2.pkl'), "rb") as f:
             self.corpus = pickle.load(f)
             idx2op_dict = self.corpus[4]
             idx2word_dict = self.corpus[6]
@@ -222,9 +223,49 @@ class DenseVideo2TextTrainer(Trainer):
                     else:
                         self.ground_truth[phase][idx] = [sentence]
 
+    def __get_most_freq_words(self, caps, caps_upos, postags=['NOUN', 'ADJ', 'VERB'], other_words_to_discard=['<unk>']):
+        widx2count, uidxs_to_use = {}, [self.upos_vocab(tag) for tag in postags]
+
+        for v_caps, v_caps_upos in zip(caps, caps_upos):
+            for cap, upos in zip(v_caps, v_caps_upos):
+                for widx, uidx in zip(cap, upos):
+                    if uidx in uidxs_to_use:
+                        if widx not in widx2count.keys():
+                            widx2count[widx] = 1
+                        else:
+                            widx2count[widx] += 1
+
+        for w in other_words_to_discard:
+            del widx2count[self.caps_vocab(w)]
+
+        freq_words = heapq.nlargest(self.modules_config['sem_tagger_config'].out_size, widx2count, key=widx2count.get)
+        print('TAGs-IDXs:', freq_words)
+        print('\nTAGs-words:', ' '.join([self.caps_vocab.idx_to_word(idx) for idx in freq_words]))
+        print('\nTAGs-freq:', [widx2count[idx] for idx in freq_words])
+        print('\n total freq of tags: ', sum([widx2count[idx] for idx in freq_words]))
+        print(' mean freq of tags: ', np.mean([widx2count[idx] for idx in freq_words]))
+
+        return freq_words
+
+    def __get_sem_enc(self, freq_words, caps, caps_upos, postags=['NOUN', 'ADJ', 'VERB']):
+        uidxs_to_use = [self.upos_vocab(tag) for tag in postags]
+
+        X = torch.zeros(len(caps), self.max_caps, self.modules_config['sem_tagger_config'].out_size)
+        for i, (v_caps, v_caps_upos) in enumerate(zip(caps, caps_upos)):
+            for j, (cap, upos) in enumerate(zip(v_caps, v_caps_upos)):
+                for widx, uidx in zip(cap, upos):
+                    if uidx in uidxs_to_use and widx in freq_words:
+                        X[i, j, freq_words.index(widx)] = 1
+
+        return X
+
     def __extract_split_data_from_corpus(self, split=0):
         split_data = self.corpus[split]
         vidxs, cidxs, intervals, fps, progs, prog_lens, caps, pos, upos, cap_lens = split_data[0], split_data[1], split_data[2], split_data[3], split_data[4], [len(p) for p in split_data[4]], split_data[5], split_data[6], split_data[7], [[len(c) for c in caps] for caps in split_data[6]]
+
+        return vidxs, cidxs, intervals, fps, progs, prog_lens, caps, pos, upos, cap_lens
+
+    def __data2tensors(self, cidxs, intervals, progs, prog_lens, caps, pos, upos, cap_lens):
         max_prog = max(prog_lens)
         caps_count_t = torch.tensor([len(v_caps) for v_caps in caps], dtype=torch.int8)
         max_caps = torch.max(caps_count_t)
@@ -263,43 +304,55 @@ class DenseVideo2TextTrainer(Trainer):
         for i, v_prog in enumerate(progs):
             progs_t[i, :len(v_prog)] = torch.LongTensor(v_prog)
 
-        return vidxs, cidxs_t, intervals_t, caps_count_t, fps, progs_t, prog_lens, caps_t, pos_t, upos_t, cap_lens_t
+        return cidxs_t, intervals_t, caps_count_t, progs_t, caps_t, pos_t, upos_t, cap_lens_t
 
     def __init_dense_loader(self):
         print('Initializing data loaders...')
 
         # get train split data
         print(' initializing train split data loader...')
-        vidxs, cidxs, intervals_t, caps_count_t, fps, progs_t, prog_lens, caps_t, pos_t, upos_t, cap_lens_t = self.__extract_split_data_from_corpus(split=0)
+        vidxs, cidxs, intervals, fps, progs, prog_lens, caps, pos, upos, cap_lens = self.__extract_split_data_from_corpus(split=0)
+        cidxs_t, intervals_t, caps_count_t, progs_t, caps_t, pos_t, upos_t, cap_lens_t = self.__data2tensors(cidxs, intervals, progs, prog_lens, caps, pos, upos, cap_lens)
         self.max_prog = progs_t.size(1)
         self.max_caps = caps_t.size(1)
         self.max_words = caps_t.size(2)
         self.max_interval = torch.max(intervals_t.view(-1, 2)[:,1]-intervals_t.view(-1, 2)[:,0])
         self.last_interval_end = torch.max(intervals_t.view(-1, 2)[:,1])
 
+        # determine the K most frequent words for semantic encodings from the train split
+        freq_words = self.__get_most_freq_words(caps, upos)
+
+        # determine the ground truth for semantic enconding
+        caps_sem_enc_t = self.__get_sem_enc(freq_words, caps, upos)
+
         # get train loader
         # h5_path = os.path.join(self.dataset_folder, self.trainer_config.features_filename)
         self.h5_train = h5py.File(self.trainer_config.train_h5_file_path, 'r')
         train_dataset = self.h5_train[self.trainer_config.h5_file_group_name]
-        train_loader = get_dense_loader(h5_dataset=train_dataset, vidxs=vidxs, cidxs=cidxs, intervals=intervals_t, caps_count=caps_count_t,
-                                        captions=caps_t, pos=pos_t, upos=upos_t, cap_lens=cap_lens_t, progs=progs_t,
+        train_loader = get_dense_loader(h5_dataset=train_dataset, vidxs=vidxs, cidxs=cidxs_t, intervals=intervals_t, caps_count=caps_count_t,
+                                        captions=caps_t, caps_sem_enc=caps_sem_enc_t, pos=pos_t, upos=upos_t, cap_lens=cap_lens_t, progs=progs_t,
                                         prog_lens=prog_lens, batch_size=self.trainer_config.batch_size, train=True)
 
         # get valid split data
         print(' initializing valid split data loader...')
-        vidxs, cidxs, intervals_t, caps_count_t, fps, progs_t, prog_lens, caps_t, pos_t, upos_t, cap_lens_t = self.__extract_split_data_from_corpus(split=1)
+        vidxs, cidxs, intervals, fps, progs, prog_lens, caps, pos, upos, cap_lens = self.__extract_split_data_from_corpus(split=1)
+        cidxs_t, intervals_t, caps_count_t, progs_t, caps_t, pos_t, upos_t, cap_lens_t = self.__data2tensors(cidxs, intervals, progs, prog_lens, caps, pos, upos, cap_lens)
         # self.max_prog = max(self.max_prog, progs_t.size(1))
         # self.max_caps = max(self.max_caps, caps_t.size(1))
         # self.max_words = max(self.max_words, caps_t.size(2))
         # self.max_interval = max(self.max_interval, torch.max(intervals_t.view(-1, 2)[:,1]-intervals_t.view(-1, 2)[:,0]))
         # self.last_interval_end = max(self.last_interval_end, torch.max(intervals_t.view(-1, 2)[:,1]))
 
+        # determine the ground truth for semantic enconding
+        caps_sem_enc_t = self.__get_sem_enc(freq_words, caps, upos)
+
         # get valid loader
         self.h5_val = h5py.File(self.trainer_config.valid_h5_file_path, 'r')
         val_dataset = self.h5_val[self.trainer_config.h5_file_group_name]
-        val_loader = get_dense_loader(h5_dataset=val_dataset, vidxs=vidxs, cidxs=cidxs, intervals=intervals_t, caps_count=caps_count_t,
-                                      captions=caps_t, pos=pos_t, upos=upos_t, cap_lens=cap_lens_t, progs=progs_t,
+        val_loader = get_dense_loader(h5_dataset=val_dataset, vidxs=vidxs, cidxs=cidxs_t, intervals=intervals_t, caps_count=caps_count_t,
+                                      captions=caps_t, caps_sem_enc=caps_sem_enc_t, pos=pos_t, upos=upos_t, cap_lens=cap_lens_t, progs=progs_t,
                                       prog_lens=prog_lens, batch_size=self.trainer_config.batch_size*2, train=False)
+
 
         print(' Max program len:', self.max_prog)
         print(' Max caption len:', self.max_words)
@@ -316,7 +369,7 @@ class DenseVideo2TextTrainer(Trainer):
                 predicted_sentences[vid] = [self.__decode_from_tokens(predicted_tokens)]
         return predicted_sentences
 
-    def __process_batch(self, video_feats, feats_count, gt_intervals, gt_caps_count, gt_captions, gt_pos, gt_upos, gt_cap_lens, gt_program, gt_prog_len,
+    def __process_batch(self, video_feats, feats_count, gt_intervals, gt_caps_count, gt_captions, gt_caps_sem_enc, gt_pos, gt_upos, gt_cap_lens, gt_program, gt_prog_len,
                         teacher_forcing_ratio=.5, phase='train', use_rl=False):
         bsz = video_feats[0].size(0)
 
@@ -329,6 +382,7 @@ class DenseVideo2TextTrainer(Trainer):
         gt_cap_lens = gt_cap_lens.to(self.device)
         gt_program = gt_program.to(self.device)
         gt_prog_len = gt_prog_len.to(self.device)
+        gt_caps_sem_enc = gt_caps_sem_enc.to(self.device)
 
         # Constructing the mini batch's Variables
         # cnn_feats = Variable(cnn_feats).to(self.device)
@@ -347,7 +401,8 @@ class DenseVideo2TextTrainer(Trainer):
         self.optimizer.zero_grad()
 
         with torch.set_grad_enabled(phase == 'train'):
-            prog_logits, program, caps_logits, captions, intervals, caps_count = self.dense_captioner(video_feats, feats_count, teacher_forcing_ratio, gt_program, gt_captions, gt_intervals)
+            max_prog_len = torch.max(gt_prog_len) if phase=='train' else None
+            prog_logits, program, caps_logits, caps_sem_enc, captions, intervals, caps_count = self.dense_captioner(video_feats, feats_count, max_prog_len, teacher_forcing_ratio, gt_program, gt_captions, gt_caps_sem_enc, gt_intervals)
             # video_encoded = self.encoder(cnn_feats, c3d_feats, i3d_feats, eco_feats, eco_sem_feats, tsm_sem_feats, cnn_globals, cnn_sem_globals, tags_globals, res_eco_globals)
 
             # outputs, tokens = self.decoder(video_encoded, targets if phase == 'train' else None, teacher_forcing_ratio)
@@ -359,7 +414,7 @@ class DenseVideo2TextTrainer(Trainer):
             # targets = torch.cat([targets[j][:target_lens[j]] for j in range(bsz)], dim=0)
 
             # Evaluate the loss function
-            loss, cap_loss, prog_loss, iou_loss = self.criterion(gt_captions, gt_cap_lens, caps_logits, gt_program, gt_prog_len, prog_logits, gt_intervals, intervals, gt_caps_count, caps_count)
+            loss, prog_loss, cap_loss, sem_enc_loss, iou_loss = self.criterion(gt_captions, gt_cap_lens, caps_logits, gt_caps_sem_enc, caps_sem_enc, gt_program, gt_prog_len, prog_logits, gt_intervals, intervals, gt_caps_count, caps_count)
             # print(caps_count)
             # if not use_rl:
             #     if type(self.criterion) is SentenceLengthLoss:
@@ -422,7 +477,7 @@ class DenseVideo2TextTrainer(Trainer):
             loss.backward()
             self.optimizer.step()
 
-        return loss, cap_loss, prog_loss, iou_loss, program, captions, intervals, caps_count
+        return loss, prog_loss, cap_loss, sem_enc_loss, iou_loss, program, captions, intervals, caps_count
 
     def __evaluate(self, predicted_sentences, phase):
         scores = score(self.ground_truth[phase], predicted_sentences)
@@ -505,32 +560,34 @@ class DenseVideo2TextTrainer(Trainer):
                 # predicted_sentences = {}
                 loss_count = 0
                 all_programs, all_captions, all_prog_ids, all_caps_ids, all_intervals, all_tstamps = [], [], [], [], [], []
-                for i, (vidx, cidxs, cnn, c3d, feats_count, tstamps, gt_intervals, gt_caps_count, gt_caps, gt_pos, gt_upos, gt_cap_lens, gt_prog, gt_prog_len) in enumerate(self.loaders[phase], start=1):
+                for i, (vidx, cidxs, cnn, c3d, feats_count, tstamps, gt_intervals, gt_caps_count, gt_caps, gt_caps_sem_enc, gt_pos, gt_upos, gt_cap_lens, gt_prog, gt_prog_len) in enumerate(self.loaders[phase], start=1):
                     video_feats = [cnn, c3d]
                     use_rl = False
-                    loss, cap_loss, prog_loss, iou_loss, program, captions, intervals, caps_count = self.__process_batch(video_feats, feats_count, gt_intervals, gt_caps_count, gt_caps, gt_pos, gt_upos,
-                                                                                                             gt_cap_lens, gt_prog, gt_prog_len, teacher_forcing_ratio, phase, use_rl=use_rl)
+                    loss, prog_loss, cap_loss, sem_enc_loss, iou_loss, program, captions, intervals, caps_count = self.__process_batch(video_feats, feats_count, gt_intervals, gt_caps_count, gt_caps, gt_caps_sem_enc, gt_pos, gt_upos,
+                                                                                                                                       gt_cap_lens, gt_prog, gt_prog_len, teacher_forcing_ratio, phase, use_rl=use_rl)
                     loss_count += loss.item()
 
                     self.writer.add_scalar('end2end/{}-iters-loss'.format(phase), loss, epoch * len(self.loaders[phase]) + i)
-                    self.writer.add_scalar('end2end/{}-iters-cap_loss'.format(phase), cap_loss, epoch * len(self.loaders[phase]) + i)
                     self.writer.add_scalar('end2end/{}-iters-prog_loss'.format(phase), prog_loss, epoch * len(self.loaders[phase]) + i)
+                    self.writer.add_scalar('end2end/{}-iters-cap_loss'.format(phase), cap_loss, epoch * len(self.loaders[phase]) + i)
+                    self.writer.add_scalar('end2end/{}-iters-sem_enc_loss'.format(phase), sem_enc_loss, epoch * len(self.loaders[phase]) + i)
                     self.writer.add_scalar('end2end/{}-iters-iou_loss'.format(phase), iou_loss, epoch * len(self.loaders[phase]) + i)
 
                     lrs = self.lr_scheduler.get_last_lr()
-                    sys.stdout.write('\rEpoch:{0:03d} Phase:{1:6s} Iter:{2:04d}/{3:04d} lr:{4:.6f} Loss:{5:9.4f} [cap-loss:{6:9.4f} prog-loss:{7:9.4f} iou-loss:{8:9.4f}]'.format(epoch, phase, i, 
-                                                                                                                                                                                  len(self.loaders[phase]), 
-                                                                                                                                                                                  lrs[0], loss.item(), 
-                                                                                                                                                                                  cap_loss.item(), 
-                                                                                                                                                                                  prog_loss.item(), 
-                                                                                                                                                                                  iou_loss.item()))
+                    sys.stdout.write('\rEpoch:{0:03d} Phase:{1:6s} Iter:{2:04d}/{3:04d} lr:{4:.6f} Loss:{5:9.4f} [cap-loss:{6:9.4f} prog-loss:{7:9.4f} sem-enc-loss:{8:9.4f} iou-loss:{9:9.4f}]'.format(epoch, phase, i, 
+                                                                                                                                                                                                        len(self.loaders[phase]), 
+                                                                                                                                                                                                        lrs[0], loss.item(), 
+                                                                                                                                                                                                        cap_loss.item(), 
+                                                                                                                                                                                                        prog_loss.item(), 
+                                                                                                                                                                                                        sem_enc_loss.item(),
+                                                                                                                                                                                                        iou_loss.item()))
 
-                    pred, gt = decode_from_tokens(self.programs_vocab, program[0]), decode_from_tokens(self.programs_vocab, gt_prog[0])
-                    print('\nPRED PROG:', pred)
+                    pred, gt = decode_from_tokens(self.programs_vocab, program[0], False), decode_from_tokens(self.programs_vocab, gt_prog[0], False)
+                    # print('\nPRED PROG:', pred)
                     print('\nPRED INTERV:', intervals[0, :gt_caps_count[0]])
-                    print('\nGT PROG:', gt)
+                    # print('\nGT PROG:', gt)
                     print('\nGT INTERV:', gt_intervals[0, :gt_caps_count[0]])
-                    print('\ndiff:', len(pred.split(' ')) - len(gt.split(' ')))
+                    print('\ndiff:', sum([s1!=s2 for s1, s2 in zip(pred.split(' '), gt.split(' '))]))
 
                     if phase != 'train':
                         # save programs and the videos' idx for computing evaluation metrics
@@ -588,11 +645,11 @@ class DenseVideo2TextTrainer(Trainer):
                             print(log_msg, '\n')
                             self.logger.info(log_msg)
 
-                    # prog_metrics_results = parallel_pool.apply_async(evaluate_from_tokens, [self.programs_vocab, all_programs, all_prog_ids, self.ref_programs[phase]])
+                    # prog_metrics_results = parallel_pool.apply_async(evaluate_from_tokens, [self.programs_vocab, all_programs, all_prog_ids, self.ref_programs[phase], False])
                     # cap_metrics_results = parallel_pool.apply_async(evaluate_from_tokens, [self.caps_vocab, all_captions, all_caps_ids, self.ref_captions[phase]])
                     # densecap_metrics_results = parallel_pool.apply_async(densecap_evaluate_from_tokens, [self.caps_vocab, all_intervals, all_captions, all_caps_ids, self.ref_densecaps[phase]])
                     print('evaluating progs...')
-                    prog_metrics_results, pred_progs = evaluate_from_tokens(self.programs_vocab, all_programs, all_prog_ids, self.ref_programs[phase])
+                    prog_metrics_results, pred_progs = evaluate_from_tokens(self.programs_vocab, all_programs, all_prog_ids, self.ref_programs[phase], False)
                     print('evaluating captions (basic)...')
                     cap_metrics_results, pred_caps = evaluate_from_tokens(self.caps_vocab, all_captions, all_caps_ids, self.ref_captions[phase])
                     print('evaluating captions (dense)...')

@@ -37,11 +37,17 @@ class MultiModal(nn.Module):
                                               have_last_bn=t_enc_config.have_last_bn,
                                               pretrained_model_path=t_enc_config.pretrained_model_path)
 
+        # self.v_model = nn.Linear(v_enc_config.global_feat_size, out_size)
+        # self.t_model = nn.Linear(vocab_size, out_size)
+
         self.merge_model = nn.Linear(out_size + out_size, out_size)
 
     def forward(self, v_feats, v_global, cap, cap_len, cap_bow):
         v_enc = self.v_model(v_feats[0], v_feats[1], v_global)
         t_enc = self.t_model(cap, cap_len, cap_bow)
+
+        # v_enc = self.v_model(v_global)
+        # t_enc = self.t_model(cap_bow)
 
         fusion = torch.cat((v_enc, t_enc), dim=1)
 

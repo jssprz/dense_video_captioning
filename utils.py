@@ -16,28 +16,28 @@ def get_freer_gpu():
     return np.argmax(memory_available)
 
 
-def decode_from_tokens(vocab, tokens):
+def decode_from_tokens(vocab, tokens, until_eos=True):
   words = []
   for token in tokens:
-    if token.item() == vocab('<eos>'):
+    if until_eos and token.item() == vocab('<eos>'):
         break
     words.append(vocab.idx_to_word(token.item()))
   return ' '.join(words)
 
 
-def get_sentences(vocab, outputs, gt_idxs):
+def get_sentences(vocab, outputs, gt_idxs, until_eos=True):
     pred_sentences = {}
     for batch_outs, batch_gt_idxs in zip(outputs, gt_idxs):
       if torch.is_tensor(batch_outs):
         for pred_tokens, gt_idx in zip(batch_outs, batch_gt_idxs):
           # print('tensor case', pred_tokens.size())
-          pred_sentences[gt_idx.item()] = [decode_from_tokens(vocab, pred_tokens)]
+          pred_sentences[gt_idx.item()] = [decode_from_tokens(vocab, pred_tokens, until_eos)]
       elif type(batch_outs) is tuple:
         for v_output, v_caps_count, v_gt_caps_count, v_cidxs in zip(batch_outs[0], batch_outs[1], batch_outs[2], batch_gt_idxs):
           count = min(v_caps_count, v_gt_caps_count)
           for pred_tokens, cidx in zip(v_output[:count], v_cidxs[:count]):
             # print('tuple case', pred_tokens.size())
-            pred_sentences[cidx.item()] = [decode_from_tokens(vocab, pred_tokens)]
+            pred_sentences[cidx.item()] = [decode_from_tokens(vocab, pred_tokens, until_eos)]
       else:
         raise TypeError(f'wrong type {type(batch_outs)} for batch outputs')
     return pred_sentences
@@ -50,8 +50,8 @@ def get_scores(pred_sentences, ground_truth):
   return scores            
 
 
-def evaluate_from_tokens(vocab, outputs, gt_idxs, ground_truth):
-  pred_sentences = get_sentences(vocab, outputs, gt_idxs)
+def evaluate_from_tokens(vocab, outputs, gt_idxs, ground_truth, until_eos=True):
+  pred_sentences = get_sentences(vocab, outputs, gt_idxs, until_eos)
   
   # sanity
   for idx in ground_truth.keys():
@@ -66,19 +66,14 @@ def densecap_evaluate_from_tokens(vocab, vidxs, tstamps, pred_intervals, pred_ca
   prediction = {}
   for batch_pred_intervals, batch_pred_caps, batch_vidxs, batch_tstamps in zip(pred_intervals, pred_caps, vidxs, tstamps):
     for v_intervals, v_caps, v_caps_count, vidx, v_tstamps in zip(batch_pred_intervals, batch_pred_caps[0], batch_pred_caps[1], batch_vidxs, batch_tstamps):
-      # if v_caps_count > 0:
       # prediction[str(vidx.item())] = [{'sentence': 'hola a todos', 'timestamp': [0., 1.]}, {'sentence': 'hello world', 'timestamp': [1., 2.]}]
-      
-      prediction[str(vidx.item())] = [{
-                                        'sentence': decode_from_tokens(vocab, pred_tokens), 
-                                        'timestamp': [v_tstamps[int(i[0])], v_tstamps[int(i[1])]]
-                                      }
-                                      for i, pred_tokens in zip(v_intervals[:v_caps_count], v_caps[:v_caps_count])]
-      
-      # prediction[vidx] =  {'timestamps': [(v_tstamps[i[0]], v_tstamps[i[1]]) for i in v_intervals[:v_caps_count]],
-      #                     'sentences': [decode_from_tokens(vocab, pred_tokens) for pred_tokens in v_caps[:v_caps_count]]}
 
-  # print(prediction)
+      if v_caps_count > 0:
+        prediction[str(vidx.item())] = [{
+                                          'sentence': decode_from_tokens(vocab, pred_tokens), 
+                                          'timestamp': [v_tstamps[int(i[0])], v_tstamps[int(i[1])]]
+                                        }
+                                        for i, pred_tokens in zip(v_intervals[:v_caps_count], v_caps[:v_caps_count])]
 
   scores = densecap_score(args={'tiou': [0.3, 0.5, 0.7, 0.9], 
                                 'max_proposals_per_video': 1000, 
@@ -146,7 +141,12 @@ def make_bow_vector(cap, vocab_len, norm=False, eos=0):
 
 
 def get_trainer_str(config):
-  return f'{config.dataset_name} batch-{config.batch_size}.lr-{config.learning_rate}.{config.optimizer_name}.closs-{config.criterion_config.closs}-{config.criterion_config.closs_reduction}.ploss-{config.criterion_config.ploss}-{config.criterion_config.ploss_reduction}.iloss-{config.criterion_config.iloss}-{config.criterion_config.iloss_reduction}'
+  crit_config = config.criterion_config
+  return f'{config.dataset_name} batch-{config.batch_size}.lr-{config.learning_rate}.{config.optimizer_name}'\
+         f'.closs-{crit_config.captioning_loss}-{crit_config.captioning_loss_reduction}'\
+         f'.ploss-{crit_config.programer_loss}-{crit_config.programer_loss_reduction}'\
+         f'.tagloss-{crit_config.tagging_loss}-{crit_config.tagging_loss_reduction}'\
+         f'.iloss-{crit_config.intervals_loss}-{crit_config.intervals_loss_reduction}'
 
 
 def get_sem_tagger_str(config):
