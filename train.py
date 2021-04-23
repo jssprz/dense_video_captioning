@@ -626,8 +626,8 @@ class DenseVideo2TextTrainer(Trainer):
                         # densecap_metrics_results, pred_intervals = densecap_metrics_results.get()
 
                         # process results, saving the checkpoint if any improvement occurs
-                        # self.__process_results(cap_metrics_results, pred_caps, phase, epoch-1, save_checkpoints_dir, 'programmer')
-                        self.__process_results(prog_metrics_results, pred_progs, phase, epoch-1, save_checkpoints_dir, 'captioning')
+                        # self.__process_results(cap_metrics_results, pred_progs, phase, epoch-1, save_checkpoints_dir, 'programmer')
+                        self.__process_results(prog_metrics_results, pred_caps, phase, epoch-1, save_checkpoints_dir, 'captioning')
                         self.__process_results(densecap_metrics_results, pred_intervals, phase, epoch-1, save_checkpoints_dir, 'densecap')
 
                         # report results if any improvement occurs
