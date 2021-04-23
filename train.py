@@ -403,6 +403,7 @@ class DenseVideo2TextTrainer(Trainer):
 
         with torch.set_grad_enabled(phase == 'train'):
             max_prog_len = torch.max(gt_prog_len) if phase=='train' else None
+            print(max_prog_len, gt_prog_len)
             prog_logits, program, caps_logits, caps_sem_enc, captions, intervals, caps_count = self.dense_captioner(video_feats, feats_count, max_prog_len, teacher_forcing_ratio, gt_program, gt_captions, gt_caps_sem_enc, gt_intervals)
             # video_encoded = self.encoder(cnn_feats, c3d_feats, i3d_feats, eco_feats, eco_sem_feats, tsm_sem_feats, cnn_globals, cnn_sem_globals, tags_globals, res_eco_globals)
 
@@ -583,7 +584,8 @@ class DenseVideo2TextTrainer(Trainer):
                                                                                                                                                                                                         sem_enc_loss.item(),
                                                                                                                                                                                                         iou_loss.item()))
 
-                    pred, gt = decode_from_tokens(self.programs_vocab, program[0], False), decode_from_tokens(self.programs_vocab, gt_prog[0], False)
+                    pred = decode_from_tokens(self.programs_vocab, program[0], until_eos=False, max_length=gt_prog_len[0])
+                    gt = decode_from_tokens(self.programs_vocab, gt_prog[0], until_eos=False, max_length=gt_prog_len[0])
                     # print('\nPRED PROG:', pred)
                     print('\nPRED INTERV:', intervals[0, :gt_caps_count[0]])
                     # print('\nGT PROG:', gt)
@@ -619,43 +621,43 @@ class DenseVideo2TextTrainer(Trainer):
                     self.early_stop += 1
                     # predicted_sentences = pool.apply_async(self.__get_sentences, [all_outputs, all_video_ids])
 
-                    if cap_metrics_results is not None:
+                    #if cap_metrics_results is not None:
                         # get async results
                         # cap_metrics_results, pred_caps = cap_metrics_results.get()
                         # prog_metrics_results, pred_progs = prog_metrics_results.get()
                         # densecap_metrics_results, pred_intervals = densecap_metrics_results.get()
 
-                        # process results, saving the checkpoint if any improvement occurs
-                        # self.__process_results(cap_metrics_results, pred_progs, phase, epoch-1, save_checkpoints_dir, 'programmer')
-                        self.__process_results(prog_metrics_results, pred_caps, phase, epoch-1, save_checkpoints_dir, 'captioning')
-                        self.__process_results(densecap_metrics_results, pred_intervals, phase, epoch-1, save_checkpoints_dir, 'densecap')
-
-                        # report results if any improvement occurs
-                        if self.early_stop == 0:
-                            log_msg = f'\n IMPROVEMENT ON {phase} at epoch {epoch} !'
-                            
-                            # log_msg += '\n\t Programmer metrics: \n\t\t'
-                            # log_msg += '\t'.join([f'{k}: ({e:03d}, {v:.3f})' for k, (e, v) in self.best_metrics['programmer'][phase].items()])
-                            
-                            log_msg += '\n\t Captioning metrics: \n\t\t'
-                            log_msg += '\t'.join([f'{k}: ({e:03d}, {v:.3f})' for k, (e, v) in self.best_metrics['captioning'][phase].items()])
-                            
-                            log_msg += '\n\t DenseCaptioning metrics: \n\t\t'
-                            log_msg += '\t'.join([f'{k}: ({e:03d}, {v:.3f})' for k, (e, v) in self.best_metrics['densecap'][phase].items()])
-
-                            print(log_msg, '\n')
-                            self.logger.info(log_msg)
-
-                    # prog_metrics_results = parallel_pool.apply_async(evaluate_from_tokens, [self.programs_vocab, all_programs, all_prog_ids, self.ref_programs[phase], False])
-                    # cap_metrics_results = parallel_pool.apply_async(evaluate_from_tokens, [self.caps_vocab, all_captions, all_caps_ids, self.ref_captions[phase]])
-                    # densecap_metrics_results = parallel_pool.apply_async(densecap_evaluate_from_tokens, [self.caps_vocab, all_intervals, all_captions, all_caps_ids, self.ref_densecaps[phase]])
-                    
                     # print('evaluating progs...')
                     # prog_metrics_results, pred_progs = evaluate_from_tokens(self.programs_vocab, all_programs, all_prog_ids, self.ref_programs[phase], False)
                     print('evaluating captions (basic)...')
                     cap_metrics_results, pred_caps = evaluate_from_tokens(self.caps_vocab, all_captions, all_caps_ids, self.ref_captions[phase])
                     print('evaluating captions (dense)...')
                     densecap_metrics_results, pred_intervals = densecap_evaluate_from_tokens(self.caps_vocab, all_prog_ids, all_tstamps, all_intervals, all_captions, self.ref_densecaps[phase])
+
+                    # process results, saving the checkpoint if any improvement occurs
+                    # self.__process_results(prog_metrics_results, pred_progs, phase, epoch-1, save_checkpoints_dir, 'programmer')
+                    self.__process_results(cap_metrics_results, pred_caps, phase, epoch-1, save_checkpoints_dir, 'captioning')
+                    self.__process_results(densecap_metrics_results, pred_intervals, phase, epoch-1, save_checkpoints_dir, 'densecap')
+
+                    # report results if any improvement occurs
+                    if self.early_stop == 0:
+                        log_msg = f'\n IMPROVEMENT ON {phase} at epoch {epoch} !'
+                        
+                        # log_msg += '\n\t Programmer metrics: \n\t\t'
+                        # log_msg += '\t'.join([f'{k}: ({e:03d}, {v:.3f})' for k, (e, v) in self.best_metrics['programmer'][phase].items()])
+                        
+                        log_msg += '\n\t Captioning metrics: \n\t\t'
+                        log_msg += '\t'.join([f'{k}: ({e:03d}, {v:.3f})' for k, (e, v) in self.best_metrics['captioning'][phase].items()])
+                        
+                        log_msg += '\n\t DenseCaptioning metrics: \n\t\t'
+                        log_msg += '\t'.join([f'{k}: ({e:03d}, {v:.3f})' for k, (e, v) in self.best_metrics['densecap'][phase].items()])
+
+                        print(log_msg, '\n')
+                        self.logger.info(log_msg)
+
+                    # prog_metrics_results = parallel_pool.apply_async(evaluate_from_tokens, [self.programs_vocab, all_programs, all_prog_ids, self.ref_programs[phase], False])
+                    # cap_metrics_results = parallel_pool.apply_async(evaluate_from_tokens, [self.caps_vocab, all_captions, all_caps_ids, self.ref_captions[phase]])
+                    # densecap_metrics_results = parallel_pool.apply_async(densecap_evaluate_from_tokens, [self.caps_vocab, all_intervals, all_captions, all_caps_ids, self.ref_densecaps[phase]])
 
                 time_phases[phase] += time.perf_counter() - time_start_epoch
 

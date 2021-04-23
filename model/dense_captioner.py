@@ -334,9 +334,12 @@ class DenseCaptioner(nn.Module):
         self.rnn_cell.precompute_dots_4_m(self.prev_match, var_drop_p=.1)
 
         # condition for finishing the process, according if we are training or testing
-        condition = lambda i: i < prog_len
-        if not self.training:
-            condition = lambda i: torch.all(self.p == video_features[0].size(1) - 1)
+        if self.training:
+            # iterate until the maximum length of programs (prog_len parameter)
+            condition = lambda i: i < prog_len
+        else:
+            # iterate until all pointers reach the end
+            condition = lambda i: not torch.all(self.p >= feats_count - 1)
         
         seq_pos = 0
         while condition(seq_pos):
@@ -379,7 +382,7 @@ class DenseCaptioner(nn.Module):
                     # enqueue
                     self.q[i] += 1
                 elif a == 2 and caps_count[i] < intervals.size(1):
-                    # generate, save interval to describe for constructiong a captioning sub-batch
+                    # generate, save interval to be described. It going to be used for constructiong a captioning sub-batch
                     vidx_to_describe.append(i)
                     intervals[i, caps_count[i], :] = torch.tensor([self.p[i], self.q[i]])
 

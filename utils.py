@@ -16,9 +16,9 @@ def get_freer_gpu():
     return np.argmax(memory_available)
 
 
-def decode_from_tokens(vocab, tokens, until_eos=True):
+def decode_from_tokens(vocab, tokens, until_eos=True, max_length=10000):
   words = []
-  for token in tokens:
+  for token in tokens[:max_length]:
     if until_eos and token.item() == vocab('<eos>'):
         break
     words.append(vocab.idx_to_word(token.item()))
