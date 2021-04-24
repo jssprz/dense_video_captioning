@@ -2,10 +2,11 @@ import h5py
 
 import torch
 from torch.utils.data import Dataset, DataLoader
+from torch.utils.data.dataloader import default_collate
 
 
 class DenseCaptioningDataset(Dataset):
-    def __init__(self, h5_dataset, vidxs, cidxs, intervals, caps_count, captions, caps_sem_enc, pos, upos, cap_lens, progs, prog_lens):
+    def __init__(self, h5_dataset, vidxs, vidxs_blcklist, cidxs, intervals, caps_count, captions, caps_sem_enc, pos, upos, cap_lens, progs, prog_lens):
         super(DenseCaptioningDataset, self).__init__()
 
         self.cnn_feats = h5_dataset['cnn_features']
@@ -18,6 +19,7 @@ class DenseCaptioningDataset(Dataset):
         # self.feat_count = [20 for _ in range(self.cnn_feats.shape[0])]
 
         self.vidxs = vidxs
+        self.vidxs_blcklist = vidxs_blcklist
         self.cidxs = cidxs
         self.intervals = intervals
         self.caps_count = caps_count
@@ -36,12 +38,20 @@ class DenseCaptioningDataset(Dataset):
 
     def __getitem__(self, index):
         vidx = self.vidxs[index]
-        return vidx, self.cidxs[vidx], self.cnn_feats[vidx], self.c3d_feats[vidx], self.feat_count[vidx], self.frame_tstamps[vidx], self.intervals[vidx], self.caps_count[vidx], self.captions[vidx], self.caps_sem_enc[vidx], self.pos[vidx], self.upos[vidx], self.cap_lens[vidx], self.progs[vidx], self.prog_lens[vidx]
+        if vidx not in self.vidxs_blcklist:
+            return vidx, self.cidxs[vidx], self.cnn_feats[vidx], self.c3d_feats[vidx], self.feat_count[vidx], self.frame_tstamps[vidx], self.intervals[vidx], self.caps_count[vidx], self.captions[vidx], self.caps_sem_enc[vidx], self.pos[vidx], self.upos[vidx], self.cap_lens[vidx], self.progs[vidx], self.prog_lens[vidx]
+        return None
 
     def __len__(self):
         return len(self.vidxs)
 
 
-def get_dense_loader(h5_dataset, vidxs, cidxs, intervals, caps_count, captions, caps_sem_enc, pos, upos, cap_lens, progs, prog_lens, batch_size, train=True):
-    dataset = DenseCaptioningDataset(h5_dataset, vidxs, cidxs, intervals, caps_count, captions, caps_sem_enc, pos, upos, cap_lens, progs, prog_lens)
-    return DataLoader(dataset=dataset, batch_size=batch_size, shuffle=train)
+def filter_blacklist_collate(batch):
+    "Puts each data field into a tensor with outer dimension batch size"
+    batch = list(filter(lambda x:x is not None, batch))
+    return default_collate(batch)
+
+
+def get_dense_loader(h5_dataset, vidxs, vidxs_blcklist, cidxs, intervals, caps_count, captions, caps_sem_enc, pos, upos, cap_lens, progs, prog_lens, batch_size, train=True):
+    dataset = DenseCaptioningDataset(h5_dataset, vidxs, vidxs_blcklist, cidxs, intervals, caps_count, captions, caps_sem_enc, pos, upos, cap_lens, progs, prog_lens)
+    return DataLoader(dataset=dataset, batch_size=batch_size, shuffle=train, collate_fn=filter_blacklist_collate)

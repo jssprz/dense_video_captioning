@@ -331,9 +331,9 @@ class DenseVideo2TextTrainer(Trainer):
         # h5_path = os.path.join(self.dataset_folder, self.trainer_config.features_filename)
         self.h5_train = h5py.File(self.trainer_config.train_h5_file_path, 'r')
         train_dataset = self.h5_train[self.trainer_config.h5_file_group_name]
-        train_loader = get_dense_loader(h5_dataset=train_dataset, vidxs=vidxs, cidxs=cidxs_t, intervals=intervals_t, caps_count=caps_count_t,
-                                        captions=caps_t, caps_sem_enc=caps_sem_enc_t, pos=pos_t, upos=upos_t, cap_lens=cap_lens_t, progs=progs_t,
-                                        prog_lens=prog_lens, batch_size=self.trainer_config.batch_size, train=True)
+        train_loader = get_dense_loader(h5_dataset=train_dataset, vidxs=vidxs, vidxs_blcklist=self.trainer_config.valid_blacklist, cidxs=cidxs_t, 
+                                        intervals=intervals_t, caps_count=caps_count_t, captions=caps_t, caps_sem_enc=caps_sem_enc_t, pos=pos_t, 
+                                        upos=upos_t, cap_lens=cap_lens_t, progs=progs_t, prog_lens=prog_lens, batch_size=self.trainer_config.batch_size, train=True)
 
         # get valid split data
         print(' initializing valid split data loader...')
@@ -351,9 +351,9 @@ class DenseVideo2TextTrainer(Trainer):
         # get valid loader
         self.h5_val = h5py.File(self.trainer_config.valid_h5_file_path, 'r')
         val_dataset = self.h5_val[self.trainer_config.h5_file_group_name]
-        val_loader = get_dense_loader(h5_dataset=val_dataset, vidxs=vidxs, cidxs=cidxs_t, intervals=intervals_t, caps_count=caps_count_t,
-                                      captions=caps_t, caps_sem_enc=caps_sem_enc_t, pos=pos_t, upos=upos_t, cap_lens=cap_lens_t, progs=progs_t,
-                                      prog_lens=prog_lens, batch_size=self.trainer_config.batch_size*2, train=False)
+        val_loader = get_dense_loader(h5_dataset=val_dataset, vidxs=vidxs, vidxs_blcklist=self.trainer_config.valid_blacklist, cidxs=cidxs_t, 
+                                      intervals=intervals_t, caps_count=caps_count_t, captions=caps_t, caps_sem_enc=caps_sem_enc_t, pos=pos_t, 
+                                      upos=upos_t, cap_lens=cap_lens_t, progs=progs_t, prog_lens=prog_lens, batch_size=self.trainer_config.batch_size*2, train=False)
 
 
         print(' Max program len:', self.max_prog)
@@ -405,7 +405,9 @@ class DenseVideo2TextTrainer(Trainer):
         with torch.set_grad_enabled(phase == 'train'):
             max_prog_len = torch.max(gt_prog_len) if phase=='train' else None
             print(max_prog_len, gt_prog_len)
-            prog_logits, program, caps_logits, caps_sem_enc, captions, intervals, caps_count = self.dense_captioner(video_feats, feats_count, max_prog_len, teacher_forcing_ratio, gt_program, gt_captions, gt_caps_sem_enc, gt_intervals)
+            prog_logits, program, caps_logits, caps_sem_enc, captions, intervals, caps_count = self.dense_captioner(video_feats, feats_count, max_prog_len, 
+                                                                                                                    teacher_forcing_ratio, gt_program, 
+                                                                                                                    gt_captions, gt_caps_sem_enc, gt_intervals)
             # video_encoded = self.encoder(cnn_feats, c3d_feats, i3d_feats, eco_feats, eco_sem_feats, tsm_sem_feats, cnn_globals, cnn_sem_globals, tags_globals, res_eco_globals)
 
             # outputs, tokens = self.decoder(video_encoded, targets if phase == 'train' else None, teacher_forcing_ratio)
@@ -417,7 +419,8 @@ class DenseVideo2TextTrainer(Trainer):
             # targets = torch.cat([targets[j][:target_lens[j]] for j in range(bsz)], dim=0)
 
             # Evaluate the loss function
-            loss, prog_loss, cap_loss, sem_enc_loss, iou_loss = self.criterion(gt_captions, gt_cap_lens, caps_logits, gt_caps_sem_enc, caps_sem_enc, gt_program, gt_prog_len, prog_logits, gt_intervals, intervals, gt_caps_count, caps_count)
+            loss, prog_loss, cap_loss, sem_enc_loss, iou_loss = self.criterion(gt_captions, gt_cap_lens, caps_logits, gt_caps_sem_enc, caps_sem_enc, gt_program, 
+                                                                               gt_prog_len, prog_logits, gt_intervals, intervals, gt_caps_count, caps_count)
             # print(caps_count)
             # if not use_rl:
             #     if type(self.criterion) is SentenceLengthLoss:
