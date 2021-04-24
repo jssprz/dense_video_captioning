@@ -225,7 +225,7 @@ class DenseVideo2TextTrainer(Trainer):
                     else:
                         self.ground_truth[phase][idx] = [sentence]
 
-    def __get_most_freq_words(self, caps, caps_upos, postags=['NOUN', 'ADJ', 'VERB'], other_words_to_discard=['<unk>']):
+    def __get_most_freq_words(self, caps, caps_upos, postags=['NOUN', 'ADJ', 'VERB'], words_to_discard=['<unk>']):
         widx2count, uidxs_to_use = {}, [self.upos_vocab(tag) for tag in postags]
 
         for v_caps, v_caps_upos in zip(caps, caps_upos):
@@ -237,7 +237,7 @@ class DenseVideo2TextTrainer(Trainer):
                         else:
                             widx2count[widx] += 1
 
-        for w in other_words_to_discard:
+        for w in words_to_discard:
             del widx2count[self.caps_vocab(w)]
 
         freq_words = heapq.nlargest(self.modules_config['sem_tagger_config'].out_size, widx2count, key=widx2count.get)
@@ -322,7 +322,7 @@ class DenseVideo2TextTrainer(Trainer):
         self.last_interval_end = torch.max(intervals_t.view(-1, 2)[:,1])
 
         # determine the K most frequent words for semantic encodings from the train split
-        freq_words = self.__get_most_freq_words(caps, upos)
+        freq_words = self.__get_most_freq_words(caps, upos, postags=self.modules_config['sem_tagger_config'].upos_tags, words_to_discard=self.modules_config['sem_tagger_config'].words_to_discard)
 
         # determine the ground truth for semantic enconding
         caps_sem_enc_t = self.__get_sem_enc(freq_words, caps, upos)
