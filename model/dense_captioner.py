@@ -268,6 +268,7 @@ class DenseCaptioner(nn.Module):
         self.mm_size = mm_config.out_size
         self.progs_vocab_size = len(progs_vocab)
         self.caps_vocab_size = len(caps_vocab)
+        self.sem_enc_size = sem_tagger_config.out_size
 
         self.mm_enc = MultiModal(v_enc_config=mm_config.v_enc_config,
                                  t_enc_config=mm_config.t_enc_config,
@@ -320,12 +321,10 @@ class DenseCaptioner(nn.Module):
         self.h, self.c = self.rnn_cell(self.h, self.c, self.a_logits, self.prev_match, self.v_p_q_pool, v_q_w_pool, var_drop_p=.1)
         self.a_logits = self.fc(self.h)
 
-    def forward(self, video_features, feats_count, prog_len=100, teacher_forcing_p=.5, gt_program=None, gt_captions=None, gt_sem_enc=None, gt_intervals=None):
+    def forward(self, video_features, feats_count, prog_len=100, teacher_forcing_p=.5, gt_program=None, gt_captions=None, gt_caps_count=None, gt_sem_enc=None, gt_intervals=None, max_prog=None, max_caps=None, max_cap=None):
         # initialize
-        program, bs, device = [], video_features[0].size(0), video_features[0].device
-        program, captions, caps_sem_enc, intervals = torch.zeros_like(gt_program), torch.zeros_like(gt_captions), torch.zeros_like(gt_sem_enc), torch.zeros_like(gt_intervals, dtype=torch.float)
-        prog_logits = torch.zeros(program.size(0), program.size(1), self.progs_vocab_size).to(device)
-        caps_logits = torch.zeros(captions.size(0), captions.size(1), captions.size(2), self.caps_vocab_size).to(device)
+        bs, device = video_features[0].size(0), video_features[0].device
+
         caps_count = torch.zeros(bs, dtype=torch.int8)
         self.p, self.q, self.a_logits = torch.zeros(bs, dtype=torch.int), torch.ones(bs, dtype=torch.int), torch.zeros(bs, self.progs_vocab_size).fill_(-1).to(device)
         self.h, self.c, self.prev_match = torch.zeros(bs, self.h_size).to(device), torch.zeros(bs, self.h_size).to(device), torch.zeros(bs, self.mm_size).to(device)
@@ -336,10 +335,19 @@ class DenseCaptioner(nn.Module):
         # condition for finishing the process, according if we are training or testing
         if self.training:
             # iterate until the maximum length of programs (prog_len parameter)
-            condition = lambda i: i < prog_len
+            condition = lambda i: i < prog_len and not torch.all(caps_count >= gt_caps_count)
+
+            # initialize result tensors according to the sizes of ground truth
+            program, captions, caps_sem_enc, intervals = torch.zeros_like(gt_program), torch.zeros_like(gt_captions), torch.zeros_like(gt_sem_enc), torch.zeros_like(gt_intervals, dtype=torch.float)
         else:
             # iterate until all pointers reach the end
-            condition = lambda i: not torch.all(self.p >= feats_count - 1)
+            condition = lambda i: i < max_prog and not torch.all(self.p >= feats_count - 1) and not torch.all(caps_count >= max_caps)
+
+            # initialize result tensors according to the maximum sizes
+            program, captions, caps_sem_enc, intervals = torch.zeros(bs, max_prog), torch.zeros(bs, max_caps, max_cap), torch.zeros(bs, max_caps, self.sem_enc_size), torch.zeros(bs, max_caps, 2)
+        
+        prog_logits = torch.zeros(program.size(0), program.size(1), self.progs_vocab_size).to(device)
+        caps_logits = torch.zeros(captions.size(0), captions.size(1), captions.size(2), self.caps_vocab_size).to(device)
         
         seq_pos = 0
         while condition(seq_pos):

@@ -405,12 +405,15 @@ class DenseVideo2TextTrainer(Trainer):
 
         with torch.set_grad_enabled(phase == 'train'):
             # truncate the generation to the min program length
-            truncate_prog_at = torch.min(gt_prog_len) if phase=='train' else None
+            truncate_prog_at = torch.max(gt_prog_len) if phase=='train' else None
             print(truncate_prog_at, gt_prog_len)
-            
-            prog_logits, program, caps_logits, caps_sem_enc, captions, intervals, caps_count = self.dense_captioner(video_feats, feats_count, truncate_prog_at, 
-                                                                                                                    teacher_forcing_ratio, gt_program, 
-                                                                                                                    gt_captions, gt_caps_sem_enc, gt_intervals)
+
+            prog_logits, program, caps_logits, caps_sem_enc, captions, intervals, caps_count = self.dense_captioner(video_features=video_feats, feats_count=feats_count, 
+                                                                                                                    prog_len=truncate_prog_at, teacher_forcing_p=teacher_forcing_ratio,
+                                                                                                                    gt_program=gt_program, gt_captions=gt_captions,
+                                                                                                                    gt_caps_count=gt_caps_count, gt_sem_enc=gt_caps_sem_enc, 
+                                                                                                                    gt_intervals=gt_intervals, max_prog=self.max_prog, 
+                                                                                                                    max_caps=self.max_caps, max_cap=self.max_words)
             # video_encoded = self.encoder(cnn_feats, c3d_feats, i3d_feats, eco_feats, eco_sem_feats, tsm_sem_feats, cnn_globals, cnn_sem_globals, tags_globals, res_eco_globals)
 
             # outputs, tokens = self.decoder(video_encoded, targets if phase == 'train' else None, teacher_forcing_ratio)
