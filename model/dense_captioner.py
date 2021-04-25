@@ -325,7 +325,7 @@ class DenseCaptioner(nn.Module):
         # initialize
         bs, device = video_features[0].size(0), video_features[0].device
 
-        caps_count = torch.zeros(bs, dtype=torch.int8)
+        caps_count = torch.zeros(bs, dtype=torch.int8).to(device)
         self.p, self.q, self.a_logits = torch.zeros(bs, dtype=torch.int), torch.ones(bs, dtype=torch.int), torch.zeros(bs, self.progs_vocab_size).fill_(-1).to(device)
         self.h, self.c, self.prev_match = torch.zeros(bs, self.h_size).to(device), torch.zeros(bs, self.h_size).to(device), torch.zeros(bs, self.mm_size).to(device)
 
