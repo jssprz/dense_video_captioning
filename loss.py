@@ -120,37 +120,35 @@ class DenseCaptioningLoss(nn.Module):
         bs, _, _, caps_vocab_size = pred_captions.size()
         progs_vocab_size = pred_captions.size(2)
 
-        # print(pred_captions.requires_grad, pred_intervals.requires_grad)
-
         #TODO: compute gt strighten in the Dataset for removing it from here
 
         # straighten the output captions (removing the part of the pad)
         # (total_len_of_captions x caps_vocab_size)
-        pred_captions = torch.cat([pred_captions[j, i, :gt_cap_lens[j,i]].reshape(-1, caps_vocab_size) for j in range(bs) for i in range(gt_caps_count[j])], dim=0)
+        pred_captions = torch.cat([pred_captions[n, i, :gt_cap_lens[n,i]].reshape(-1, caps_vocab_size) for n in range(bs) for i in range(gt_caps_count[n])], dim=0)
 
         # straighten the target captions (remove the part of the pad) and then flatten it
         # (total_len_of_captions)
-        gt_captions = torch.cat([gt_captions[j, i, :gt_cap_lens[j,i]].flatten() for j in range(bs) for i in range(gt_caps_count[j])], dim=0)
+        gt_captions = torch.cat([gt_captions[n, i, :gt_cap_lens[n,i]].flatten() for n in range(bs) for i in range(gt_caps_count[n])], dim=0)
 
         # straighten the output semantic encodings (removing the part of the pad)
         # (total_num_captions x tags_count)
-        pred_caps_sem_enc = torch.cat([pred_caps_sem_enc[j, :gt_caps_count[j], :] for j in range(bs)], dim=0)
+        pred_caps_sem_enc = torch.cat([pred_caps_sem_enc[n, :gt_caps_count[n], :] for n in range(bs)], dim=0)
 
         # straighten the target semantic encodings (removing the part of the pad)
         # (total_num_captions x tags_count)
-        gt_caps_sem_enc = torch.cat([gt_caps_sem_enc[j, :gt_caps_count[j], :] for j in range(bs)], dim=0)
+        gt_caps_sem_enc = torch.cat([gt_caps_sem_enc[n, :gt_caps_count[n], :] for n in range(bs)], dim=0)
 
         # straighten the output intervals (removing the part of the pad)
         # (total_num_captions x 2)
-        pred_intervals = torch.cat([pred_intervals[j, :gt_caps_count[j], :] for j in range(bs)], dim=0)
+        pred_intervals = torch.cat([pred_intervals[n, :gt_caps_count[n], :] for n in range(bs)], dim=0)
 
         # straighten the target intervals (removing the part of the pad)
         # (total_num_captions x 2)
-        gt_intervals = torch.cat([gt_intervals[j, :gt_caps_count[j], :] for j in range(bs)], dim=0)
+        gt_intervals = torch.cat([gt_intervals[n, :gt_caps_count[n], :] for n in range(bs)], dim=0)
 
         # straighten the lens of target captions (remove the part of the pad) and then flatten it
         # (total_num_captions)
-        gt_cap_lens = torch.tensor([gt_cap_lens[j, i] for j in range(bs) for i in range(gt_caps_count[j])], dtype=torch.int32)
+        # gt_cap_lens = torch.tensor([gt_cap_lens[n, i] for n in range(bs) for i in range(gt_caps_count[n])], dtype=torch.int32)
 
         if truncate_prog_at is not None:
             # (bs*truncate_prog_at x progs_vocab_size)
@@ -160,11 +158,11 @@ class DenseCaptioningLoss(nn.Module):
         else:
             # straighten the output program (removing the part of the pad) and then flatten it
             # (total_len_of_programs x progs_vocab_size)
-            pred_program = torch.cat([pred_program[j, :gt_prog_len[j]] for j in range(bs)], dim=0)
+            pred_program = torch.cat([pred_program[n, :gt_prog_len[n]] for n in range(bs)], dim=0)
 
             # straighten the target captions (remove the part of the pad) and then flatten it
             # (total_len_of_programs)
-            gt_program = torch.cat([gt_program[j, :gt_prog_len[j]] for j in range(bs)], dim=0)
+            gt_program = torch.cat([gt_program[n, :gt_prog_len[n]] for n in range(bs)], dim=0)
 
 
         # Compute All Loss Functions

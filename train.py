@@ -404,13 +404,31 @@ class DenseVideo2TextTrainer(Trainer):
         self.optimizer.zero_grad()
 
         with torch.set_grad_enabled(phase == 'train'):
-            # truncate the generation to the min program length
-            truncate_prog_at = torch.min(gt_prog_len) if phase=='train' else None
-            print(truncate_prog_at, gt_prog_len)
-            
-            prog_logits, program, caps_logits, caps_sem_enc, captions, intervals, caps_count = self.dense_captioner(video_feats, feats_count, truncate_prog_at, 
-                                                                                                                    teacher_forcing_ratio, gt_program, 
-                                                                                                                    gt_captions, gt_caps_sem_enc, gt_intervals)
+            # truncate at least minimum program length steps, considering at least a caption for each video
+            if phase=='train':
+                truncate_prog_at = max(torch.min(gt_prog_len), torch.max((gt_intervals[:,0,1])*2 - gt_intervals[:,0,0] + 1))
+                print(f'the gt programs of len {gt_prog_len} will be truncated around {truncate_prog_at}')
+                
+                print('gt caps count:', gt_caps_count)
+                temp_prog_pos = torch.zeros(gt_intervals.size(0), gt_intervals.size(1))
+                for i in range(gt_intervals.size(1)):
+                    if i == 0:
+                        temp_prog_pos[:,i] = gt_intervals[:,i,1]*2 - gt_intervals[:,i,0] + 1
+                    else:
+                        temp_prog_pos[:,i] = temp_prog_pos[:,i-1] + (gt_intervals[:,i,0] - gt_intervals[:,i-1,1]) + (gt_intervals[:,i,1] - gt_intervals[:,i,0])*2 + 1
+
+                gt_caps_count = torch.sum((gt_intervals[:,:,1] > 0) * (temp_prog_pos < truncate_prog_at), dim=1)
+                print('tuncated gt caps count:', gt_caps_count)
+            else:
+                truncate_prog_at = None
+
+            prog_logits, program, caps_logits, caps_sem_enc, captions, intervals, caps_count = self.dense_captioner(video_features=video_feats, feats_count=feats_count, 
+                                                                                                                    prog_len=truncate_prog_at, teacher_forcing_p=teacher_forcing_ratio,
+                                                                                                                    gt_program=gt_program, gt_captions=gt_captions,
+                                                                                                                    gt_caps_count=gt_caps_count, gt_sem_enc=gt_caps_sem_enc, 
+                                                                                                                    gt_intervals=gt_intervals, max_prog=self.max_prog, 
+                                                                                                                    max_caps=self.max_caps, max_cap=self.max_words)
+            print(caps_count)
             # video_encoded = self.encoder(cnn_feats, c3d_feats, i3d_feats, eco_feats, eco_sem_feats, tsm_sem_feats, cnn_globals, cnn_sem_globals, tags_globals, res_eco_globals)
 
             # outputs, tokens = self.decoder(video_encoded, targets if phase == 'train' else None, teacher_forcing_ratio)
