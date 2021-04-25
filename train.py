@@ -12,6 +12,7 @@ import heapq
 import h5py
 import numpy as np
 import torch
+import torch.nn as nn
 import torch.optim as optim
 from tensorboardX import SummaryWriter
 
@@ -57,8 +58,8 @@ class Trainer:
                             filemode='a',
                             format='%(asctime)s,%(msecs)d %(name)s %(levelname)s %(message)s',
                             datefmt='%H:%M:%S',
-                            level=logging.DEBUG)
-        self.logger = logging.getLogger('{}'.format(self.exp_name))
+                            level=logging.INFO)
+        self.logger = logging.getLogger(f'{self.exp_name}')
 
         print('Experiment: {}'.format(self.datetime_str), '\n')
         # print(self.exp_name, '\n')
@@ -151,7 +152,7 @@ class DenseVideo2TextTrainer(Trainer):
 
         # Optimizer
         print('\nInitializing the Optimizer...')
-        if self.trainer_config.optimizer_name == 'Adagrad':
+        if self.trainer_config.optimizer_config.optimizer_name == 'Adagrad':
             self.optimizer = optim.Adagrad([{'params': self.dense_captioner.mm_enc.parameters()},
                                             {'params': self.dense_captioner.rnn_cell.parameters()},
                                             {'params': self.dense_captioner.fc.parameters()},
@@ -159,10 +160,10 @@ class DenseVideo2TextTrainer(Trainer):
                                            lr=self.trainer_config.learning_rate)
         else:
             self.optimizer = optim.Adam([{'params': self.dense_captioner.mm_enc.parameters()},
-                                         {'params': self.dense_captioner.rnn_cell.parameters()},
-                                         {'params': self.dense_captioner.fc.parameters()},
-                                         {'params': self.dense_captioner.clip_captioner.parameters()}],
-                                        lr=self.trainer_config.learning_rate) #, weight_decay=.0001)
+                                         {'params': self.dense_captioner.rnn_cell.parameters(), 'lr': self.trainer_config.optimizer_config.programmer_lr},
+                                         {'params': self.dense_captioner.fc.parameters(), 'lr': self.trainer_config.optimizer_config.programmer_lr},
+                                         {'params': self.dense_captioner.clip_captioner.parameters(), 'lr': self.trainer_config.optimizer_config.captioning_lr}],
+                                        lr=self.trainer_config.optimizer_config.learning_rate) #, weight_decay=.0001)
 
         # learning-rate decay scheduler
         lambda1 = lambda epoch: self.trainer_config.lr_decay_factor ** (epoch // 40)
@@ -403,9 +404,11 @@ class DenseVideo2TextTrainer(Trainer):
         self.optimizer.zero_grad()
 
         with torch.set_grad_enabled(phase == 'train'):
-            max_prog_len = torch.max(gt_prog_len) if phase=='train' else None
-            print(max_prog_len, gt_prog_len)
-            prog_logits, program, caps_logits, caps_sem_enc, captions, intervals, caps_count = self.dense_captioner(video_feats, feats_count, max_prog_len, 
+            # truncate the generation to the min program length
+            truncate_prog_at = torch.min(gt_prog_len) if phase=='train' else None
+            print(truncate_prog_at, gt_prog_len)
+            
+            prog_logits, program, caps_logits, caps_sem_enc, captions, intervals, caps_count = self.dense_captioner(video_feats, feats_count, truncate_prog_at, 
                                                                                                                     teacher_forcing_ratio, gt_program, 
                                                                                                                     gt_captions, gt_caps_sem_enc, gt_intervals)
             # video_encoded = self.encoder(cnn_feats, c3d_feats, i3d_feats, eco_feats, eco_sem_feats, tsm_sem_feats, cnn_globals, cnn_sem_globals, tags_globals, res_eco_globals)
@@ -420,7 +423,7 @@ class DenseVideo2TextTrainer(Trainer):
 
             # Evaluate the loss function
             loss, prog_loss, cap_loss, sem_enc_loss, iou_loss = self.criterion(gt_captions, gt_cap_lens, caps_logits, gt_caps_sem_enc, caps_sem_enc, gt_program, 
-                                                                               gt_prog_len, prog_logits, gt_intervals, intervals, gt_caps_count, caps_count)
+                                                                               gt_prog_len, prog_logits, gt_intervals, intervals, gt_caps_count, caps_count, truncate_prog_at)
             # print(caps_count)
             # if not use_rl:
             #     if type(self.criterion) is SentenceLengthLoss:
@@ -480,7 +483,13 @@ class DenseVideo2TextTrainer(Trainer):
             #     loss = RewardCriterion(outputs.log(), targets, reward)
 
         if phase == 'train':
+            # compute backward pass for somputing the gradients
             loss.backward()
+
+            # clip gradients to prevent NaNs in the prog-loss
+            nn.utils.clip_grad_norm_(self.dense_captioner.rnn_cell.parameters(), 0.5) 
+
+            # update the parameters
             self.optimizer.step()
 
         return loss, prog_loss, cap_loss, sem_enc_loss, iou_loss, program, captions, intervals, caps_count

@@ -142,7 +142,7 @@ def make_bow_vector(cap, vocab_len, norm=False, eos=0):
 
 def get_trainer_str(config):
   crit_config = config.criterion_config
-  return f'{config.dataset_name} batch-{config.batch_size}.lr-{config.learning_rate}.{config.optimizer_name}'\
+  return f'{config.dataset_name} batch-{config.batch_size}.lr-{config.optimizer_config.learning_rate}.{config.optimizer_config.optimizer_name}'\
          f'.closs-{crit_config.captioning_loss}-{crit_config.captioning_loss_reduction}'\
          f'.ploss-{crit_config.programer_loss}-{crit_config.programer_loss_reduction}'\
          f'.tagloss-{crit_config.tagging_loss}-{crit_config.tagging_loss_reduction}'\

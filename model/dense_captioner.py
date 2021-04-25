@@ -218,10 +218,10 @@ class VNCLCell(nn.Module):
             v2_o = self.__dropout(v2, keep_prob, 'v2')
             v2_c = self.__dropout(v2, keep_prob, 'v2')
 
-        temp1_i = ((v1 @ self.V_i_1) * (v2 @ self.V_i_2)) @ self.C_i_1
-        temp1_f = ((v1 @ self.V_f_1) * (v2 @ self.V_f_2)) @ self.C_f_1
-        temp1_o = ((v1 @ self.V_o_1) * (v2 @ self.V_o_2)) @ self.C_o_1
-        temp1_c = ((v1 @ self.V_c_1) * (v2 @ self.V_c_2)) @ self.C_c_1
+        temp1_i = ((v1_i @ self.V_i_1) * (v2_i @ self.V_i_2)) @ self.C_i_1
+        temp1_f = ((v1_f @ self.V_f_1) * (v2_f @ self.V_f_2)) @ self.C_f_1
+        temp1_o = ((v1_o @ self.V_o_1) * (v2_o @ self.V_o_2)) @ self.C_o_1
+        temp1_c = ((v1_c @ self.V_c_1) * (v2_c @ self.V_c_2)) @ self.C_c_1
 
         # (batch_size x rnn_hidden_size)
         temp3_i = x_i @ self.W_i_1

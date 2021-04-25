@@ -115,7 +115,7 @@ class DenseCaptioningLoss(nn.Module):
             self.comb_weights = torch.tensor(config.comb_weights)
 
     def forward(self, gt_captions, gt_cap_lens, pred_captions, gt_caps_sem_enc, pred_caps_sem_enc, gt_program, gt_prog_len, pred_program,
-                gt_intervals, pred_intervals, gt_caps_count, pred_caps_count, mm_v_encs=None, mm_t_encs=None):
+                gt_intervals, pred_intervals, gt_caps_count, pred_caps_count, truncate_prog_at=None, mm_v_encs=None, mm_t_encs=None):
 
         bs, _, _, caps_vocab_size = pred_captions.size()
         progs_vocab_size = pred_captions.size(2)
@@ -152,13 +152,19 @@ class DenseCaptioningLoss(nn.Module):
         # (total_num_captions)
         gt_cap_lens = torch.tensor([gt_cap_lens[j, i] for j in range(bs) for i in range(gt_caps_count[j])], dtype=torch.int32)
 
-        # straighten the output program (removing the part of the pad) and then flatten it
-        # (total_len_of_programs x progs_vocab_size)
-        pred_program = torch.cat([pred_program[j, :gt_prog_len[j]] for j in range(bs)], dim=0)
+        if truncate_prog_at is not None:
+            # (bs*truncate_prog_at x progs_vocab_size)
+            pred_program = pred_program[:, :truncate_prog_at].reshape(-1, pred_program.size(2))
+            # (bs*truncate_prog_at)
+            gt_program = gt_program[:, :truncate_prog_at].flatten()
+        else:
+            # straighten the output program (removing the part of the pad) and then flatten it
+            # (total_len_of_programs x progs_vocab_size)
+            pred_program = torch.cat([pred_program[j, :gt_prog_len[j]] for j in range(bs)], dim=0)
 
-        # straighten the target captions (remove the part of the pad) and then flatten it
-        # (total_len_of_programs)
-        gt_program = torch.cat([gt_program[j, :gt_prog_len[j]] for j in range(bs)], dim=0)
+            # straighten the target captions (remove the part of the pad) and then flatten it
+            # (total_len_of_programs)
+            gt_program = torch.cat([gt_program[j, :gt_prog_len[j]] for j in range(bs)], dim=0)
 
 
         # Compute All Loss Functions
