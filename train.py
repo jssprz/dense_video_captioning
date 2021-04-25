@@ -406,7 +406,7 @@ class DenseVideo2TextTrainer(Trainer):
         with torch.set_grad_enabled(phase == 'train'):
             # truncate at least minimum program length steps, considering at least a caption for each video
             if phase=='train':
-                truncate_prog_at = max(torch.min(gt_prog_len), torch.max((gt_intervals[:,0,1])*2 - gt_intervals[:,0,0] + 1))
+                truncate_prog_at = int(max(torch.min(gt_prog_len), torch.max((gt_intervals[:,0,1])*2 - gt_intervals[:,0,0] + 1)))
                 print(f'the gt programs of len {gt_prog_len} will be truncated around {truncate_prog_at}')
                 
                 print('gt caps count:', gt_caps_count)
