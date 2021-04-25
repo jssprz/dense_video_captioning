@@ -410,7 +410,7 @@ class DenseVideo2TextTrainer(Trainer):
                 print(f'the gt programs of len {gt_prog_len} will be truncated around {truncate_prog_at}')
                 
                 print('gt caps count:', gt_caps_count)
-                temp_prog_pos = torch.zeros(gt_intervals.size(0), gt_intervals.size(1))
+                temp_prog_pos = torch.zeros(gt_intervals.size(0), gt_intervals.size(1)).to(gt_intervals.device)
                 for i in range(gt_intervals.size(1)):
                     if i == 0:
                         temp_prog_pos[:,i] = gt_intervals[:,i,1]*2 - gt_intervals[:,i,0] + 1
