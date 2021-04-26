@@ -134,6 +134,7 @@ class DenseVideo2TextTrainer(Trainer):
         self.__init_dense_loader()
 
         # Load ground-truth for computing evaluation metrics
+        print('\nLoading ground truth...')
         self.__load_ground_truth()
 
         # Model
@@ -187,18 +188,24 @@ class DenseVideo2TextTrainer(Trainer):
         print('Vocabulary has {} words.'.format(len(self.vocab)))
 
     def __load_ground_truth(self):
-        # this is the ground truth captions
         self.ref_programs, self.ref_captions, self.ref_densecaps = {}, {}, {}
 
         ref_progams_txt_path = {'val_1': os.path.join(self.dataset_folder,'val_1_ref_programs.txt')}
         ref_captions_txt_path = {'val_1': os.path.join(self.dataset_folder,'val_1_ref_captions.txt')}
         ref_densecap_json_path = {'val_1': os.path.join(self.dataset_folder,'val_1_ref_densecap.json')}
 
+        ref_vidxs_blacklists = {'val_1': self.trainer_config.valid_blacklist}
+        ref_cidxs_blacklists = {'val_1': [cidx for vidx in ref_vidxs_blacklists['val_1'] for cidx in self.corpus[1][1][self.corpus[1][0].index(vidx)]]}
+
         for phase in ['val_1']:
-            self.ref_programs[phase] = load_texts(ref_progams_txt_path[phase])
-            self.ref_captions[phase] = load_texts(ref_captions_txt_path[phase])
+            self.ref_programs[phase] = load_texts(ref_progams_txt_path[phase], blacklist=ref_vidxs_blacklists[phase])
+            self.ref_captions[phase] = load_texts(ref_captions_txt_path[phase], blacklist=ref_cidxs_blacklists[phase])
             with open(ref_densecap_json_path[phase], 'r') as f:
                 self.ref_densecaps[phase] = json.load(f)
+                for vidx in ref_vidxs_blacklists[phase]:
+                    del self.ref_densecaps[phase][str(vidx)]
+
+            print(f' For phase {phase} were sekiped:\n  vidxs: {ref_vidxs_blacklists[phase]}\n  cidxs: {ref_cidxs_blacklists[phase]}')
 
             # self.ref_programs[phase] = {k:self.ref_programs[phase][k] for k in range(3)}
             # self.ref_captions[phase] = {k:self.ref_captions[phase][k] for k in range(33844, 33844+8)}

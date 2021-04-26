@@ -102,12 +102,16 @@ def load_ground_truth_captions(reference_txt_path):
     return gt
 
 
-def load_texts(path):
+def load_texts(path, blacklist=[]):
   result_dict = {}
   for line in list(open(path, 'r', encoding="utf8")):
     row = line.split('\t')
-    idx = int(row[0])
-    sentence = row[1].strip()
+    idx, sentence = int(row[0]), row[1].strip()
+
+    # skip idxs in the blacklist
+    if idx in blacklist:
+      continue
+
     if idx in result_dict:
       result_dict[idx].append(sentence)
     else:

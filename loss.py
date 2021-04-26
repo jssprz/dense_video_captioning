@@ -153,8 +153,12 @@ class DenseCaptioningLoss(nn.Module):
         if truncate_prog_at is not None:
             # (bs*truncate_prog_at x progs_vocab_size)
             pred_program = pred_program[:, :truncate_prog_at].reshape(-1, pred_program.size(2))
+            
             # (bs*truncate_prog_at)
             gt_program = gt_program[:, :truncate_prog_at].flatten()
+
+            # (bs)
+            gt_prog_len = torch.tensor([truncate_prog_at] * bs)
         else:
             # straighten the output program (removing the part of the pad) and then flatten it
             # (total_len_of_programs x progs_vocab_size)
@@ -168,8 +172,8 @@ class DenseCaptioningLoss(nn.Module):
         # Compute All Loss Functions
 
         # programmer loss
-        # prog_loss = self.programer_loss(pred_program, gt_program, gt_prog_len)  # length-weighted
-        prog_loss = self.programer_loss(pred_program, gt_program)  # CELoss
+        prog_loss = self.programer_loss(pred_program, gt_program, gt_prog_len)  # length-weighted
+        # prog_loss = self.programer_loss(pred_program, gt_program)  # CELoss
 
         # captioning loss
         # cap_loss = self.captioning_loss(pred_captions, gt_captions, gt_cap_lens)  # length-weighted
