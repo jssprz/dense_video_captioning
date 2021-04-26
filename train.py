@@ -25,13 +25,15 @@ from loss import DenseCaptioningLoss
 
 
 class Trainer:
-    def __init__(self, trainer_config, dense_captioner_config, modules_config):
+    def __init__(self, trainer_config, dense_captioner_config, modules_config, out_folder):
         self.trainer_config = trainer_config
         self.modules_config = modules_config
 
         self.exp_name = f'({trainer_config.str})'
         for config in modules_config.values():
             self.exp_name += f' ({config.str})'
+
+        self.out_folder = out_folder
 
         # self.encoder_name = '{}-{}{}-drop{}'.format(self.config.encoder_num_layers, 
         #                                             'bi' if self.config.encoder_bidirectional else '', 
@@ -53,8 +55,8 @@ class Trainer:
         #                                                       self.config.learning_rate)
         
         self.datetime_str = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
-        self.writer = SummaryWriter(log_dir=os.path.join('./log/runs/', f'{self.datetime_str} {trainer_config.str}'))
-        logging.basicConfig(filename='./log/output_{}'.format(self.datetime_str),
+        self.writer = SummaryWriter(log_dir=os.path.join(self.out_folder, 'log/runs/', f'{self.datetime_str} {trainer_config.str}'))
+        logging.basicConfig(filename=os.path.join(self.out_folder, f'log/output_{self.datetime_str}'),
                             filemode='a',
                             format='%(asctime)s,%(msecs)d %(name)s %(levelname)s %(message)s',
                             datefmt='%H:%M:%S',
@@ -79,10 +81,9 @@ class Trainer:
 
 class DenseVideo2TextTrainer(Trainer):
     def __init__(self, trainer_config, dense_captioner_config, modules_config, dataset_folder, out_folder):
-        super(DenseVideo2TextTrainer, self).__init__(trainer_config, dense_captioner_config, modules_config)
+        super(DenseVideo2TextTrainer, self).__init__(trainer_config, dense_captioner_config, modules_config, out_folder)
 
         self.dataset_folder = dataset_folder
-        self.out_folder = out_folder
 
         # max_frames = 20 #20 30
         # # self.max_words = 30
