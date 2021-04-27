@@ -296,7 +296,7 @@ class DenseVideo2TextTrainer(Trainer):
             v_caps_t = torch.LongTensor(max_caps, max_words).fill_(0)
             cidxs_t[i, :len(v_cidxs)] = torch.tensor(v_cidxs)
             for j, (cidx, c) in enumerate(zip(v_cidxs, v_caps)):
-                v_caps_t[j, :len(c)] = torch.tensor(c)
+                v_caps_t[j, :len(c)] = torch.tensor(c[:max_words])
                 cap_lens_t[i, j] = len(c)
             caps_t[i] = v_caps_t
 
@@ -304,14 +304,14 @@ class DenseVideo2TextTrainer(Trainer):
         for i, v_pos in enumerate(pos):
             v_pos_t = torch.zeros((max_caps, max_words), dtype=torch.int8)
             for j, c in enumerate(v_pos):
-                v_pos_t[j, :len(c)] = torch.tensor(c)
+                v_pos_t[j, :len(c)] = torch.tensor(c[:max_words])
             pos_t[i] = v_pos_t
 
         upos_t = torch.zeros((len(caps), max_caps, max_words), dtype=torch.int8)
         for i, v_upos in enumerate(upos):
             v_upos_t = torch.zeros((max_caps, max_words), dtype=torch.int8)
             for j, c in enumerate(v_upos):
-                v_upos_t[j, :len(c)] = torch.tensor(c)
+                v_upos_t[j, :len(c)] = torch.tensor(c[:max_words])
             upos_t[i] = v_upos_t
 
         intervals_t = torch.zeros((len(caps), max_caps, 2))
@@ -542,8 +542,9 @@ class DenseVideo2TextTrainer(Trainer):
                 self.best_metrics[component][phase][name] = (epoch, result)
                 if name in ['Bleu_4','METEOR', 'ROUGE_L', 'CIDEr', 'All_Metrics']:
                     self.early_stop = 0
-                    with open(os.path.join(save_checkpoints_dir, f'chkpt_{epoch}_{component}_output.json'), 'w') as f:
-                        json.dump(prediction, f)
+                    torch.save(prediction, os.path.join(save_checkpoints_dir, f'chkpt_{epoch}_{component}_output.json'))
+                    # with open(os.path.join(save_checkpoints_dir, f'chkpt_{epoch}_{component}_output.json'), 'w') as f:
+                    #    json.dump(prediction, f)
                 if component=='densecap' and name == 'METEOR' and phase == 'val_1':
                     torch.save(obj={'epoch': epoch,
                                     'dense_captioner': self.dense_captioner.state_dict(),
@@ -576,9 +577,11 @@ class DenseVideo2TextTrainer(Trainer):
                 # self.best_metrics['programmer'][p] = {'Bleu_1': (0, 0), 'Bleu_2': (0, 0), 'Bleu_3': (0, 0), 'Bleu_4': (0, 0),
                 #                              'METEOR': (0, 0), 'ROUGE_L': (0, 0), 'CIDEr': (0, 0), 'SPICE': (0, 0), 'All_Metrics': (0, 0)}
                 self.best_metrics['captioning'][p] = {'Bleu_1': (0, 0), 'Bleu_2': (0, 0), 'Bleu_3': (0, 0), 'Bleu_4': (0, 0),
-                                             'METEOR': (0, 0), 'ROUGE_L': (0, 0), 'CIDEr': (0, 0), 'SPICE': (0, 0), 'All_Metrics': (0, 0)}
+                                                      'METEOR': (0, 0), 'ROUGE_L': (0, 0), 'CIDEr': (0, 0), 'SPICE': (0, 0),
+                                                      'All_Metrics': (0, 0)}
                 self.best_metrics['densecap'][p] = {'Bleu_1': (0, 0), 'Bleu_2': (0, 0), 'Bleu_3': (0, 0), 'Bleu_4': (0, 0),
-                                             'METEOR': (0, 0), 'ROUGE_L': (0, 0), 'CIDEr': (0, 0), 'SPICE': (0, 0), 'All_Metrics': (0, 0)}
+                                                    'METEOR': (0, 0), 'ROUGE_L': (0, 0), 'CIDEr': (0, 0), 'SPICE': (0, 0),
+                                                    'Recall': (0, 0), 'Precision': (0, 0), 'All_Metrics': (0, 0)}
 
         self.dense_captioner.to(self.device)
         print('\nParameters of Dense Captioner model:\n')
@@ -683,21 +686,21 @@ class DenseVideo2TextTrainer(Trainer):
 
                     # process results, saving the checkpoint if any improvement occurs
                     # self.__process_results(prog_metrics_results, pred_progs, phase, epoch-1, save_checkpoints_dir, 'programmer')
-                    self.__process_results(cap_metrics_results, pred_caps, phase, epoch-1, save_checkpoints_dir, 'captioning')
-                    self.__process_results(densecap_metrics_results, pred_intervals, phase, epoch-1, save_checkpoints_dir, 'densecap')
+                    self.__process_results(cap_metrics_results, pred_caps, phase, epoch, save_checkpoints_dir, 'captioning')
+                    self.__process_results(densecap_metrics_results, pred_intervals, phase, epoch, save_checkpoints_dir, 'densecap')
 
                     # report results if any improvement occurs
                     if self.early_stop == 0:
                         log_msg = f'\n IMPROVEMENT ON {phase} at epoch {epoch} !'
-                        
-                        # log_msg += '\n\t Programmer metrics: \n\t\t'
-                        # log_msg += '\t'.join([f'{k}: ({e:03d}, {v:.3f})' for k, (e, v) in self.best_metrics['programmer'][phase].items()])
-                        
-                        log_msg += '\n\t Captioning metrics: \n\t\t'
-                        log_msg += '\t'.join([f'{k}: ({e:03d}, {v:.3f})' for k, (e, v) in self.best_metrics['captioning'][phase].items()])
-                        
-                        log_msg += '\n\t DenseCaptioning metrics: \n\t\t'
-                        log_msg += '\t'.join([f'{k}: ({e:03d}, {v:.3f})' for k, (e, v) in self.best_metrics['densecap'][phase].items()])
+
+                        # log_msg += '\n Programmer metrics: \n   '
+                        # log_msg += '\t'.join([f'{k}:({e:03d}, {v:.3f})' for k, (e, v) in self.best_metrics['programmer'][phase].items()])
+
+                        log_msg += '\n  Captioning metrics: \n   '
+                        log_msg += '\t'.join([f'{k}:({e:03d}, {v:.3f})' for k, (e, v) in self.best_metrics['captioning'][phase].items()])
+
+                        log_msg += '\n  DenseCaptioning metrics: \n   '
+                        log_msg += '\t'.join([f'{k}:({e:03d}, {v:.3f})' for k, (e, v) in self.best_metrics['densecap'][phase].items()])
 
                         print(log_msg, '\n')
                         self.logger.info(log_msg)
