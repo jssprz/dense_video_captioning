@@ -164,7 +164,9 @@ class DenseVideo2TextTrainer(Trainer):
             self.optimizer = optim.Adam([{'params': self.dense_captioner.mm_enc.parameters()},
                                          {'params': self.dense_captioner.rnn_cell.parameters(), 'lr': self.trainer_config.optimizer_config.programmer_lr},
                                          {'params': self.dense_captioner.fc.parameters(), 'lr': self.trainer_config.optimizer_config.programmer_lr},
-                                         {'params': self.dense_captioner.clip_captioner.parameters(), 'lr': self.trainer_config.optimizer_config.captioning_lr}],
+                                         {'params': self.dense_captioner.clip_captioner.avscn_dec.parameters(), 'lr': self.trainer_config.optimizer_config.captioning_lr},
+                                         {'params': self.dense_captioner.clip_captioner.semsynan_dec.parameters(), 'lr': self.trainer_config.optimizer_config.captioning_lr},
+                                         {'params': self.dense_captioner.clip_captioner.encoder.parameters(), 'lr': self.trainer_config.optimizer_config.sem_enc_lr}],
                                         lr=self.trainer_config.optimizer_config.learning_rate) #, weight_decay=.0001)
 
         # learning-rate decay scheduler
@@ -172,8 +174,10 @@ class DenseVideo2TextTrainer(Trainer):
         lambda2 = lambda epoch: self.trainer_config.lr_decay_factor ** (epoch // 40)
         lambda3 = lambda epoch: self.trainer_config.lr_decay_factor ** (epoch // 40)
         lambda4 = lambda epoch: self.trainer_config.lr_decay_factor ** (epoch // 40)
+        lambda5 = lambda epoch: self.trainer_config.lr_decay_factor ** (epoch // 40)
+        lambda6 = lambda epoch: self.trainer_config.lr_decay_factor ** (epoch // 40)
         self.lr_scheduler = optim.lr_scheduler.LambdaLR(optimizer=self.optimizer,
-                                                        lr_lambda=[lambda1, lambda2, lambda3, lambda4])
+                                                        lr_lambda=[lambda1, lambda2, lambda3, lambda4, lambda5, lambda6])
 
         # Loss function
         self.criterion = DenseCaptioningLoss(config=trainer_config.criterion_config,
@@ -276,11 +280,14 @@ class DenseVideo2TextTrainer(Trainer):
 
         return vidxs, cidxs, intervals, fps, progs, prog_lens, caps, pos, upos, cap_lens
 
-    def __data2tensors(self, cidxs, intervals, progs, prog_lens, caps, pos, upos, cap_lens):
-        max_prog = max(prog_lens)
+    def __data2tensors(self, cidxs, intervals, progs, prog_lens, caps, pos, upos, cap_lens, max_prog=None, max_caps=None, max_words=None):
+        if max_prog is None:
+            max_prog = max(prog_lens)
+        if max_words is None:
+            max_words = max([l for v_lens in cap_lens for l in v_lens])
         caps_count_t = torch.tensor([len(v_caps) for v_caps in caps], dtype=torch.int8)
-        max_caps = torch.max(caps_count_t)
-        max_words = max([l for v_lens in cap_lens for l in v_lens])
+        if max_caps is None:
+            max_caps = torch.max(caps_count_t)
 
         caps_t = torch.LongTensor(len(caps), max_caps, max_words).fill_(0)
         cap_lens_t = torch.LongTensor(len(caps), max_caps).fill_(0)
@@ -347,7 +354,8 @@ class DenseVideo2TextTrainer(Trainer):
         # get valid split data
         print(' initializing valid split data loader...')
         vidxs, cidxs, intervals, fps, progs, prog_lens, caps, pos, upos, cap_lens = self.__extract_split_data_from_corpus(split=1)
-        cidxs_t, intervals_t, caps_count_t, progs_t, caps_t, pos_t, upos_t, cap_lens_t = self.__data2tensors(cidxs, intervals, progs, prog_lens, caps, pos, upos, cap_lens)
+        cidxs_t, intervals_t, caps_count_t, progs_t, caps_t, pos_t, upos_t, cap_lens_t = self.__data2tensors(cidxs, intervals, progs, prog_lens, caps, pos, upos, cap_lens,
+                                                                                                             self.max_prog, self.max_caps, self.max_words)
         # self.max_prog = max(self.max_prog, progs_t.size(1))
         # self.max_caps = max(self.max_caps, caps_t.size(1))
         # self.max_words = max(self.max_words, caps_t.size(2))
@@ -513,7 +521,7 @@ class DenseVideo2TextTrainer(Trainer):
             loss.backward()
 
             # clip gradients to prevent NaNs in the prog-loss
-            nn.utils.clip_grad_norm_(self.dense_captioner.rnn_cell.parameters(), 0.5) 
+            # nn.utils.clip_grad_norm_(self.dense_captioner.rnn_cell.parameters(), 0.5) 
 
             # update the parameters
             self.optimizer.step()
@@ -637,7 +645,7 @@ class DenseVideo2TextTrainer(Trainer):
                         all_prog_ids.append(vidx)
 
                         # save captions and the captions' idx for computing evaluation metrics (only the first caps_count captions are evaluated)
-                        all_captions.append((captions.to('cpu'), caps_count, gt_caps_count))
+                        all_captions.append((captions.to('cpu'), caps_count.to('cpu'), gt_caps_count.to('cpu')))
                         all_caps_ids.append(cidxs)
 
                         # save intervals for computing evaluation metrics

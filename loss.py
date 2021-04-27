@@ -43,7 +43,6 @@ class IoULoss(nn.Module):
 
     def forward(self, pred_intervals, gt_intervals):
         # compute intersection
-        intersection = torch.zeros(pred_intervals.size(0))
         max_min = torch.max(torch.stack([pred_intervals[:,0], gt_intervals[:,0]]), dim=0)[0]
         min_max = torch.min(torch.stack([pred_intervals[:,1], gt_intervals[:,1]]), dim=0)[0]
         intersection = (min_max - max_min).clamp(min=0)
@@ -55,9 +54,10 @@ class IoULoss(nn.Module):
         union = max_max - min_min
         # print('union:', union)
 
-        # compute IoU
+        # compute total IoU
         loss = torch.sum(torch.reciprocal(union) * intersection)
 
+        # convert in a minimization loss
         if self.reduction=='mean':
             return 1 -  loss / pred_intervals.size(0)
         elif self.reduction=='sum':

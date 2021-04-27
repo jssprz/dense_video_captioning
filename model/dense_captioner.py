@@ -344,7 +344,7 @@ class DenseCaptioner(nn.Module):
             condition = lambda i: i < max_prog and not torch.all(self.p >= feats_count - 1) and not torch.all(caps_count >= max_caps)
 
             # initialize result tensors according to the maximum sizes
-            program, captions, caps_sem_enc, intervals = torch.zeros(bs, max_prog), torch.zeros(bs, max_caps, max_cap), torch.zeros(bs, max_caps, self.sem_enc_size), torch.zeros(bs, max_caps, 2)
+            program, captions, caps_sem_enc, intervals = torch.zeros(bs, max_prog).to(device), torch.zeros(bs, max_caps, max_cap).to(device), torch.zeros(bs, max_caps, self.sem_enc_size).to(device), torch.zeros(bs, max_caps, 2).to(device)
         
         prog_logits = torch.zeros(program.size(0), program.size(1), self.progs_vocab_size).to(device)
         caps_logits = torch.zeros(captions.size(0), captions.size(1), captions.size(2), self.caps_vocab_size).to(device)
