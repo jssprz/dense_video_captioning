@@ -8,6 +8,7 @@ import logging
 import time
 from multiprocessing import Pool
 import heapq
+from shutil import copyfile
 
 import h5py
 import numpy as np
@@ -534,11 +535,43 @@ class DenseVideo2TextTrainer(Trainer):
         scores['All_Metrics'] = sum([scores[k] * weights[k] for k in scores.keys()])
         return scores
 
+    def __save_checkpoint(self, epoch, save_checkpoints_dir, new_best=False):
+        if new_best:
+            chkpt_filename = f'best_chkpt_{epoch}.pt'
+        else:
+            chkpt_filename = f'chkpt_{epoch}.pt'
+
+        if self.last_saved_epoch == epoch:
+            # the checkpoint was saved after training at this epoch, we don't need to save it again, we copy it only
+            copyfile(os.path.join(save_checkpoints_dir, f'chkpt_{epoch}.pt'), os.path.join(save_checkpoints_dir, chkpt_filename))
+            print(' the checkpoint was copied only')
+        else:
+            # save the new checkpoint (best or not)
+            torch.save(obj={'epoch': epoch,
+                            'dense_captioner': self.dense_captioner.state_dict(),
+                            'optimizer': self.optimizer.state_dict(),
+                            'best_metrics': self.best_metrics},
+                        f=os.path.join(save_checkpoints_dir, chkpt_filename))
+            print(' saved')
+
+        # remove previously saved
+        if new_best and self.last_best_saved_epoch != -1:
+            os.remove(os.path.join(save_checkpoints_dir, f'best_chkpt_{self.last_best_saved_epoch}.pt'))
+        elif not new_best and self.last_saved_epoch != -1:
+            os.remove(os.path.join(save_checkpoints_dir, f'chkpt_{self.last_saved_epoch}.pt'))
+
+        # update the last saved epoch
+        if new_best:
+            self.last_best_saved_epoch = epoch
+        else:
+            self.last_saved_epoch = epoch
+
     def __process_results(self, metrics_results, prediction, phase, epoch, save_checkpoints_dir, component):
         self.logger.info(f'{phase} set metrics for {component}: {metrics_results}')
+        min_metrics = ['Recall']
         for name, result in metrics_results.items():
             self.writer.add_scalar(f'end2end/{phase}-{component}-{name}', result, epoch)
-            if name in self.best_metrics[component][phase] and self.best_metrics[component][phase][name][1] < result:
+            if name in self.best_metrics[component][phase] and ((name in min_metrics and result > self.best_metrics[component][phase][name][1]) or (name not in min_metrics and result < self.best_metrics[component][phase][name][1])):
                 self.best_metrics[component][phase][name] = (epoch, result)
                 if name in ['Bleu_4','METEOR', 'ROUGE_L', 'CIDEr', 'All_Metrics']:
                     self.early_stop = 0
@@ -546,16 +579,9 @@ class DenseVideo2TextTrainer(Trainer):
                     # with open(os.path.join(save_checkpoints_dir, f'chkpt_{epoch}_{component}_output.json'), 'w') as f:
                     #    json.dump(prediction, f)
                 if component=='densecap' and name == 'METEOR' and phase == 'val_1':
-                    torch.save(obj={'epoch': epoch,
-                                    'dense_captioner': self.dense_captioner.state_dict(),
-                                    'optimizer': self.optimizer.state_dict(),
-                                    'best_metrics': self.best_metrics},
-                               f=os.path.join(save_checkpoints_dir, f'chkpt_{epoch}.pkl'))
-
-                    # remove previously saved
-                    if self.last_saved_epoch != -1:
-                        os.remove(os.path.join(save_checkpoints_dir, f'chkpt_{self.last_saved_epoch}.pkl'))
-                    self.last_saved_epoch = epoch
+                    print('saving best checkpoint...')
+                    self.__save_checkpoint(epoch, save_checkpoints_dir, True)
+                    
 
     def train_model(self, resume=False, checkpoint_path=None, min_num_epochs=50, early_stop_limit=10):
         parallel_pool = Pool()
@@ -581,7 +607,7 @@ class DenseVideo2TextTrainer(Trainer):
                                                       'All_Metrics': (0, 0)}
                 self.best_metrics['densecap'][p] = {'Bleu_1': (0, 0), 'Bleu_2': (0, 0), 'Bleu_3': (0, 0), 'Bleu_4': (0, 0),
                                                     'METEOR': (0, 0), 'ROUGE_L': (0, 0), 'CIDEr': (0, 0), 'SPICE': (0, 0),
-                                                    'Recall': (0, 0), 'Precision': (0, 0), 'All_Metrics': (0, 0)}
+                                                    'Recall': (0, float('inf')), 'Precision': (0, 0), 'All_Metrics': (0, 0)}
 
         self.dense_captioner.to(self.device)
         print('\nParameters of Dense Captioner model:\n')
@@ -592,7 +618,7 @@ class DenseVideo2TextTrainer(Trainer):
         print(' total size: ', (total_size*8)/(1024**3), '\n')
 
         # Start training process
-        self.early_stop, self.last_saved_epoch = 0, -1
+        self.early_stop, self.last_saved_epoch, self.last_best_saved_epoch = 0, -1, -1
         time_phases = {'train': 0, 'val_1': 0}
         prog_metrics_results, cap_metrics_results, densecap_metrics_results = None, None, None
         for epoch in range(begin_epoch, 1000):
@@ -662,6 +688,11 @@ class DenseVideo2TextTrainer(Trainer):
                         # self.logger.info('[vid:{}]'.format(video_ids[0]))
                         # self.logger.info('\nWE: {}\nGT: {}'.format(predicted_sentences[video_ids[0]],
                         #                                            self.__decode_from_tokens(captions[0].squeeze())))
+
+                # for sanity, replace the last checkpoint when epoch is power of 2
+                if phase == 'train' and (epoch == 0 or not(epoch & (epoch-1))):
+                    print('saving checkpoint...')
+                    self.__save_checkpoint(epoch, save_checkpoints_dir, False)
 
                 avg_loss = loss_count/len(self.loaders[phase])
                 loss_phases[phase] = avg_loss

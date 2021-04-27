@@ -105,4 +105,5 @@ venv.bak/
 
 # data folder
 data/
-log/
+results/log/
+results/models/
