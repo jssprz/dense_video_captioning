@@ -153,6 +153,13 @@ def get_trainer_str(config):
          f'.iloss-{crit_config.intervals_loss}-{crit_config.intervals_loss_reduction}'
 
 
+def get_dense_captioner_str(config):
+  hs = str([config.h_size])
+  train_sample = 'max' if config.train_sample_max else 'dist'
+  test_sample = 'max' if config.test_sample_max else 'dist'
+  return f'programmer max_clip_len-{config.max_clip_len}.future_steps-{config.future_steps}.hs-{hs}.drop-{config.drop_p}.train-{train_sample}.test-{test_sample}'
+
+
 def get_sem_tagger_str(config):
   drops = str([config.in_drop_p] + config.drop_ps)
   hs = str(config.h_sizes)
@@ -163,6 +170,13 @@ def get_syn_embedd_str(config):
   hs = str(config.v_enc_config.h_sizes)
   in_size = config.v_enc_config.cnn_feats_size+config.v_enc_config.c3d_feats_size
   return f'syn in-{in_size}.hs-{hs}.out-{config.v_enc_config.out_size}.drop-{config.v_enc_config.drop_p}.lastbn-{config.v_enc_config.have_last_bn}.norm-{config.v_enc_config.norm}'
+
+
+def get_syn_tagger_str(config):
+  hs = str([config.h_size] + [config.rnn_h_size])
+  train_sample = 'max' if config.train_sample_max else 'dist'
+  test_sample = 'max' if config.test_sample_max else 'dist'
+  return f'syn-dec in-{config.in_seq_length}.posemb-{config.posemb_size}.rnnin-{config.rnn_in_size}.hs-{hs}. drop-{config.drop_p}.layers-{config.num_layers}.train-{train_sample}.test-{test_sample}'
 
 
 def get_avscn_decoder_str(config):

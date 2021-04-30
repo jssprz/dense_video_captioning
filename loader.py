@@ -52,6 +52,69 @@ def filter_blacklist_collate(batch):
     return default_collate(batch)
 
 
+def extract_split_data_from_corpus(corpus, split=0):
+    split_data = corpus[split]
+
+    # parse split data from corpus
+    vidxs = split_data[0]
+    cidxs = split_data[1]
+    intervals = split_data[2]
+    fps = split_data[3]
+    progs = split_data[4]
+    prog_lens = [len(p) for p in split_data[4]]
+    caps = split_data[5]
+    pos = split_data[6] 
+    upos = split_data[7]
+    cap_lens = [[len(c) for c in caps] for caps in split_data[6]]
+
+    return vidxs, cidxs, intervals, fps, progs, prog_lens, caps, pos, upos, cap_lens
+
+
+def data2tensors(cidxs, intervals, progs, prog_lens, caps, pos, upos, cap_lens, max_prog=None, max_caps=None, max_words=None):
+    if max_prog is None:
+        max_prog = max(prog_lens)
+    if max_words is None:
+        max_words = max([l for v_lens in cap_lens for l in v_lens])
+    caps_count_t = torch.tensor([len(v_caps) for v_caps in caps], dtype=torch.int8)
+    if max_caps is None:
+        max_caps = torch.max(caps_count_t)
+
+    caps_t = torch.LongTensor(len(caps), max_caps, max_words).fill_(0)
+    cap_lens_t = torch.LongTensor(len(caps), max_caps).fill_(0)
+    cidxs_t = torch.LongTensor(len(caps), max_caps).fill_(0)
+    for i, (v_cidxs, v_caps) in enumerate(zip(cidxs, caps)):
+        v_caps_t = torch.LongTensor(max_caps, max_words).fill_(0)
+        cidxs_t[i, :len(v_cidxs)] = torch.tensor(v_cidxs)
+        for j, (cidx, c) in enumerate(zip(v_cidxs, v_caps)):
+            v_caps_t[j, :len(c)] = torch.tensor(c[:max_words])
+            cap_lens_t[i, j] = len(c)
+        caps_t[i] = v_caps_t
+
+    pos_t = torch.zeros((len(caps), max_caps, max_words), dtype=torch.long)
+    for i, v_pos in enumerate(pos):
+        v_pos_t = torch.zeros((max_caps, max_words), dtype=torch.int8)
+        for j, c in enumerate(v_pos):
+            v_pos_t[j, :len(c)] = torch.tensor(c[:max_words])
+        pos_t[i] = v_pos_t
+
+    upos_t = torch.zeros((len(caps), max_caps, max_words), dtype=torch.long)
+    for i, v_upos in enumerate(upos):
+        v_upos_t = torch.zeros((max_caps, max_words), dtype=torch.int8)
+        for j, c in enumerate(v_upos):
+            v_upos_t[j, :len(c)] = torch.tensor(c[:max_words])
+        upos_t[i] = v_upos_t
+
+    intervals_t = torch.zeros((len(caps), max_caps, 2))
+    for i, v_intervals in enumerate(intervals):
+        intervals_t[i, :len(v_intervals)] = torch.Tensor([[s,e] for s, e in v_intervals])
+
+    progs_t = torch.zeros((len(caps), max_prog), dtype=torch.long)
+    for i, v_prog in enumerate(progs):
+        progs_t[i, :len(v_prog)] = torch.LongTensor(v_prog)
+
+    return cidxs_t, intervals_t, caps_count_t, progs_t, caps_t, pos_t, upos_t, cap_lens_t
+
+
 def get_dense_loader(h5_dataset, vidxs, vidxs_blcklist, cidxs, intervals, caps_count, captions, caps_sem_enc, pos, upos, cap_lens, progs, prog_lens, batch_size, train=True):
     dataset = DenseCaptioningDataset(h5_dataset, vidxs, vidxs_blcklist, cidxs, intervals, caps_count, captions, caps_sem_enc, pos, upos, cap_lens, progs, prog_lens)
     return DataLoader(dataset=dataset, batch_size=batch_size, shuffle=train, collate_fn=filter_blacklist_collate)

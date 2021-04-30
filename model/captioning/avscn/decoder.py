@@ -261,7 +261,7 @@ class AVSCNDecoder(nn.Module):
         if pretrained_we is not None:
             self.embedding = nn.Embedding.from_pretrained(pretrained_we)
         else:
-            self.embedding = nn.Embedding(self.output_size, embedding_size)
+            self.embedding = nn.Embedding(self.output_size, config.embedding_size)
         self.embedd_drop = nn.Dropout(config.drop_p)
 
         self.semantic_layer = SCNAttnDecoder(config.in_seq_length,
@@ -368,7 +368,7 @@ class AVSCNDecoder(nn.Module):
         rnn_h = torch.zeros(batch_size, self.h_size).to(self.device)
         # rnn_c = torch.zeros(batch_size, self.h_size)
 
-        outputs = []
+        outputs, embedds = [], []
 
         s = self.in_s_drop(s_tags)
         v = self.in_v_drop(v_pool)
@@ -403,12 +403,12 @@ class AVSCNDecoder(nn.Module):
 
                 # (batch_size) -> (batch_size x embedding_size)
                 decoder_input = self.embedding(word_id).squeeze(1)
-                decoder_input = self.embedd_drop(decoder_input)
+                # decoder_input = self.embedd_drop(decoder_input)
 
                 outputs.append(word_logits)
                 words.append(word_id)
 
-            return torch.cat([o.unsqueeze(1) for o in outputs], dim=1).contiguous(), torch.cat([w.unsqueeze(1) for w in words], dim=1).contiguous()
+            return torch.cat([o.unsqueeze(1) for o in outputs], dim=1).contiguous(), torch.cat([w.unsqueeze(1) for w in words], dim=1).contiguous(), torch.cat([e.unsqueeze(1) for e in embedds], dim=1).contiguous()
         else:
             for seq_pos in range(gt_captions.size(1)):
                 visual_h, visual_c = self.visual_layer.step(visual_h, visual_c, decoder_input)
@@ -437,12 +437,14 @@ class AVSCNDecoder(nn.Module):
 
                 # (batch_size) -> (batch_size x embedding_size)
                 decoder_input = self.embedding(decoder_input).squeeze(1)
+                embedds.append(decoder_input)
+                
                 decoder_input = self.embedd_drop(decoder_input)
 
                 outputs.append(word_logits)
 
             # (batch_size x out_seq_length x output_size), none
-            return torch.cat([o.unsqueeze(1) for o in outputs], dim=1).contiguous(), None
+            return torch.cat([o.unsqueeze(1) for o in outputs], dim=1).contiguous(), None, torch.cat([e.unsqueeze(1) for e in embedds], dim=1).contiguous()
 
     def forward(self, encoding, teacher_forcing_p=.5, gt_captions=None):
         return self.forward_fn(v_feats=encoding[0],

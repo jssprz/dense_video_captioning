@@ -255,9 +255,9 @@ class VNCLCell(nn.Module):
 
 
 class DenseCaptioner(nn.Module):
-    def __init__(self, config, sem_tagger_config, syn_embedd_config, avscn_dec_config,
+    def __init__(self, config, sem_tagger_config, syn_embedd_config, syn_tagger_config, avscn_dec_config,
                  semsynan_dec_config, mm_config, vncl_cell_config, progs_vocab,
-                 caps_vocab, pretrained_we, device):
+                 caps_vocab, pretrained_we, pos_vocab, pretrained_pe, device):
         super(DenseCaptioner, self).__init__()
 
         self.train_sample_max = config.train_sample_max
@@ -268,6 +268,7 @@ class DenseCaptioner(nn.Module):
         self.mm_size = mm_config.out_size
         self.progs_vocab_size = len(progs_vocab)
         self.caps_vocab_size = len(caps_vocab)
+        self.pos_vocab_size = len(pos_vocab)
         self.sem_enc_size = sem_tagger_config.out_size
 
         self.mm_enc = MultiModal(v_enc_config=mm_config.v_enc_config,
@@ -288,10 +289,13 @@ class DenseCaptioner(nn.Module):
         self.clip_captioner = Ensemble(v_size=config.cnn_feats_size+config.c3d_feats_size,
                                        sem_tagger_config=sem_tagger_config,
                                        syn_embedd_config=syn_embedd_config,
+                                       syn_tagger_config=syn_tagger_config,
                                        avscn_dec_config=avscn_dec_config,
                                        semsynan_dec_config=semsynan_dec_config,
                                        caps_vocab=caps_vocab,
                                        pretrained_we=pretrained_we,
+                                       pos_vocab=pos_vocab,
+                                       pretrained_pe=pretrained_pe,
                                        device=device)
 
     def get_clip_feats(self, v_feats, start_idx, end_idx=None):
@@ -321,7 +325,7 @@ class DenseCaptioner(nn.Module):
         self.h, self.c = self.rnn_cell(self.h, self.c, self.a_logits, self.prev_match, self.v_p_q_pool, v_q_w_pool, var_drop_p=.1)
         self.a_logits = self.fc(self.h)
 
-    def forward(self, video_features, feats_count, prog_len=100, teacher_forcing_p=.5, gt_program=None, gt_captions=None, gt_caps_count=None, gt_sem_enc=None, gt_intervals=None, max_prog=None, max_caps=None, max_cap=None):
+    def forward(self, video_features, feats_count, prog_len=100, teacher_forcing_p=.5, gt_program=None, gt_captions=None, gt_caps_count=None, gt_sem_enc=None, gt_pos=None, gt_intervals=None, max_prog=None, max_caps=None, max_cap=None):
         # initialize
         bs, device = video_features[0].size(0), video_features[0].device
 
@@ -338,16 +342,17 @@ class DenseCaptioner(nn.Module):
             condition = lambda i: i < prog_len # or torch.any(caps_count < 1)
 
             # initialize result tensors according to the sizes of ground truth
-            program, captions, caps_sem_enc, intervals = torch.zeros_like(gt_program), torch.zeros_like(gt_captions), torch.zeros_like(gt_sem_enc), torch.zeros_like(gt_intervals, dtype=torch.float)
+            program, captions, caps_sem_enc, pos_tags, intervals = torch.zeros_like(gt_program), torch.zeros_like(gt_captions), torch.zeros_like(gt_sem_enc), torch.zeros_like(gt_pos), torch.zeros_like(gt_intervals, dtype=torch.float)
         else:
             # iterate until all pointers reach the end
             condition = lambda i: i < max_prog and not torch.all(self.p >= feats_count - 1) and not torch.all(caps_count >= max_caps)
 
             # initialize result tensors according to the maximum sizes
-            program, captions, caps_sem_enc, intervals = torch.zeros(bs, max_prog).to(device), torch.zeros(bs, max_caps, max_cap).to(device), torch.zeros(bs, max_caps, self.sem_enc_size).to(device), torch.zeros(bs, max_caps, 2).to(device)
+            program, captions, caps_sem_enc, pos_tags, intervals = torch.zeros(bs, max_prog).to(device), torch.zeros(bs, max_caps, max_cap).to(device), torch.zeros(bs, max_caps, self.sem_enc_size).to(device), torch.zeros(bs, max_caps, max_cap).to(device), torch.zeros(bs, max_caps, 2).to(device)
         
         prog_logits = torch.zeros(program.size(0), program.size(1), self.progs_vocab_size).to(device)
         caps_logits = torch.zeros(captions.size(0), captions.size(1), captions.size(2), self.caps_vocab_size).to(device)
+        pos_tag_logits = torch.zeros(pos_tags.size(0), pos_tags.size(1), pos_tags.size(2), self.pos_vocab_size).to(device)
         
         seq_pos = 0
         while condition(seq_pos):
@@ -403,16 +408,19 @@ class DenseCaptioner(nn.Module):
 
                 # TODO: get ground-truth captions according to the position of p and q and the interval associated to each gt caption
 
-                # get ground-truth captions according to the number of captions that have been generated per video
-                gt = torch.stack([gt_captions[i][min(gt_captions.size(1)-1, caps_count[i])] for i in vidx_to_describe])
+                gt_c, gt_p = None, None
+                if self.training:
+                    # get ground-truth captions and pos-tags according to the number of captions that have been generated per video
+                    gt_c = torch.stack([gt_captions[i][min(gt_captions.size(1)-1, caps_count[i])] for i in vidx_to_describe])
+                    gt_p = torch.stack([gt_pos[i][min(gt_pos.size(1)-1, caps_count[i])] for i in vidx_to_describe])
 
                 # generate captions
-                cap_logits, cap_sem_enc = self.clip_captioner(clip_feats, clip_global, teacher_forcing_p, gt)
+                cap_logits, cap_sem_enc, pos_tag_seq_logits = self.clip_captioner(clip_feats, clip_global, teacher_forcing_p, gt_c, gt_p)
 
                 if self.training:
                     use_teacher_forcing = True if random.random() < teacher_forcing_p or seq_pos == 0 else False
                     if use_teacher_forcing:
-                        cap = gt
+                        cap = gt_c
                     elif self.train_sample_max:
                         # select the words ids with the max probability,
                         # (sub-batch_size x max-cap-len)
@@ -451,9 +459,10 @@ class DenseCaptioner(nn.Module):
 
                 # save captions in the list of each video that was described in this step
                 self.prev_match = torch.clone(self.prev_match)
-                for i, c, c_logits, c_sem_enc, m in zip(vidx_to_describe, cap, cap_logits, cap_sem_enc, match):
+                for i, c, c_logits, c_sem_enc, c_pos_logits, m in zip(vidx_to_describe, cap, cap_logits, cap_sem_enc, pos_tag_seq_logits, match):
                     captions[i, caps_count[i], :] = c
                     caps_logits[i, caps_count[i], :, :] = c_logits
+                    pos_tag_logits[i, caps_count[i], :, :] = c_pos_logits
                     caps_sem_enc[i, caps_count[i], :] = c_sem_enc
                     caps_count[i] += 1
                     self.prev_match[i, :] = m
@@ -466,4 +475,4 @@ class DenseCaptioner(nn.Module):
         if self.training:
             caps_count = torch.min(caps_count, gt_caps_count)
 
-        return prog_logits, program, caps_logits, caps_sem_enc, captions, intervals, caps_count
+        return prog_logits, program, caps_logits, caps_sem_enc, pos_tag_logits, captions, intervals, caps_count
