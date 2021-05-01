@@ -416,7 +416,7 @@ class DenseCaptioner(nn.Module):
 
             # generate a caption from the current video-clips saved in the sub-batch
             if len(vidx_to_describe) > 0:
-                print(seq_pos, use_teacher_forcing, teacher_forcing_p, vidx_to_describe, caps_count, self.p.data, self.q.data)
+                # print(seq_pos, use_teacher_forcing, teacher_forcing_p, vidx_to_describe, caps_count, self.p.data, self.q.data)
                 # get sub-batch of video features to be described
                 clip_feats = [feats[vidx_to_describe, :, :] for feats in self.v_p_q_feats]
                 clip_global = self.v_p_q_pool[vidx_to_describe, :]

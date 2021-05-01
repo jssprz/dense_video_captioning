@@ -62,7 +62,7 @@ class Ensemble(nn.Module):
         sem_enc, pos_tag_seq_logits = encoding[2], encoding[3][2]
 
         # get a syntactic representation
-        print(pos_tag_seq_logits.size())
+        # print(pos_tag_seq_logits.size())
         encoding[3] = torch.mean(pos_tag_seq_logits, dim=1)
 
         # TODO: evaluate the use of POS tagger as a global controler 

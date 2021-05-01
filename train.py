@@ -59,10 +59,11 @@ class Trainer:
         self.writer = SummaryWriter(log_dir=os.path.join(self.out_folder, 'log/runs/', f'{self.datetime_str} {trainer_config.str}'))
         logging.basicConfig(filename=os.path.join(self.out_folder, f'log/output_{self.datetime_str}'),
                             filemode='a',
-                            format='%(asctime)s,%(msecs)d %(name)s %(levelname)s %(message)s',
+                            format='%(asctime)s,%(msecs)d %(levelname)s %(message)s',
                             datefmt='%H:%M:%S',
                             level=logging.INFO)
         self.logger = logging.getLogger(f'{self.exp_name}')
+        self.logger.info(f'Experiment: {self.exp_name}')
 
         print('Experiment: {}'.format(self.datetime_str), '\n')
         # print(self.exp_name, '\n')
@@ -118,15 +119,19 @@ class DenseVideo2TextTrainer(Trainer):
             idx2upos_dict = self.corpus[9]
 
         self.programs_vocab = Vocabulary.from_idx2word_dict(idx2op_dict, False)
+        self.logger.info('Size of programs_vocab: {}'.format(len(self.programs_vocab)))
         print('Size of programs_vocab: {}'.format(len(self.programs_vocab)))
 
         self.caps_vocab = Vocabulary.from_idx2word_dict(idx2word_dict, False)
+        self.logger.info('Size of caps_vocab: {}'.format(len(self.caps_vocab)))
         print('Size of caps_vocab: {}'.format(len(self.caps_vocab)))
 
         self.pos_vocab = Vocabulary.from_idx2word_dict(idx2pos_dict, False)
+        self.logger.info('Size of pos_vocab: {}'.format(len(self.pos_vocab)))
         print('Size of pos_vocab: {}'.format(len(self.pos_vocab)))
 
         self.upos_vocab = Vocabulary.from_idx2word_dict(idx2upos_dict, False)
+        self.logger.info('Size of upos_vocab: {}'.format(len(self.upos_vocab)), '\n')
         print('Size of upos_vocab: {}'.format(len(self.upos_vocab)), '\n')
 
         # Pretrained Embeddings
@@ -263,11 +268,11 @@ class DenseVideo2TextTrainer(Trainer):
             del widx2count[self.caps_vocab(w)]
 
         freq_words = heapq.nlargest(self.modules_config['sem_tagger_config'].out_size, widx2count, key=widx2count.get)
-        print('TAGs-IDXs:', freq_words)
-        print('\nTAGs-words:', ' '.join([self.caps_vocab.idx_to_word(idx) for idx in freq_words]))
-        print('\nTAGs-freq:', [widx2count[idx] for idx in freq_words])
-        print('\n total freq of tags: ', sum([widx2count[idx] for idx in freq_words]))
-        print(' mean freq of tags: ', np.mean([widx2count[idx] for idx in freq_words]))
+        self.logger.info(f'TAGs-IDXs: {freq_words}')
+        self.logger.info(f'TAGs-words:' + ' '.join([self.caps_vocab.idx_to_word(idx) for idx in freq_words]))
+        self.logger.info(f'TAGs-freq: {[widx2count[idx] for idx in freq_words]}')
+        self.logger.info(f'TAGs-total freq of tags: {sum([widx2count[idx] for idx in freq_words])}')
+        self.logger.info(f'TAGs-mean freq of tags: {np.mean([widx2count[idx] for idx in freq_words])}')
 
         return freq_words
 
@@ -332,11 +337,17 @@ class DenseVideo2TextTrainer(Trainer):
                                       upos=upos_t, cap_lens=cap_lens_t, progs=progs_t, prog_lens=prog_lens, batch_size=self.trainer_config.batch_size*3, train=False)
 
 
-        print(' Max program len:', self.max_prog)
-        print(' Max caption len:', self.max_words)
-        print(' Max intervals count:', self.max_caps)
-        print(' Max interval len:', int(self.max_interval))
-        print(' Last interval end:', int(self.last_interval_end))
+        self.logger.info(f' Max program len: {self.max_prog}')
+        self.logger.info(f' Max caption len: {self.max_words}')
+        self.logger.info(f' Max intervals count: {self.max_caps}')
+        self.logger.info(f' Max interval len: {int(self.max_interval)}')
+        self.logger.info(f' Last interval end: {int(self.last_interval_end)}')
+
+        print(f' Max program len: {self.max_prog}')
+        print(f' Max caption len: {self.max_words}')
+        print(f' Max intervals count: {self.max_caps}')
+        print(f' Max interval len: {int(self.max_interval)}')
+        print(f' Last interval end: {int(self.last_interval_end)}')
 
         self.loaders = {'train': train_loader, 'val_1': val_loader}
 
@@ -382,9 +393,8 @@ class DenseVideo2TextTrainer(Trainer):
             # truncate at least minimum program length steps, considering at least a caption for each video
             if phase=='train':
                 truncate_prog_at = int(max(torch.min(gt_prog_len), torch.max((gt_intervals[:,0,1])*2 - gt_intervals[:,0,0] + 1)))
-                print(f'the gt programs of len {gt_prog_len} will be truncated around {truncate_prog_at}')
+                self.logger.info(f'the gt programs of len {gt_prog_len} will be truncated around {truncate_prog_at}')
                 
-                print('gt caps count:', gt_caps_count)
                 temp_prog_pos = torch.zeros(gt_intervals.size(0), gt_intervals.size(1)).to(gt_intervals.device)
                 for i in range(gt_intervals.size(1)):
                     if i == 0:
@@ -392,8 +402,9 @@ class DenseVideo2TextTrainer(Trainer):
                     else:
                         temp_prog_pos[:,i] = temp_prog_pos[:,i-1] + (gt_intervals[:,i,0] - gt_intervals[:,i-1,1]) + (gt_intervals[:,i,1] - gt_intervals[:,i,0])*2 + 1
 
+                self.logger.info(f'gt caps count: {gt_caps_count}')
                 gt_caps_count = torch.sum((gt_intervals[:,:,1] > 0) * (temp_prog_pos < truncate_prog_at), dim=1)
-                print('tuncated gt caps count:', gt_caps_count)
+                self.logger.info(f'tuncated gt caps count: {gt_caps_count}')
             else:
                 truncate_prog_at = None
 
@@ -403,7 +414,6 @@ class DenseVideo2TextTrainer(Trainer):
                                                                                                                     gt_caps_count=gt_caps_count, gt_sem_enc=gt_caps_sem_enc, gt_pos=gt_pos,
                                                                                                                     gt_intervals=gt_intervals, max_prog=self.max_prog, 
                                                                                                                     max_caps=self.max_caps, max_cap=self.max_words)
-            print(caps_count)
             # video_encoded = self.encoder(cnn_feats, c3d_feats, i3d_feats, eco_feats, eco_sem_feats, tsm_sem_feats, cnn_globals, cnn_sem_globals, tags_globals, res_eco_globals)
 
             # outputs, tokens = self.decoder(video_encoded, targets if phase == 'train' else None, teacher_forcing_ratio)
@@ -417,7 +427,6 @@ class DenseVideo2TextTrainer(Trainer):
             # Evaluate the loss function
             loss, prog_loss, cap_loss, sem_enc_loss, pos_loss, iou_loss = self.criterion(gt_captions, gt_cap_lens, caps_logits, gt_caps_sem_enc, caps_sem_enc, gt_pos, pos_tags_logits, gt_program, 
                                                                                gt_prog_len, prog_logits, gt_intervals, intervals, gt_caps_count, caps_count, truncate_prog_at)
-            # print(caps_count)
             # if not use_rl:
             #     if type(self.criterion) is SentenceLengthLoss:
             #         loss = self.criterion(outputs.view(-1, len(self.vocab)), targets.view(-1), target_lens)
@@ -477,14 +486,14 @@ class DenseVideo2TextTrainer(Trainer):
 
         if phase == 'train':
             # compute backward pass for somputing the gradients
-            print('backward....')
+            self.logger.info('loss backward....')
             loss.backward()
 
             # clip gradients to prevent NaNs in the prog-loss
             # nn.utils.clip_grad_norm_(self.dense_captioner.rnn_cell.parameters(), 0.5) 
 
             # update the parameters
-            print('step...')
+            self.logger.info('optimizer step...')
             self.optimizer.step()
 
         return loss, prog_loss, cap_loss, sem_enc_loss, pos_loss, iou_loss, program, captions, intervals, caps_count
@@ -614,22 +623,25 @@ class DenseVideo2TextTrainer(Trainer):
                     self.writer.add_scalar('end2end/{}-iters-iou_loss'.format(phase), iou_loss, epoch * len(self.loaders[phase]) + i)
 
                     lrs = self.lr_scheduler.get_last_lr()
-                    sys.stdout.write('\rEpoch:{0:03d} Phase:{1:6s} Iter:{2:04d}/{3:04d} lr:{4:.6f} Loss:{5:9.4f} [cap-loss:{6:9.4f} prog-loss:{7:9.4f} sem-enc-loss:{8:9.4f} pos-tag-loss iou-loss:{9:9.4f}]'.format(epoch, phase, i, 
-                                                                                                                                                                                                                     len(self.loaders[phase]), 
-                                                                                                                                                                                                                     lrs[0], loss.item(), 
-                                                                                                                                                                                                                     cap_loss.item(), 
-                                                                                                                                                                                                                     prog_loss.item(), 
-                                                                                                                                                                                                                     sem_enc_loss.item(),
-                                                                                                                                                                                                                     pos_loss.item(),
-                                                                                                                                                                                                                     iou_loss.item()))
+                    log_msg = '\rEpoch:{0:03d} Phase:{1:6s} Iter:{2:04d}/{3:04d} lr:{4:.6f} Loss:{5:9.4f} [cap-loss:{6:9.4f} prog-loss:{7:9.4f} sem-enc-loss:{8:9.4f} pos-tag-loss iou-loss:{9:9.4f}]'.format(epoch, phase, i, 
+                                                                                                                                                                                                            len(self.loaders[phase]), 
+                                                                                                                                                                                                            lrs[0], loss.item(), 
+                                                                                                                                                                                                            cap_loss.item(), 
+                                                                                                                                                                                                            prog_loss.item(), 
+                                                                                                                                                                                                            sem_enc_loss.item(),
+                                                                                                                                                                                                            pos_loss.item(),
+                                                                                                                                                                                                            iou_loss.item())
+                    self.logger.info(log_msg)
+                    sys.stdout.write(log_msg)
 
                     pred = decode_from_tokens(self.programs_vocab, program[0], until_eos=False, max_length=gt_prog_len[0])
                     gt = decode_from_tokens(self.programs_vocab, gt_prog[0], until_eos=False, max_length=gt_prog_len[0])
                     # print('\nPRED PROG:', pred)
-                    print('\nPRED INTERV:', intervals[0, :gt_caps_count[0]])
+                    # print('\nPRED INTERV:', intervals[0, :gt_caps_count[0]])
                     # print('\nGT PROG:', gt)
-                    print('\nGT INTERV:', gt_intervals[0, :gt_caps_count[0]])
-                    print('\ndiff:', sum([s1!=s2 for s1, s2 in zip(pred.split(' '), gt.split(' '))]))
+                    # print('\nGT INTERV:', gt_intervals[0, :gt_caps_count[0]])
+                    sample_diff = sum([s1!=s2 for s1, s2 in zip(pred.split(' '), gt.split(' '))])
+                    self.logger.info(f'sample-pred-prog-diff: {sample_diff}')
 
                     if phase != 'train':
                         # save programs and the videos' idx for computing evaluation metrics
@@ -713,6 +725,8 @@ class DenseVideo2TextTrainer(Trainer):
             log_msg += ' teacher_forcing_ratio:{0:.3f} enc-lr:{1:.6f} dec-lr:{1:.6f}'.format(teacher_forcing_ratio, lrs[0], lrs[1])
             # vid = video_ids[0]
             # log_msg += '\n[vid {}]:\nWE: {}\nGT: {}'.format(vid, predicted_sentences[vid], self.ground_truth['valid'][vid])
+            
+            self.logger.info(log_msg)
             sys.stdout.write(log_msg+'\n')
 
             # check if the training must be early sopped
