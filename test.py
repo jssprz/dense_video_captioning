@@ -10,7 +10,7 @@ import numpy as np
 from utils import decode_from_tokens
 from vocabulary import Vocabulary
 from configuration_dict import ConfigDict
-from loader import extract_split_data_from_corpus, data2tensors, get_dense_loader
+# from loader import extract_split_data_from_corpus, data2tensors, get_dense_loader
 from model.dense_captioner import DenseCaptioner
 
 
@@ -49,6 +49,7 @@ if __name__ == '__main__':
 
   # Pretrained Embedding
   # pretrained_we = torch.Tensor(corpus[5])
+  pretrained_ope = None
   pretrained_we = None
   pretrained_pe = None
 
@@ -97,6 +98,7 @@ if __name__ == '__main__':
                                    ConfigDict(modules_config['multimodal_config']),
                                    ConfigDict(modules_config['vncl_cell_config']),
                                    progs_vocab=programs_vocab,
+                                   pretrained_ope=pretrained_ope,
                                    caps_vocab=caps_vocab,
                                    pretrained_we=pretrained_we,
                                    pos_vocab=pos_vocab,

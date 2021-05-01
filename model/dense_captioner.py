@@ -256,7 +256,7 @@ class VNCLCell(nn.Module):
 
 class DenseCaptioner(nn.Module):
     def __init__(self, config, sem_tagger_config, syn_embedd_config, syn_tagger_config, avscn_dec_config,
-                 semsynan_dec_config, mm_config, vncl_cell_config, progs_vocab,
+                 semsynan_dec_config, mm_config, vncl_cell_config, progs_vocab, pretrained_ope,
                  caps_vocab, pretrained_we, pos_vocab, pretrained_pe, device):
         super(DenseCaptioner, self).__init__()
 
@@ -264,19 +264,28 @@ class DenseCaptioner(nn.Module):
         self.test_sample_max = config.test_sample_max
         self.max_clip_len = config.max_clip_len
         self.future_steps = config.future_steps
+
+        self.embedding_size = config.embedding_size
         self.h_size = config.h_size
         self.mm_size = mm_config.out_size
+        
         self.progs_vocab_size = len(progs_vocab)
         self.caps_vocab_size = len(caps_vocab)
         self.pos_vocab_size = len(pos_vocab)
         self.sem_enc_size = sem_tagger_config.out_size
+
+        if pretrained_ope is not None:
+            self.embedding = nn.Embedding.from_pretrained(pretrained_ope)
+        else:
+            self.embedding = nn.Embedding(self.progs_vocab_size, self.embedding_size)
+        self.embedd_drop = nn.Dropout(config.drop_p)
 
         self.mm_enc = MultiModal(v_enc_config=mm_config.v_enc_config,
                                  t_enc_config=mm_config.t_enc_config,
                                  out_size=mm_config.out_size,
                                  vocab_size=self.caps_vocab_size)
 
-        self.rnn_cell = VNCLCell(x_size=self.progs_vocab_size,
+        self.rnn_cell = VNCLCell(x_size=self.embedding_size,
                                  v_size=config.cnn_feats_size+config.c3d_feats_size,
                                  mm_size=mm_config.out_size,
                                  vh_size=vncl_cell_config.vh_size,
@@ -299,8 +308,9 @@ class DenseCaptioner(nn.Module):
                                        device=device)
 
     def get_clip_feats(self, v_feats, start_idx, end_idx=None):
-        feats = [torch.zeros(f.size(0), self.max_clip_len, f.size(2)).to(f.device) for f in v_feats]
-        pool = []
+        bs = start_idx.size(0)
+        feats = [torch.zeros(bs, self.max_clip_len, f.size(2)).to(f.device) for f in v_feats]
+        pool = torch.zeros(bs, sum([f.size(2) for f in feats])).to(feats[0].device)
         if end_idx is not None:
             for i, (s, e) in enumerate(zip(start_idx, end_idx)):
                 if (e-s) > self.max_clip_len:
@@ -311,18 +321,20 @@ class DenseCaptioner(nn.Module):
                     f1 = v_feats[0][i, s:e, :]
                     f2 = v_feats[1][i, s:e, :]
 
-                feats[0][i,:f1.size(0)] = f1
-                feats[1][i,:f2.size(0)] = f2
+                feats[0][i, :f1.size(0), :] = f1
+                feats[1][i, :f2.size(0), :] = f2
 
-                pool.append(torch.cat((torch.mean(f1, dim=0), torch.mean(f2, dim=0))))
+                # pool.append(torch.cat((torch.mean(f1, dim=0), torch.mean(f2, dim=0))))
+                pool[i, :] = torch.cat((torch.mean(f1, dim=0), torch.mean(f2, dim=0)))
 
-        return torch.stack(pool), feats
+        # return torch.stack(pool), feats
+        return pool, feats
 
     def __step__(self, t, video_features):
         self.v_p_q_pool, self.v_p_q_feats = self.get_clip_feats(video_features, self.p, self.q)
         v_q_w_pool, _ = self.get_clip_feats(video_features, self.q, self.q + self.future_steps)
 
-        self.h, self.c = self.rnn_cell(self.h, self.c, self.a_logits, self.prev_match, self.v_p_q_pool, v_q_w_pool, var_drop_p=.1)
+        self.h, self.c = self.rnn_cell(self.h, self.c, self.x, self.prev_match, self.v_p_q_pool, v_q_w_pool, var_drop_p=.1)
         self.a_logits = self.fc(self.h)
 
     def forward(self, video_features, feats_count, prog_len=100, teacher_forcing_p=.5, gt_program=None, gt_captions=None, gt_caps_count=None, gt_sem_enc=None, gt_pos=None, gt_intervals=None, max_prog=None, max_caps=None, max_cap=None):
@@ -330,7 +342,7 @@ class DenseCaptioner(nn.Module):
         bs, device = video_features[0].size(0), video_features[0].device
 
         caps_count = torch.zeros(bs, dtype=torch.int8).to(device)
-        self.p, self.q, self.a_logits = torch.zeros(bs, dtype=torch.int), torch.ones(bs, dtype=torch.int), torch.zeros(bs, self.progs_vocab_size).fill_(-1).to(device)
+        self.p, self.q, self.x = torch.zeros(bs, dtype=torch.int), torch.ones(bs, dtype=torch.int), torch.zeros(bs, self.embedding_size).to(device)
         self.h, self.c, self.prev_match = torch.zeros(bs, self.h_size).to(device), torch.zeros(bs, self.h_size).to(device), torch.zeros(bs, self.mm_size).to(device)
 
         # precomputing weights related to the prev_match only
@@ -356,7 +368,7 @@ class DenseCaptioner(nn.Module):
         
         seq_pos = 0
         while condition(seq_pos):
-            use_teacher_forcing = True if random.random() < teacher_forcing_p or seq_pos == 0 else False
+            use_teacher_forcing = True if random.random() < teacher_forcing_p or seq_pos == 0 else False                
             self.__step__(seq_pos, video_features)
 
             if self.training:
@@ -380,6 +392,9 @@ class DenseCaptioner(nn.Module):
                 # in testing phase sample instructions from probability distribution
                 # (batch_size)
                 a_id = torch.multinomial(torch.softmax(self.a_logits, dim=1), 1)
+
+            self.x = self.embedding(a_id)
+            self.x = self.embedd_drop(self.x)
 
             program[:, seq_pos] = a_id
             prog_logits[:, seq_pos, :] = self.a_logits

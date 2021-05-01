@@ -130,6 +130,7 @@ class DenseVideo2TextTrainer(Trainer):
         print('Size of upos_vocab: {}'.format(len(self.upos_vocab)), '\n')
 
         # Pretrained Embeddings
+        pretrained_ope = None
         pretrained_we = torch.Tensor(self.corpus[7])
         pretrained_pe = None
 
@@ -151,6 +152,7 @@ class DenseVideo2TextTrainer(Trainer):
                                               self.modules_config['mm_config'],
                                               self.modules_config['vncl_cell_config'],
                                               progs_vocab=self.programs_vocab,
+                                              pretrained_ope=pretrained_ope,
                                               caps_vocab=self.caps_vocab,
                                               pretrained_we=pretrained_we,
                                               pos_vocab=self.pos_vocab,
@@ -327,7 +329,7 @@ class DenseVideo2TextTrainer(Trainer):
         val_dataset = self.h5_val[self.trainer_config.h5_file_group_name]
         val_loader = get_dense_loader(h5_dataset=val_dataset, vidxs=vidxs, vidxs_blcklist=self.trainer_config.valid_blacklist, cidxs=cidxs_t, 
                                       intervals=intervals_t, caps_count=caps_count_t, captions=caps_t, caps_sem_enc=caps_sem_enc_t, pos=pos_t, 
-                                      upos=upos_t, cap_lens=cap_lens_t, progs=progs_t, prog_lens=prog_lens, batch_size=self.trainer_config.batch_size*2, train=False)
+                                      upos=upos_t, cap_lens=cap_lens_t, progs=progs_t, prog_lens=prog_lens, batch_size=self.trainer_config.batch_size*3, train=False)
 
 
         print(' Max program len:', self.max_prog)
