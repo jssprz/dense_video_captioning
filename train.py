@@ -131,7 +131,7 @@ class DenseVideo2TextTrainer(Trainer):
         print('Size of pos_vocab: {}'.format(len(self.pos_vocab)))
 
         self.upos_vocab = Vocabulary.from_idx2word_dict(idx2upos_dict, False)
-        self.logger.info('Size of upos_vocab: {}'.format(len(self.upos_vocab)), '\n')
+        self.logger.info('Size of upos_vocab: {}'.format(len(self.upos_vocab)))
         print('Size of upos_vocab: {}'.format(len(self.upos_vocab)), '\n')
 
         # Pretrained Embeddings
