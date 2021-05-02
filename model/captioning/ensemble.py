@@ -59,11 +59,11 @@ class Ensemble(nn.Module):
     def forward(self, v_feats, v_global, teacher_forcing_p=.5, gt_captions=None, gt_pos=None):
         # get encodings from v_feats and v_global
         encoding = self.encoder(v_feats, v_global, teacher_forcing_p, gt_pos)
-        sem_enc, pos_tag_seq_logits = encoding[2], encoding[3][2]
+        sem_enc, pos_tag_seq_logits, syn_enc = encoding[2], encoding[3][0], encoding[3][2]
 
         # get a syntactic representation
         # print(pos_tag_seq_logits.size())
-        encoding[3] = torch.mean(pos_tag_seq_logits, dim=1)
+        encoding[3] = torch.mean(syn_enc, dim=1)
 
         # TODO: evaluate the use of POS tagger as a global controler 
 
@@ -74,4 +74,4 @@ class Ensemble(nn.Module):
             logits += ls
         logits /= len(self.decoders)
 
-        return logits, sem_enc, encoding[3][0]
+        return logits, sem_enc, pos_tag_seq_logits
