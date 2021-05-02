@@ -592,8 +592,6 @@ class DenseVideo2TextTrainer(Trainer):
         time_phases = {'train': 0, 'val_1': 0}
         prog_metrics_results, cap_metrics_results, densecap_metrics_results = None, None, None
         for epoch in range(begin_epoch, 1000):
-            time_start_epoch = time.perf_counter()
-
             k = self.trainer_config.convergence_speed_factor
             teacher_forcing_ratio = max(.6, k / (k + np.exp(epoch / k)))  # inverse sigmoid decay
             self.writer.add_scalar('end2end/teacher_forcing_ratio', teacher_forcing_ratio, epoch)
@@ -606,6 +604,7 @@ class DenseVideo2TextTrainer(Trainer):
                     self.dense_captioner.eval()
 
                 # predicted_sentences = {}
+                time_start_epoch = time.perf_counter()
                 loss_count = 0
                 all_programs, all_captions, all_prog_ids, all_caps_ids, all_intervals, all_tstamps = [], [], [], [], [], []
                 for i, (vidx, cidxs, cnn, c3d, feats_count, tstamps, gt_intervals, gt_caps_count, gt_caps, gt_caps_sem_enc, gt_pos, gt_upos, gt_cap_lens, gt_prog, gt_prog_len) in enumerate(self.loaders[phase], start=1):
@@ -719,9 +718,9 @@ class DenseVideo2TextTrainer(Trainer):
 
             log_msg = '\n'
             for k, v in loss_phases.items():
-                log_msg += ' {0} Avg-Loss:{1:10.4f}'.format(k, v)
+                log_msg += ' {0}-avg-loss:{1:9.4f}'.format(k, v)
             for k, v in time_phases.items():
-                log_msg += ' {0} Time:{1:10.3f}s'.format(k, v/(epoch+1))
+                log_msg += ' {0}-avg-lime:{1:9.3f}h'.format(k, (v/3600)/(epoch+1))
             log_msg += ' teacher_forcing_ratio:{0:.3f} enc-lr:{1:.6f} dec-lr:{1:.6f}'.format(teacher_forcing_ratio, lrs[0], lrs[1])
             # vid = video_ids[0]
             # log_msg += '\n[vid {}]:\nWE: {}\nGT: {}'.format(vid, predicted_sentences[vid], self.ground_truth['valid'][vid])
