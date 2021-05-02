@@ -619,11 +619,11 @@ class DenseVideo2TextTrainer(Trainer):
                     self.writer.add_scalar('end2end/{}-iters-prog_loss'.format(phase), prog_loss, epoch * len(self.loaders[phase]) + i)
                     self.writer.add_scalar('end2end/{}-iters-cap_loss'.format(phase), cap_loss, epoch * len(self.loaders[phase]) + i)
                     self.writer.add_scalar('end2end/{}-iters-sem_enc_loss'.format(phase), sem_enc_loss, epoch * len(self.loaders[phase]) + i)
-                    self.writer.add_scalar('end2end/{}-iters-sem_enc_loss'.format(phase), sem_enc_loss, epoch * len(self.loaders[phase]) + i)
+                    self.writer.add_scalar('end2end/{}-iters-pos_tag_loss'.format(phase), pos_loss, epoch * len(self.loaders[phase]) + i)
                     self.writer.add_scalar('end2end/{}-iters-iou_loss'.format(phase), iou_loss, epoch * len(self.loaders[phase]) + i)
 
                     lrs = self.lr_scheduler.get_last_lr()
-                    log_msg = '\rEpoch:{0:03d} Phase:{1:6s} Iter:{2:04d}/{3:04d} lr:{4:.6f} Loss:{5:9.4f} [cap-loss:{6:9.4f} prog-loss:{7:9.4f} sem-enc-loss:{8:9.4f} pos-tag-loss iou-loss:{9:9.4f}]'.format(epoch, phase, i, 
+                    log_msg = '\rEpoch:{0:03d} Phase:{1:6s} Iter:{2:04d}/{3:04d} lr:{4:.6f} Loss:{5:9.4f} [cap-loss:{6:9.4f} prog-loss:{7:9.4f} sem-enc-loss:{8:9.4f} pos-tag-loss:{9:9.4f} iou-loss:{10:9.4f}]'.format(epoch, phase, i, 
                                                                                                                                                                                                             len(self.loaders[phase]), 
                                                                                                                                                                                                             lrs[0], loss.item(), 
                                                                                                                                                                                                             cap_loss.item(), 

@@ -204,6 +204,6 @@ class DenseCaptioningLoss(nn.Module):
         # print(cap_loss.requires_grad, prog_loss.requires_grad, iou_loss.requires_grad)
         # losses = torch.tensor([cap_loss, prog_loss])
         # loss = torch.sum(self.comb_weights * losses)
-        loss = cap_loss + prog_loss + sem_enc_loss
+        loss = cap_loss + prog_loss + sem_enc_loss + pos_loss
 
         return loss, prog_loss, cap_loss, sem_enc_loss, pos_loss, iou_loss
