@@ -309,11 +309,18 @@ class DenseVideo2TextTrainer(Trainer):
 
         # get train loader
         # h5_path = os.path.join(self.dataset_folder, self.trainer_config.features_filename)
-        self.h5_train = h5py.File(self.trainer_config.train_h5_file_path, 'r')
-        train_dataset = self.h5_train[self.trainer_config.h5_file_group_name]
-        train_loader = get_dense_loader(h5_dataset=train_dataset, vidxs=vidxs, vidxs_blcklist=self.trainer_config.valid_blacklist, cidxs=cidxs_t, 
+        # self.h5_train = h5py.File(self.trainer_config.train_h5_file_path, 'r')
+        # train_dataset = self.h5_train[self.trainer_config.h5_file_group_name]
+        # train_loader = get_dense_loader(h5_dataset=train_dataset, vidxs=vidxs, vidxs_blcklist=self.trainer_config.valid_blacklist, cidxs=cidxs_t, 
+        #                                 intervals=intervals_t, caps_count=caps_count_t, captions=caps_t, caps_sem_enc=caps_sem_enc_t, pos=pos_t, 
+        #                                 upos=upos_t, cap_lens=cap_lens_t, progs=progs_t, prog_lens=prog_lens, batch_size=self.trainer_config.batch_size, 
+        #                                 train=True, num_workers=trainer_config.loader_num_workers, pin_memory=trainer_config.loader_pin_memory)
+
+        train_loader = get_dense_loader(h5_file_path=self.trainer_config.train_h5_file_path, h5_file_group_name=self.trainer_config.h5_file_group_name,
+                                        vidxs=vidxs, vidxs_blcklist=self.trainer_config.valid_blacklist, cidxs=cidxs_t, 
                                         intervals=intervals_t, caps_count=caps_count_t, captions=caps_t, caps_sem_enc=caps_sem_enc_t, pos=pos_t, 
-                                        upos=upos_t, cap_lens=cap_lens_t, progs=progs_t, prog_lens=prog_lens, batch_size=self.trainer_config.batch_size, train=True)
+                                        upos=upos_t, cap_lens=cap_lens_t, progs=progs_t, prog_lens=prog_lens, batch_size=self.trainer_config.batch_size, 
+                                        train=True, num_workers=trainer_config.loader_num_workers, pin_memory=trainer_config.loader_pin_memory)
 
         # get valid split data
         print(' initializing valid split data loader...')
@@ -330,18 +337,24 @@ class DenseVideo2TextTrainer(Trainer):
         caps_sem_enc_t = self.__get_sem_enc(freq_words, caps, upos)
 
         # get valid loader
-        self.h5_val = h5py.File(self.trainer_config.valid_h5_file_path, 'r')
-        val_dataset = self.h5_val[self.trainer_config.h5_file_group_name]
-        val_loader = get_dense_loader(h5_dataset=val_dataset, vidxs=vidxs, vidxs_blcklist=self.trainer_config.valid_blacklist, cidxs=cidxs_t, 
+        # self.h5_val = h5py.File(self.trainer_config.valid_h5_file_path, 'r')
+        # val_dataset = self.h5_val[self.trainer_config.h5_file_group_name]
+        # val_loader = get_dense_loader(h5_dataset=val_dataset, vidxs=vidxs, vidxs_blcklist=self.trainer_config.valid_blacklist, cidxs=cidxs_t, 
+        #                               intervals=intervals_t, caps_count=caps_count_t, captions=caps_t, caps_sem_enc=caps_sem_enc_t, pos=pos_t, 
+        #                               upos=upos_t, cap_lens=cap_lens_t, progs=progs_t, prog_lens=prog_lens, batch_size=self.trainer_config.batch_size*3, 
+        #                               train=False, num_workers=trainer_config.loader_num_workers, pin_memory=trainer_config.loader_pin_memory)
+
+        val_loader = get_dense_loader(h5_file_path=self.trainer_config.valid_h5_file_path, h5_file_group_name=self.trainer_config.h5_file_group_name,
+                                      vidxs=vidxs, vidxs_blcklist=self.trainer_config.valid_blacklist, cidxs=cidxs_t, 
                                       intervals=intervals_t, caps_count=caps_count_t, captions=caps_t, caps_sem_enc=caps_sem_enc_t, pos=pos_t, 
-                                      upos=upos_t, cap_lens=cap_lens_t, progs=progs_t, prog_lens=prog_lens, batch_size=self.trainer_config.batch_size*3, train=False)
+                                      upos=upos_t, cap_lens=cap_lens_t, progs=progs_t, prog_lens=prog_lens, batch_size=self.trainer_config.batch_size*3, 
+                                      train=False, num_workers=trainer_config.loader_num_workers, pin_memory=trainer_config.loader_pin_memory)
 
-
-        self.logger.info(f' Max program len: {self.max_prog}')
-        self.logger.info(f' Max caption len: {self.max_words}')
-        self.logger.info(f' Max intervals count: {self.max_caps}')
-        self.logger.info(f' Max interval len: {int(self.max_interval)}')
-        self.logger.info(f' Last interval end: {int(self.last_interval_end)}')
+        self.logger.info(f'Max program len: {self.max_prog}')
+        self.logger.info(f'Max caption len: {self.max_words}')
+        self.logger.info(f'Max intervals count: {self.max_caps}')
+        self.logger.info(f'Max interval len: {int(self.max_interval)}')
+        self.logger.info(f'Last interval end: {int(self.last_interval_end)}')
 
         print(f' Max program len: {self.max_prog}')
         print(f' Max caption len: {self.max_words}')
@@ -373,20 +386,6 @@ class DenseVideo2TextTrainer(Trainer):
         gt_prog_len = gt_prog_len.to(self.device)
         gt_caps_sem_enc = gt_caps_sem_enc.to(self.device)
 
-        # Constructing the mini batch's Variables
-        # cnn_feats = Variable(cnn_feats).to(self.device)
-        # c3d_feats = Variable(c3d_feats).to(self.device)
-        # i3d_feats = Variable(i3d_feats).to(self.device)
-        # eco_feats = Variable(eco_feats).to(self.device)
-        # eco_sem_feats = Variable(eco_sem_feats).to(self.device)
-        # tsm_sem_feats = Variable(tsm_sem_feats).to(self.device)
-        # cnn_globals = Variable(cnn_globals).to(self.device)
-        # cnn_sem_globals = Variable(cnn_sem_globals).to(self.device)
-        # tags_globals = Variable(tags_globals).to(self.device)
-        # res_eco_globals = Variable(res_eco_globals).to(self.device)
-        # targets = Variable(targets).to(self.device)
-        # target_lens = Variable(target_lens).to(self.device)
-
         self.optimizer.zero_grad()
 
         with torch.set_grad_enabled(phase == 'train'):
@@ -408,12 +407,19 @@ class DenseVideo2TextTrainer(Trainer):
             else:
                 truncate_prog_at = None
 
-            prog_logits, program, caps_logits, caps_sem_enc, pos_tags_logits, captions, intervals, caps_count = self.dense_captioner(video_features=video_feats, feats_count=feats_count, 
-                                                                                                                    prog_len=truncate_prog_at, teacher_forcing_p=teacher_forcing_ratio,
-                                                                                                                    gt_program=gt_program, gt_captions=gt_captions,
-                                                                                                                    gt_caps_count=gt_caps_count, gt_sem_enc=gt_caps_sem_enc, gt_pos=gt_pos,
-                                                                                                                    gt_intervals=gt_intervals, max_prog=self.max_prog, 
-                                                                                                                    max_caps=self.max_caps, max_cap=self.max_words)
+            prog_logits, program, caps_logits, caps_sem_enc, pos_tags_logits, captions, intervals, caps_count = self.dense_captioner(video_features=video_feats,
+                                                                                                                                     feats_count=feats_count,
+                                                                                                                                     prog_len=truncate_prog_at,
+                                                                                                                                     teacher_forcing_p=teacher_forcing_ratio,
+                                                                                                                                     gt_program=gt_program,
+                                                                                                                                     gt_captions=gt_captions,
+                                                                                                                                     gt_caps_count=gt_caps_count,
+                                                                                                                                     gt_sem_enc=gt_caps_sem_enc,
+                                                                                                                                     gt_pos=gt_pos,
+                                                                                                                                     gt_intervals=gt_intervals,
+                                                                                                                                     max_prog=self.max_prog,
+                                                                                                                                     max_caps=self.max_caps,
+                                                                                                                                     max_cap=self.max_words)
             # video_encoded = self.encoder(cnn_feats, c3d_feats, i3d_feats, eco_feats, eco_sem_feats, tsm_sem_feats, cnn_globals, cnn_sem_globals, tags_globals, res_eco_globals)
 
             # outputs, tokens = self.decoder(video_encoded, targets if phase == 'train' else None, teacher_forcing_ratio)
@@ -425,8 +431,10 @@ class DenseVideo2TextTrainer(Trainer):
             # targets = torch.cat([targets[j][:target_lens[j]] for j in range(bsz)], dim=0)
 
             # Evaluate the loss function
-            loss, prog_loss, cap_loss, sem_enc_loss, pos_loss, iou_loss = self.criterion(gt_captions, gt_cap_lens, caps_logits, gt_caps_sem_enc, caps_sem_enc, gt_pos, pos_tags_logits, gt_program, 
-                                                                               gt_prog_len, prog_logits, gt_intervals, intervals, gt_caps_count, caps_count, truncate_prog_at)
+            loss, prog_loss, cap_loss, sem_enc_loss, pos_loss, iou_loss = self.criterion(gt_captions, gt_cap_lens, caps_logits, gt_caps_sem_enc,
+                                                                                         caps_sem_enc, gt_pos, pos_tags_logits, gt_program,
+                                                                                         gt_prog_len, prog_logits, gt_intervals, intervals,
+                                                                                         gt_caps_count, caps_count, truncate_prog_at)
             # if not use_rl:
             #     if type(self.criterion) is SentenceLengthLoss:
             #         loss = self.criterion(outputs.view(-1, len(self.vocab)), targets.view(-1), target_lens)
@@ -748,8 +756,10 @@ class DenseVideo2TextTrainer(Trainer):
             self.lr_scheduler.step()
 
         # close h5 files
-        self.h5_train.close()
-        self.h5_val.close()
+        # self.h5_train.close()
+        # self.h5_val.close()
+        for loader in self.loaders.values():
+            loader.close_h5_file()
 
         # log best results
         self.logger.info('Best results: {}'.format(str(self.best_metrics)))
