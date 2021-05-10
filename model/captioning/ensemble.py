@@ -20,7 +20,7 @@ class ClipEncoder(nn.Module):
 
         self.syn_model = POSTagger(syn_embedd_config, syn_tagger_config, pos_vocab, pretrained_pe, device)
 
-    def forward(self, v_feats, v_global, teacher_forcing_p, gt_pos):
+    def forward(self, v_feats, v_global, teacher_forcing_p, gt_pos=None, max_words=None):
         v_feats_cat = torch.cat(v_feats, dim=2)
         sem_enc = self.sem_model(v_global)[1]
         syn_enc = self.syn_model([v_feats_cat, v_global, sem_enc], v_feats, teacher_forcing_p, gt_pos)
@@ -56,9 +56,9 @@ class Ensemble(nn.Module):
 
         self.decoders = [self.avscn_dec, self.semsynan_dec]
 
-    def forward(self, v_feats, v_global, teacher_forcing_p=.5, gt_captions=None, gt_pos=None):
+    def forward(self, v_feats, v_global, teacher_forcing_p=.5, gt_captions=None, gt_pos=None, max_words=None):
         # get encodings from v_feats and v_global
-        encoding = self.encoder(v_feats, v_global, teacher_forcing_p, gt_pos)
+        encoding = self.encoder(v_feats=v_feats, v_global=v_global, teacher_forcing_p=teacher_forcing_p, gt_pos=gt_pos, max_words=max_words)
         sem_enc, pos_tag_seq_logits, syn_enc = encoding[2], encoding[3][0], encoding[3][2]
 
         # get a syntactic representation
@@ -70,7 +70,7 @@ class Ensemble(nn.Module):
         # ensemble decoders
         logits = torch.zeros(v_global.size(0), gt_captions.size(1), self.out_size).to(v_feats[0].device)
         for dec in self.decoders:
-            ls, _, _ = dec(encoding, teacher_forcing_p, gt_captions)
+                ls, _, _ = dec(encoding=encoding, teacher_forcing_p=teacher_forcing_p, gt_captions=gt_captions, max_words=max_words)
             logits += ls
         logits /= len(self.decoders)
 

@@ -340,7 +340,7 @@ class AVSCNDecoder(nn.Module):
         h = torch.cat((v_h, s_h), dim=1)
         return torch.relu(self.merge2(h))
 
-    def forward_fn(self, v_feats, v_pool, s_tags, teacher_forcing_p=.5, gt_captions=None):
+    def forward_fn(self, v_feats, v_pool, s_tags, teacher_forcing_p=.5, gt_captions=None, max_words=None):
         batch_size = v_pool.size(0)
 
         # (batch_size x embedding_size)
@@ -380,7 +380,7 @@ class AVSCNDecoder(nn.Module):
 
         if not self.training:
             words = []
-            for step in range(gt_captions.size(1)):
+            for step in range(max_words):
                 visual_h, visual_c = self.visual_layer.step(visual_h, visual_c, decoder_input)
                 semantic_h, semantic_c = self.semantic_layer.step(semantic_h, semantic_c, decoder_input)
                 visual_attn1 = self.attn1(v_feats, visual_h)
@@ -446,12 +446,13 @@ class AVSCNDecoder(nn.Module):
             # (batch_size x out_seq_length x output_size), none
             return torch.cat([o.unsqueeze(1) for o in outputs], dim=1).contiguous(), None, torch.cat([e.unsqueeze(1) for e in embedds], dim=1).contiguous()
 
-    def forward(self, encoding, teacher_forcing_p=.5, gt_captions=None):
+    def forward(self, encoding, teacher_forcing_p=.5, gt_captions=None, max_words=None):
         return self.forward_fn(v_feats=encoding[0],
                                v_pool=encoding[1],
                                s_tags=encoding[2],
                                teacher_forcing_p=teacher_forcing_p,
-                               gt_captions=gt_captions)
+                               gt_captions=gt_captions,
+                               max_words=max_words)
 
     def sample(self, videos_encodes):
         return self.forward(videos_encodes, None, teacher_forcing_p=0.0)

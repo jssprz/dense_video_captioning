@@ -461,7 +461,7 @@ class SemSynANDecoder(nn.Module):
         aa1 = beta1 * v_sem_h + (1 - beta1) * v_syn_h
         return beta2 * aa1 + (1 - beta2) * sem_syn_h
 
-    def forward_fn(self, v_feats, v_pool, s_tags, pos_emb, teacher_forcing_p=.5, gt_captions=None):
+    def forward_fn(self, v_feats, v_pool, s_tags, pos_emb, teacher_forcing_p=.5, gt_captions=None, max_words=None):
         batch_size = v_pool.size(0)
 
         # (batch_size x embedding_size)
@@ -503,7 +503,7 @@ class SemSynANDecoder(nn.Module):
 
         if not self.training:
             words = []
-            for step in range(gt_captions.size(1)):
+            for step in range(max_words):
                 v_sem_h, v_sem_c = self.v_sem_layer.step(s_tags, v_sem_h, v_sem_c, decoder_input, var_drop_p=.1)
                 v_syn_h, v_syn_c = self.v_syn_layer.step(pos_emb, v_syn_h, v_syn_c, decoder_input, var_drop_p=.1)
                 se_sy_h, se_sy_c = self.se_sy_layer.step(pos_emb, se_sy_h, se_sy_c, decoder_input, var_drop_p=.1)
@@ -589,13 +589,14 @@ class SemSynANDecoder(nn.Module):
 
             return torch.cat([o.unsqueeze(1) for o in outputs], dim=1).contiguous(), torch.cat([w.unsqueeze(1) for w in words], dim=1).contiguous(), torch.cat([e.unsqueeze(1) for e in embedds], dim=1).contiguous()
 
-    def forward(self, encoding, teacher_forcing_p=.5, gt_captions=None):
+    def forward(self, encoding, teacher_forcing_p=.5, gt_captions=None, max_words=None):
         return self.forward_fn(v_feats=encoding[0],
                                v_pool=encoding[1],
                                s_tags=encoding[2],
                                pos_emb=encoding[3],
                                gt_captions=gt_captions,
-                               teacher_forcing_p=teacher_forcing_p)
+                               teacher_forcing_p=teacher_forcing_p,
+                               max_words=max_words)
 
     def sample(self, videos_encodes):
         return self.forward(videos_encodes, None, teacher_forcing_p=0.0)
