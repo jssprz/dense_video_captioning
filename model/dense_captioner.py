@@ -309,6 +309,29 @@ class DenseCaptioner(nn.Module):
                                        pretrained_pe=pretrained_pe,
                                        device=device)
 
+    def freeze(self, resume_config):
+        if resume_config.freeze_captioning:
+            for name, p in self.named_parameters():
+                if "clip_captioner" in name:
+                    p.requires_grad = False
+        elif resume_config.random_captioning:
+            self.clip_captioner.reset_parameters()
+
+        if resume_config.freeze_programmer:
+            self.mm_enc.requires_grad = False
+            self.rnn_cell.requires_grad = False
+            self.proposal_fc.requires_grad = False
+            self.fc.requires_grad = False
+        elif resume_config.random_programmer:
+            self.mm_enc.reset_parameters()
+            self.rnn_cell.reset_parameters()
+            self.proposal_fc.reset_parameters()
+            self.fc.reset_parameters()
+    
+    def unfreeze(self):
+        for _, p in self.named_parameters():
+            p.requires_grad = True
+
     def get_clip_feats(self, v_feats, start_idx, end_idx):
         bs = start_idx.size(0)
         #import ipdb; ipdb.set_trace() # BREAKPOINT

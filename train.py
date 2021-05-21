@@ -172,12 +172,14 @@ class DenseVideo2TextTrainer(Trainer):
         print('\nInitializing the Optimizer...')
         if self.trainer_config.optimizer_config.optimizer_name == 'Adagrad':
             self.optimizer = optim.Adagrad([{'params': self.dense_captioner.mm_enc.parameters()},
+                                            {'params': self.dense_captioner.proposal_fc.parameters()},
                                             {'params': self.dense_captioner.rnn_cell.parameters()},
                                             {'params': self.dense_captioner.fc.parameters()},
                                             {'params': self.dense_captioner.clip_captioner.parameters()}],
                                            lr=self.trainer_config.learning_rate)
         else:
             self.optimizer = optim.Adam([{'params': self.dense_captioner.mm_enc.parameters()},
+                                         {'params': self.dense_captioner.proposal_fc.parameters(), 'lr': self.trainer_config.optimizer_config.programmer_lr},
                                          {'params': self.dense_captioner.rnn_cell.parameters(), 'lr': self.trainer_config.optimizer_config.programmer_lr},
                                          {'params': self.dense_captioner.fc.parameters(), 'lr': self.trainer_config.optimizer_config.programmer_lr},
                                          {'params': self.dense_captioner.clip_captioner.avscn_dec.parameters(), 'lr': self.trainer_config.optimizer_config.captioning_lr},
@@ -631,6 +633,9 @@ class DenseVideo2TextTrainer(Trainer):
             self.logger.info(log_msg)
 
             self.dense_captioner.load_state_dict(checkpoint['dense_captioner'])
+            if self.trainer_config.resume_config.unfreeze_after > 0:
+                self.dense_captioner.freeze(self.trainer_config.resume_config)
+                begin_epoch = 0
         else:
             begin_epoch = 0
             self.best_metrics = {'programmer': {}, 'captioning': {}, 'densecap': {}}
@@ -657,12 +662,18 @@ class DenseVideo2TextTrainer(Trainer):
         time_phases = {'train': 0, 'val_1': 0}
         prog_metrics_results, cap_metrics_results, densecap_metrics_results = None, None, None
         for epoch in range(begin_epoch, 1000):
+            # unfreeze the freezed part of the model if needed
+            if epoch == self.trainer_config.resume_config.unfreeze_at:
+                self.dense_captioner.unfreeze()
+
+            # determine teacher_forcing_ratio according to the convergence_speed_factor and current epoch
             k = self.trainer_config.convergence_speed_factor
             teacher_forcing_ratio = max(.6, k / (k + np.exp(epoch / k)))  # inverse sigmoid decay
             self.writer.add_scalar('end2end/teacher_forcing_ratio', teacher_forcing_ratio, epoch)
 
             loss_phases = {'train': 0, 'val_1': 0}
             for phase in ['train', 'val_1']:
+                # prepare gradients of the model according to the phase to be performed
                 if phase == 'train':
                     self.dense_captioner.train()
                     self.avg_truncation = 0
