@@ -438,15 +438,17 @@ class DenseVideo2TextTrainer(Trainer):
         if phase=='train':
             # determine the number instructions that are necessary for matching the i-th interval
             temp_prog_pos = torch.zeros(gt_intervals.size(0), gt_intervals.size(1)).to(gt_intervals.device)
-            for i in range(gt_intervals.size(1)):
-                if i == 0:
+            temp_prog_pos[:,0] = gt_intervals[:,0,1] + 1
+            for i in range(1, gt_intervals.size(1)):
+                # if i == 0:
                     # temp_prog_pos[:,i] = gt_intervals[:,i,1]*2 - gt_intervals[:,i,0] + 1
-                    temp_prog_pos[:,i] = gt_intervals[:,i,1] + 1
-                else:
+                    # temp_prog_pos[:,i] = gt_intervals[:,i,1] + 1
+                # else:
                     # mask = gt_intervals[:,i,0] < gt_intervals[:,i-1,1]
                     # temp_prog_pos[mask, i-1] -= (gt_intervals[mask,i-1,1] - gt_intervals[mask,i,0])
                     # temp_prog_pos[:,i] = temp_prog_pos[:,i-1] + (gt_intervals[:,i,1] - gt_intervals[:,i,0])*2 + 1
-                    temp_prog_pos[:,i] = temp_prog_pos[:,i-1] + (gt_intervals[mask,i,0] - gt_intervals[mask,i-1,0]) + (gt_intervals[:,i,1] - gt_intervals[:,i,0]) + 1
+                    # temp_prog_pos[:,i] = temp_prog_pos[:,i-1] + (gt_intervals[mask,i,0] - gt_intervals[mask,i-1,0]) + (gt_intervals[:,i,1] - gt_intervals[:,i,0]) + 1
+                temp_prog_pos[:,i] = temp_prog_pos[:,i-1] + (gt_intervals[:,i,0] - gt_intervals[:,i-1,0]) + (gt_intervals[:,i,1] - gt_intervals[:,i,0]) + 1
 
             truncate_prog_at = int(max(torch.min(gt_prog_len), torch.max(temp_prog_pos[:, 0])))
             self.logger.info(f'the gt programs of len {gt_prog_len} will be truncated around {truncate_prog_at}')
