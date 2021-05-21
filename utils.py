@@ -133,15 +133,18 @@ def l2norm(X):
     return X
 
 
-def make_bow_vector(cap, vocab_len, norm=False, eos=0):
-    vec = torch.zeros(vocab_len)
-    for widx in [idx for idx in cap if idx != eos]:
-        vec[widx] += 1
+def bow_vectors(caps, vocab_len, norm=False, eos=0):
+    vecs = torch.zeros(caps.size(0), vocab_len).to(caps.device)
+
+    for i, cap in enumerate(caps):
+      for widx in cap:
+        if widx != eos:
+          vecs[i, widx] += 1
     
     if not norm:
-      return vec
+      return vecs
     else:
-      return vec / sum(vec)
+      return vecs / torch.sum(vecs, dim=1)
 
 
 def get_trainer_str(config):

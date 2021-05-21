@@ -403,12 +403,18 @@ class AVSCNDecoder(nn.Module):
 
                 # (batch_size) -> (batch_size x embedding_size)
                 decoder_input = self.embedding(word_id).squeeze(1)
+                embedds.append(decoder_input)
+                
                 # decoder_input = self.embedd_drop(decoder_input)
 
                 outputs.append(word_logits)
                 words.append(word_id)
 
-            return torch.cat([o.unsqueeze(1) for o in outputs], dim=1).contiguous(), torch.cat([w.unsqueeze(1) for w in words], dim=1).contiguous(), torch.cat([e.unsqueeze(1) for e in embedds], dim=1).contiguous()
+            return (
+                torch.cat([o.unsqueeze(1) for o in outputs], dim=1).contiguous(), 
+                torch.cat([w.unsqueeze(1) for w in words], dim=1).contiguous(), 
+                torch.cat([e.unsqueeze(1) for e in embedds], dim=1).contiguous()
+            )
         else:
             for seq_pos in range(gt_captions.size(1)):
                 visual_h, visual_c = self.visual_layer.step(visual_h, visual_c, decoder_input)
@@ -444,7 +450,11 @@ class AVSCNDecoder(nn.Module):
                 outputs.append(word_logits)
 
             # (batch_size x out_seq_length x output_size), none
-            return torch.cat([o.unsqueeze(1) for o in outputs], dim=1).contiguous(), None, torch.cat([e.unsqueeze(1) for e in embedds], dim=1).contiguous()
+            return (
+                torch.cat([o.unsqueeze(1) for o in outputs], dim=1).contiguous(), 
+                None, 
+                torch.cat([e.unsqueeze(1) for e in embedds], dim=1).contiguous()
+            )
 
     def forward(self, encoding, teacher_forcing_p=.5, gt_captions=None, max_words=None):
         return self.forward_fn(v_feats=encoding[0],

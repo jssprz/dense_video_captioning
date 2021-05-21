@@ -23,7 +23,9 @@ class ClipEncoder(nn.Module):
     def forward(self, v_feats, v_global, teacher_forcing_p, gt_pos=None, max_words=None):
         v_feats_cat = torch.cat(v_feats, dim=2)
         sem_enc = self.sem_model(v_global)[1]
-        syn_enc = self.syn_model([v_feats_cat, v_global, sem_enc], v_feats, teacher_forcing_p, gt_pos)
+        syn_enc = self.syn_model(encoding=[v_feats_cat, v_global, sem_enc], v_feats=v_feats, 
+                                 teacher_forcing_p=teacher_forcing_p, gt_pos=gt_pos, 
+                                 max_words=max_words)
         
         return [v_feats_cat, v_global, sem_enc, syn_enc]
 
@@ -68,9 +70,13 @@ class Ensemble(nn.Module):
         # TODO: evaluate the use of POS tagger as a global controler 
 
         # ensemble decoders
-        logits = torch.zeros(v_global.size(0), gt_captions.size(1), self.out_size).to(v_feats[0].device)
+        if self.training:
+            logits = torch.zeros(v_global.size(0), gt_captions.size(1), self.out_size).to(v_feats[0].device)
+        else:
+            logits = torch.zeros(v_global.size(0), max_words, self.out_size).to(v_feats[0].device)
+            
         for dec in self.decoders:
-                ls, _, _ = dec(encoding=encoding, teacher_forcing_p=teacher_forcing_p, gt_captions=gt_captions, max_words=max_words)
+            ls, _, _ = dec(encoding=encoding, teacher_forcing_p=teacher_forcing_p, gt_captions=gt_captions, max_words=max_words)
             logits += ls
         logits /= len(self.decoders)
 

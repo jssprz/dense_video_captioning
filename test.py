@@ -33,6 +33,7 @@ if __name__ == '__main__':
       idx2pos_dict = corpus[8]
       idx2upos_dict = corpus[9]
       test_vidxs = corpus[1][0]
+      test_fps = corpus[1][3]
       test_gt_progs = corpus[1][4]
 
   programs_vocab = Vocabulary.from_idx2word_dict(idx2op_dict, False)
@@ -82,21 +83,23 @@ if __name__ == '__main__':
 
   # Checkpoint
   checkpoint = torch.load(args.checkpoint_path, map_location='cpu')
-  # modules_config = checkpoint['modules_confg']
-  config_path = os.path.join(args.dataset_folder, 'train_config.json')
-  with open(config_path, 'r') as f:
-      modules_config = json.load(f)
+  modules_config = checkpoint['modules_config']
+  max_prog = checkpoint['avg_tuncation']
+  # config_path = os.path.join(args.dataset_folder, 'train_config.json')
+  # with open(config_path, 'r') as f:
+  #     modules_config = json.load(f)
 
   # Model
   print('\nInitializing the Model...')
-  dense_captioner = DenseCaptioner(ConfigDict(modules_config['dense_captioner_config']),
-                                   ConfigDict(modules_config['sem_tagger_config']),
-                                   ConfigDict(modules_config['syn_embedd_config']),
-                                   ConfigDict(modules_config['syn_tagger_config']),
-                                   ConfigDict(modules_config['avscn_decoder_config']),
-                                   ConfigDict(modules_config['semsynan_decoder_config']),
-                                   ConfigDict(modules_config['multimodal_config']),
-                                   ConfigDict(modules_config['vncl_cell_config']),
+  dense_captioner = DenseCaptioner(config=modules_config['dense_captioner_config'],
+                                   sem_tagger_config=modules_config['sem_tagger_config'],
+                                   syn_embedd_config=modules_config['syn_embedd_config'],
+                                   syn_tagger_config=modules_config['syn_tagger_config'],
+                                   avscn_dec_config=modules_config['avscn_dec_config'],
+                                   semsynan_dec_config=modules_config['semsynan_dec_config'],
+                                   mm_config=modules_config['mm_config'],
+                                   vncl_cell_config=modules_config['vncl_cell_config'],
+                                   #num_proposals=,
                                    progs_vocab=programs_vocab,
                                    pretrained_ope=pretrained_ope,
                                    caps_vocab=caps_vocab,
@@ -133,29 +136,30 @@ if __name__ == '__main__':
 
   with torch.no_grad():
     programs, caps, intervs = [], [], []
-    for i, vidx in enumerate(test_vidxs):
+    for i, (vidx, fps) in enumerate(zip(test_vidxs, test_fps)):
       video_feats = [torch.from_numpy(cnn_feats[vidx]).unsqueeze(0), torch.from_numpy(c3d_feats[vidx]).unsqueeze(0)]
       feats_count = torch.tensor(feat_count[vidx])
-      tstamps = torch.from_numpy(frame_tstamps[vidx]).unsqueeze(0)
+      tstamps = torch.from_numpy(frame_tstamps[vidx]) / (fps**2)
       gt_prog = test_gt_progs[i]
 
       prog_logits, program, _, _, _, captions, intervals, caps_count = dense_captioner(video_features=video_feats, feats_count=feats_count, prog_len=None, teacher_forcing_p=0,
                                                                              gt_program=None, gt_captions=None, gt_caps_count=None, gt_sem_enc=None, gt_pos=None, gt_intervals=None,
-                                                                             max_prog=tester_config.max_prog, max_caps=tester_config.max_caps, max_cap=tester_config.max_words)
+                                                                             max_prog=max_prog, max_caps=tester_config.max_caps, max_cap=tester_config.max_words)
 
       print(f'video {vidx}:')
       p = decode_from_tokens(programs_vocab, program[0], until_eos=False)
       # print(f'  program: {p}')
-      print(f'  program-probs-avg: {torch.mean(torch.softmax(prog_logits, dim=-1), dim=-2)}')
+      print(f' program-probs-avg: {torch.mean(torch.softmax(prog_logits, dim=-1), dim=-2)}')
       programs.append(p)
 
-      print(f' {caps_count} predicted:')
+      print(f' {caps_count.item()} captions predicted:')
       v_caps, v_intervs = [], []
       for i in range(caps_count):
-        s = decode_from_tokens(caps_vocab, captions[i], until_eos=True)
-        print(f'  {intervals[i]}:  {s}')
-        v_caps.append(s)
-        v_intervs.append([[tstamps[s], tstamps[e]] for s,e in intervals[i]])
+        caption = decode_from_tokens(caps_vocab, captions[0, i], until_eos=True)
+        interval = [float(tstamps[int(intervals[0,i,0])]), float(tstamps[int(intervals[0,i,1])])]
+        print(f'  {interval}:  {caption}')
+        v_caps.append(caption)
+        v_intervs.append(interval)
       caps.append(v_caps)
       intervs.append(v_intervs)
 

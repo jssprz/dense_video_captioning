@@ -6,7 +6,7 @@ from torch.utils.data.dataloader import default_collate
 
 
 class DenseCaptioningDataset(Dataset):
-    def __init__(self, h5_file_path, h5_file_group_name, vidxs, vidxs_blcklist, cidxs, intervals, caps_count, captions, caps_sem_enc, pos, upos, cap_lens, progs, prog_lens):
+    def __init__(self, h5_file_path, h5_file_group_name, vidxs, vidxs_blcklist, vfps, cidxs, intervals, caps_count, captions, caps_sem_enc, pos, upos, cap_lens, progs, prog_lens, event_proposals):
         super(DenseCaptioningDataset, self).__init__()
 
         # self.cnn_feats = h5_dataset['cnn_features']
@@ -24,6 +24,7 @@ class DenseCaptioningDataset(Dataset):
 
         self.vidxs = vidxs
         self.vidxs_blcklist = vidxs_blcklist
+        self.vfps = vfps
         self.cidxs = cidxs
         self.intervals = intervals
         self.caps_count = caps_count
@@ -34,6 +35,7 @@ class DenseCaptioningDataset(Dataset):
         self.cap_lens = cap_lens
         self.progs = progs
         self.prog_lens = prog_lens
+        self.event_proposals = event_proposals
 
     def close_h5_file(self):
         self.h5_dataset.close()
@@ -45,12 +47,16 @@ class DenseCaptioningDataset(Dataset):
             
             self.cnn_feats = self.h5_dataset['cnn_features']
             self.c3d_feats = self.h5_dataset['c3d_features']
-            self.feat_count = self.h5_dataset['count_features'][...]
-            self.frame_tstamps = self.h5_dataset['frames_tstamp'][...]
+            self.feat_count = self.h5_dataset['count_features']
+            self.frame_tstamps = self.h5_dataset['frames_tstamp']
 
+        # get the vidx for accessing to the h5_dataset arrays 
         vidx = self.vidxs[index]
+
         if vidx not in self.vidxs_blcklist:
-            return vidx, self.cidxs[vidx], self.cnn_feats[vidx], self.c3d_feats[vidx], self.feat_count[vidx], self.frame_tstamps[vidx], self.intervals[vidx], self.caps_count[vidx], self.captions[vidx], self.caps_sem_enc[vidx], self.pos[vidx], self.upos[vidx], self.cap_lens[vidx], self.progs[vidx], self.prog_lens[vidx]
+            return (vidx, self.cidxs[index], self.cnn_feats[vidx], self.c3d_feats[vidx], self.feat_count[vidx], self.frame_tstamps[vidx], 
+                   self.vfps[index], self.intervals[index], self.caps_count[index], self.captions[index], self.caps_sem_enc[index], self.pos[index], 
+                   self.upos[index], self.cap_lens[index], self.progs[index], self.prog_lens[index], self.event_proposals[index])
         return None
 
     def __len__(self):
@@ -126,6 +132,6 @@ def data2tensors(cidxs, intervals, progs, prog_lens, caps, pos, upos, cap_lens, 
     return cidxs_t, intervals_t, caps_count_t, progs_t, caps_t, pos_t, upos_t, cap_lens_t
 
 
-def get_dense_loader(h5_file_path, h5_file_group_name, vidxs, vidxs_blcklist, cidxs, intervals, caps_count, captions, caps_sem_enc, pos, upos, cap_lens, progs, prog_lens, batch_size, train=True, num_workers=4, pin_memory=True):
-    dataset = DenseCaptioningDataset(h5_file_path, h5_file_group_name, vidxs, vidxs_blcklist, cidxs, intervals, caps_count, captions, caps_sem_enc, pos, upos, cap_lens, progs, prog_lens)
+def get_dense_loader(h5_file_path, h5_file_group_name, vidxs, vidxs_blcklist, vfps, cidxs, intervals, caps_count, captions, caps_sem_enc, pos, upos, cap_lens, progs, prog_lens, event_proposals, batch_size, train=True, num_workers=4, pin_memory=True):
+    dataset = DenseCaptioningDataset(h5_file_path, h5_file_group_name, vidxs, vidxs_blcklist, vfps, cidxs, intervals, caps_count, captions, caps_sem_enc, pos, upos, cap_lens, progs, prog_lens, event_proposals)
     return DataLoader(dataset=dataset, batch_size=batch_size, shuffle=train, collate_fn=filter_blacklist_collate, num_workers=num_workers, pin_memory=pin_memory)

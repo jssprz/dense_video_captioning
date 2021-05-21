@@ -541,7 +541,11 @@ class SemSynANDecoder(nn.Module):
                 outputs.append(word_logits)
                 words.append(word_id)
 
-            return torch.cat([o.unsqueeze(1) for o in outputs], dim=1).contiguous(), torch.cat([w.unsqueeze(1) for w in words], dim=1).contiguous(), torch.cat([e.unsqueeze(1) for e in embedds], dim=1).contiguous()
+            return (
+                torch.cat([o.unsqueeze(1) for o in outputs], dim=1).contiguous(), 
+                torch.cat([w.unsqueeze(1) for w in words], dim=1).contiguous(), 
+                torch.cat([e.unsqueeze(1) for e in embedds], dim=1).contiguous()
+            )
         else:
             words = []
             for seq_pos in range(gt_captions.size(1)):
@@ -587,7 +591,11 @@ class SemSynANDecoder(nn.Module):
                 outputs.append(word_logits)
                 words.append(word_id)
 
-            return torch.cat([o.unsqueeze(1) for o in outputs], dim=1).contiguous(), torch.cat([w.unsqueeze(1) for w in words], dim=1).contiguous(), torch.cat([e.unsqueeze(1) for e in embedds], dim=1).contiguous()
+            return (
+                torch.cat([o.unsqueeze(1) for o in outputs], dim=1).contiguous(), 
+                torch.cat([w.unsqueeze(1) for w in words], dim=1).contiguous(),
+                torch.cat([e.unsqueeze(1) for e in embedds], dim=1).contiguous()
+            )
 
     def forward(self, encoding, teacher_forcing_p=.5, gt_captions=None, max_words=None):
         return self.forward_fn(v_feats=encoding[0],
