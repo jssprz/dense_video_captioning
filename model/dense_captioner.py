@@ -267,7 +267,8 @@ class DenseCaptioner(nn.Module):
         self.embedding_size = config.embedding_size
         self.h_size = config.h_size
         self.mm_size = mm_config.out_size
-        
+        self.num_proposals = num_proposals
+
         self.progs_vocab_size = len(progs_vocab)
         self.caps_vocab_size = len(caps_vocab)
         self.pos_vocab_size = len(pos_vocab)
@@ -310,6 +311,7 @@ class DenseCaptioner(nn.Module):
 
     def get_clip_feats(self, v_feats, start_idx, end_idx):
         bs = start_idx.size(0)
+        #import ipdb; ipdb.set_trace() # BREAKPOINT
         feats = [torch.zeros(bs, self.max_clip_len, f.size(2)).to(f.device) for f in v_feats]
         pool = torch.zeros(bs, sum([f.size(2) for f in feats])).to(feats[0].device)
         for i, (s, e) in enumerate(zip(start_idx, end_idx)):
@@ -336,7 +338,7 @@ class DenseCaptioner(nn.Module):
 
         self.h, self.c = self.rnn_cell(self.h, self.c, self.x, self.prev_match, self.v_p_q_pool, v_q_w_pool, var_drop_p=.1)
 
-        self.a_logits = self.fc(torch.cat((self.h, self.current_proposals[torch.arange(self.p.size(0)), self.p, :]), dim=1))
+        self.a_logits = self.fc(torch.cat((self.h, self.current_proposals), dim=1))
 
     def forward(self, v_feats, feats_count, prog_len=100, teacher_forcing_p=.5, gt_program=None, gt_captions=None, gt_caps_count=None, gt_sem_enc=None, 
                 gt_pos=None, gt_intervals=None, gt_proposals=None, max_prog=None, max_caps=None, max_cap=None, max_chunks=None, num_proposals=None):
@@ -347,10 +349,11 @@ class DenseCaptioner(nn.Module):
         self.p = torch.zeros(bs, dtype=torch.long)
         self.q = torch.ones(bs, dtype=torch.long)
         self.x = torch.zeros(bs, self.embedding_size).to(device)
-        
+
         self.h = torch.zeros(bs, self.h_size).to(device)
         self.c = torch.zeros(bs, self.h_size).to(device)
         self.prev_match = torch.zeros(bs, self.mm_size).to(device)
+        self.current_proposals = torch.zeros(bs, self.num_proposals).to(device)
 
         # precomputing weights related to the prev_match only
         self.rnn_cell.precompute_dots_4_m(self.prev_match, var_drop_p=.1)
@@ -378,14 +381,16 @@ class DenseCaptioner(nn.Module):
             pos_tags = torch.zeros(bs, max_caps, max_cap).to(device)
             intervals = torch.zeros(bs, max_caps, 2).to(device)
             proposals_logits = torch.zeros(bs, max_chunks, num_proposals)
-        
+
         prog_logits = torch.zeros(program.size(0), program.size(1), self.progs_vocab_size).to(device)
         caps_logits = torch.zeros(captions.size(0), captions.size(1), captions.size(2), self.caps_vocab_size).to(device)
         pos_tag_logits = torch.zeros(pos_tags.size(0), pos_tags.size(1), pos_tags.size(2), self.pos_vocab_size).to(device)
-        
+
         seq_pos = 0
         while condition(seq_pos):
-            use_teacher_forcing = True if random.random() < teacher_forcing_p or seq_pos == 0 else False                
+            #if seq_pos > prog_len - 5:
+            #    import ipdb; ipdb.set_trace() # BREAKPOINT
+            use_teacher_forcing = True if random.random() < teacher_forcing_p or seq_pos == 0 else False
             self.__step__(seq_pos, v_feats)
 
             if self.training:
@@ -522,7 +527,7 @@ class DenseCaptioner(nn.Module):
 
             if len(vidx_to_skip) > 0:
                 self.current_proposals = torch.clone(self.current_proposals)
-                v_p = torch.cat([f[vidx_to_skip, self.p[vidx_to_skip], :] for f in v_feats])
+                v_p = torch.cat([f[vidx_to_skip, self.p[vidx_to_skip], :] for f in v_feats], dim=1)
                 proposals = self.proposal_fc(v_p)
                 self.current_proposals[vidx_to_skip, :] = proposals
                 proposals_logits[vidx_to_skip, self.p[vidx_to_skip], :] = proposals
@@ -596,7 +601,7 @@ class DenseCaptioner(nn.Module):
                 #     caps_sem_enc[i, caps_count[i], :] = c_sem_enc
                 #     caps_count[i] += 1
                 #     self.prev_match[i, :] = m
-                print(type(caps_count[vidx_to_describe]), caps_count[vidx_to_describe])
+                # print(type(caps_count[vidx_to_describe]), caps_count[vidx_to_describe])
                 captions[vidx_to_describe, caps_count[vidx_to_describe], :] = cap
                 caps_logits[vidx_to_describe, caps_count[vidx_to_describe], :, :] = cap_logits
                 pos_tag_logits[vidx_to_describe, caps_count[vidx_to_describe], :, :] = pos_tag_seq_logits

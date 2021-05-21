@@ -123,12 +123,13 @@ class DenseCaptioningLoss(nn.Module):
 
     def forward(self, gt_captions, gt_cap_lens, pred_captions, gt_caps_sem_enc, pred_caps_sem_enc, gt_pos_seq, pred_pos_seq, gt_program, gt_prog_len, pred_program,
                 gt_intervals, pred_intervals, gt_proposals, pred_proposals, gt_caps_count, pred_caps_count, gt_proposals_count, truncate_prog_at=None, mm_v_encs=None, mm_t_encs=None):
-
         bs, _, _, caps_vocab_size = pred_captions.size()
         pos_vocab_size = pred_pos_seq.size(3)
         progs_vocab_size = pred_captions.size(2)
 
         #TODO: compute gt flatten in the Dataset for removing it from here
+
+        print(gt_caps_count)
 
         l1, l2, l3, l4, l5, l6, l7, l8, l9, l10 = [], [], [], [], [], [], [], [], [], []
         for n in range(bs):
@@ -147,7 +148,7 @@ class DenseCaptioningLoss(nn.Module):
             
             l9.append(pred_proposals[n, :gt_proposals_count[n], :])
             l10.append(gt_proposals[n, :gt_proposals_count[n], :])
-        
+
         pred_captions = torch.cat(l1)
         gt_captions = torch.cat(l2)
         
@@ -159,8 +160,8 @@ class DenseCaptioningLoss(nn.Module):
         
         pred_intervals = torch.cat(l7)
         gt_intervals = torch.cat(l8)
-        
-        pred_proposals = torch.cat(l9)
+
+        pred_proposals = torch.sigmoid(torch.cat(l9))
         gt_proposals = torch.cat(l10)
 
         # # straighten the output captions (removing the part of the pad)

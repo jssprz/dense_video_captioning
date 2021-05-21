@@ -467,7 +467,7 @@ class DenseVideo2TextTrainer(Trainer):
             gt_pos = gt_pos[:, :max_caps].to(self.device)
             gt_intervals = gt_intervals[:, :max_caps].to(self.device)
             # gt_upos = gt_upos[:, :max_caps].to(self.device)
-            gt_proposals = gt_proposals[:, :int(torch.max(gt_intervals[:,gt_caps_count,0]))].to(self.device)
+            gt_proposals = gt_proposals[:, :int(torch.max(gt_intervals[:,gt_caps_count-1,0]))].to(self.device)
 
             self.avg_truncation += truncate_prog_at
             self.avg_caps += int(torch.mean(gt_caps_count.float()))
@@ -523,12 +523,13 @@ class DenseVideo2TextTrainer(Trainer):
 
             # Evaluate the loss function
             self.logger.info('loss computation....')
+            # import ipdb; ipdb.set_trace() # BREAKPOINT
             loss, prog_loss, cap_loss, sem_enc_loss, pos_loss, iou_loss = self.criterion(gt_captions=gt_captions, gt_cap_lens=gt_cap_lens, pred_captions=caps_logits, 
                                                                                          gt_caps_sem_enc=gt_caps_sem_enc, pred_caps_sem_enc=caps_sem_enc, gt_pos_seq=gt_pos, 
                                                                                          pred_pos_seq=pos_tags_logits, gt_program=gt_program, gt_prog_len=gt_prog_len, 
                                                                                          pred_program=prog_logits, gt_intervals=gt_intervals, pred_intervals=intervals,
                                                                                          gt_proposals=gt_proposals, pred_proposals=proposals_logits, gt_caps_count=gt_caps_count, 
-                                                                                         pred_caps_count=caps_count, gt_proposals_count=gt_intervals[:,gt_caps_count,0], 
+                                                                                         pred_caps_count=caps_count, gt_proposals_count=gt_intervals[torch.arange(bsz),gt_caps_count-1,0].int()+1, 
                                                                                          truncate_prog_at=truncate_prog_at)
 
         if phase == 'train':
