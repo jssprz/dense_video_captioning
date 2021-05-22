@@ -334,7 +334,7 @@ class DenseCaptioner(nn.Module):
 
     def get_clip_feats(self, v_feats, start_idx, end_idx):
         bs = start_idx.size(0)
-        #import ipdb; ipdb.set_trace() # BREAKPOINT
+#        import ipdb; ipdb.set_trace() # BREAKPOINT
         feats = [torch.zeros(bs, self.max_clip_len, f.size(2)).to(f.device) for f in v_feats]
         pool = torch.zeros(bs, sum([f.size(2) for f in feats])).to(feats[0].device)
         for i, (s, e) in enumerate(zip(start_idx, end_idx)):
@@ -411,8 +411,8 @@ class DenseCaptioner(nn.Module):
 
         seq_pos = 0
         while condition(seq_pos):
-            #if seq_pos > prog_len - 5:
-            #    import ipdb; ipdb.set_trace() # BREAKPOINT
+#            if seq_pos > prog_len - 5:
+#                import ipdb; ipdb.set_trace() # BREAKPOINT
             use_teacher_forcing = True if random.random() < teacher_forcing_p or seq_pos == 0 else False
             self.__step__(seq_pos, v_feats)
 
@@ -640,4 +640,4 @@ class DenseCaptioner(nn.Module):
         if self.training:
             caps_count = torch.min(caps_count, gt_caps_count)
 
-        return prog_logits, program, caps_logits, caps_sem_enc, pos_tag_logits, captions, intervals, caps_count, proposals_logits
+        return prog_logits, program, caps_logits, caps_sem_enc, pos_tag_logits, captions, intervals, caps_count, proposals_logits, self.p

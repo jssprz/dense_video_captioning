@@ -55,13 +55,13 @@ class IoULoss(nn.Module):
         # print('union:', union)
 
         # compute total IoU
-        loss = torch.sum(torch.reciprocal(union) * intersection)
+        tiou = torch.sum(torch.reciprocal(union) * intersection)
 
         # convert in a minimization loss
         if self.reduction=='mean':
-            return 1 -  loss / pred_intervals.size(0)
+            return 1 - (tiou / pred_intervals.size(0))
         elif self.reduction=='sum':
-            return pred_intervals.size(0) - loss
+            return pred_intervals.size(0) - tiou
 
 
 class DenseCaptioningLoss(nn.Module):
@@ -250,4 +250,4 @@ class DenseCaptioningLoss(nn.Module):
         # loss = torch.sum(self.comb_weights * losses)
         loss = cap_loss + prog_loss + sem_enc_loss + pos_loss + proposals_loss
 
-        return loss, prog_loss, cap_loss, sem_enc_loss, pos_loss, iou_loss
+        return loss, prog_loss, cap_loss, sem_enc_loss, pos_loss, iou_loss, proposals_loss
