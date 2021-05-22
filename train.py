@@ -505,21 +505,21 @@ class DenseVideo2TextTrainer(Trainer):
 
         with torch.set_grad_enabled(phase == 'train'):
             prog_logits, program, caps_logits, caps_sem_enc, pos_tags_logits, captions, intervals, caps_count, proposals_logits, proposals_count = self.dense_captioner(v_feats=video_feats,
-                                                                                                                                     feats_count=feats_count,
-                                                                                                                                     prog_len=truncate_prog_at,
-                                                                                                                                     teacher_forcing_p=teacher_forcing_ratio,
-                                                                                                                                     gt_program=gt_program,
-                                                                                                                                     gt_captions=gt_captions,
-                                                                                                                                     gt_caps_count=gt_caps_count,
-                                                                                                                                     gt_sem_enc=gt_caps_sem_enc,
-                                                                                                                                     gt_pos=gt_pos,
-                                                                                                                                     gt_intervals=gt_intervals,
-                                                                                                                                     gt_proposals=gt_proposals,
-                                                                                                                                     max_prog=self.avg_truncation,#max_prog=self.max_prog,
-                                                                                                                                     max_caps=self.avg_caps,#max_caps=self.max_caps,
-                                                                                                                                     max_cap=self.max_words,
-                                                                                                                                     #max_chunks=,
-                                                                                                                                     num_proposals=self.num_proposals)
+                                                                                                                                                                        feats_count=feats_count,
+                                                                                                                                                                        prog_len=truncate_prog_at,
+                                                                                                                                                                        teacher_forcing_p=teacher_forcing_ratio,
+                                                                                                                                                                        gt_program=gt_program,
+                                                                                                                                                                        gt_captions=gt_captions,
+                                                                                                                                                                        gt_caps_count=gt_caps_count,
+                                                                                                                                                                        gt_sem_enc=gt_caps_sem_enc,
+                                                                                                                                                                        gt_pos=gt_pos,
+                                                                                                                                                                        gt_intervals=gt_intervals,
+                                                                                                                                                                        gt_proposals=gt_proposals,
+                                                                                                                                                                        max_prog=self.avg_truncation,#max_prog=self.max_prog,
+                                                                                                                                                                        max_caps=self.avg_caps,#max_caps=self.max_caps,
+                                                                                                                                                                        max_cap=self.max_words,
+                                                                                                                                                                        max_chunks=self.avg_truncation, # the maximum value of start pointers is lower than the max_prog to be generated
+                                                                                                                                                                        num_proposals=self.num_proposals)
 
             if 'val' in phase:
                 gt_caps_count = gt_caps_count.to(self.device)
