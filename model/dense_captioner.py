@@ -7,6 +7,7 @@ from torch.nn.parameter import Parameter
 from utils import get_init_weights, bow_vectors
 from model.captioning.ensemble import Ensemble
 from model.embeddings.visual_semantic import MultiModal
+from model.tagging.semantic import TaggerMLP
 
 
 class VNCLCell(nn.Module):
@@ -255,8 +256,8 @@ class VNCLCell(nn.Module):
 
 class DenseCaptioner(nn.Module):
     def __init__(self, config, sem_tagger_config, syn_embedd_config, syn_tagger_config, avscn_dec_config,
-                 semsynan_dec_config, mm_config, vncl_cell_config, num_proposals, progs_vocab, pretrained_ope,
-                 caps_vocab, pretrained_we, pos_vocab, pretrained_pe, device):
+                 semsynan_dec_config, mm_config, vncl_cell_config, proposals_tagger_config, num_proposals, 
+                 progs_vocab, pretrained_ope, caps_vocab, pretrained_we, pos_vocab, pretrained_pe, device):
         super(DenseCaptioner, self).__init__()
 
         self.train_sample_max = config.train_sample_max
@@ -293,7 +294,13 @@ class DenseCaptioner(nn.Module):
                                  h2_size=config.h_size,
                                  drop_p=config.drop_p)
 
-        self.proposal_fc = nn.Linear(in_features=config.cnn_feats_size+config.c3d_feats_size, out_features=num_proposals)
+        # self.proposal_fc = nn.Linear(in_features=config.cnn_feats_size+config.c3d_feats_size, out_features=num_proposals)
+        self.proposal_enc = TaggerMLP(v_size=config.cnn_feats_size+config.c3d_feats_size,
+                                      out_size=num_proposals,
+                                      h_sizes=proposals_tagger_config.h_sizes,
+                                      in_drop_p=proposals_tagger_config.in_drop_p,
+                                      drop_ps=proposals_tagger_config.drop_ps,
+                                      have_last_bn=proposals_tagger_config.have_last_bn)
 
         self.fc = nn.Linear(in_features=config.h_size+num_proposals, out_features=self.progs_vocab_size)
 
@@ -320,12 +327,12 @@ class DenseCaptioner(nn.Module):
         if resume_config.freeze_programmer:
             self.mm_enc.requires_grad = False
             self.rnn_cell.requires_grad = False
-            self.proposal_fc.requires_grad = False
+            self.proposal_enc.requires_grad = False
             self.fc.requires_grad = False
         elif resume_config.random_programmer:
             self.mm_enc.reset_parameters()
             self.rnn_cell.reset_parameters()
-            self.proposal_fc.reset_parameters()
+            self.proposal_enc.reset_parameters()
             self.fc.reset_parameters()
     
     def unfreeze(self):
@@ -470,7 +477,7 @@ class DenseCaptioner(nn.Module):
             #     v_p = torch.cat([f[skip_mask, self.p[skip_mask], :] for f in v_feats], dim=1)
             #     self.proposals = torch.clone(self.proposals)
             #     print(torch.sum(skip_mask), self.proposals[skip_mask, self.p[skip_mask], :].size())
-            #     self.proposals[skip_mask, self.p[skip_mask], :] = self.proposal_fc(v_p)
+            #     self.proposals[skip_mask, self.p[skip_mask], :] = self.proposal_enc(v_p)
 
             # # enqueue
             # self.q[a_id == 1] += 1
@@ -553,7 +560,7 @@ class DenseCaptioner(nn.Module):
             if len(vidx_to_skip) > 0:
                 self.current_proposals = torch.clone(self.current_proposals)
                 v_p = torch.cat([f[vidx_to_skip, self.p[vidx_to_skip], :] for f in v_feats], dim=1)
-                proposals = self.proposal_fc(v_p)
+                proposals = self.proposal_enc(v_p)
                 self.current_proposals[vidx_to_skip, :] = proposals
                 proposals_logits[vidx_to_skip, self.p[vidx_to_skip], :] = proposals
 

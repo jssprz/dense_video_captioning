@@ -20,7 +20,7 @@ import torch.nn as nn
 import torch.optim as optim
 from tensorboardX import SummaryWriter
 
-from utils import get_freer_gpu, decode_from_tokens, load_texts, evaluate_from_tokens, densecap_evaluate_from_tokens, get_trainer_str, get_dense_captioner_str, get_sem_tagger_str, get_syn_embedd_str, get_syn_tagger_str, get_avscn_decoder_str, get_semsynan_decoder_str, get_mm_str, get_vncl_cell_str
+from utils import get_freer_gpu, decode_from_tokens, load_texts, evaluate_from_tokens, densecap_evaluate_from_tokens, get_trainer_str, get_dense_captioner_str, get_sem_tagger_str, get_syn_embedd_str, get_syn_tagger_str, get_avscn_decoder_str, get_semsynan_decoder_str, get_mm_str, get_vncl_cell_str, get_proposals_tagger_str
 from vocabulary import Vocabulary
 from configuration_dict import ConfigDict
 from loader import extract_split_data_from_corpus, data2tensors, get_dense_loader
@@ -159,6 +159,7 @@ class DenseVideo2TextTrainer(Trainer):
                                               self.modules_config['semsynan_dec_config'],
                                               self.modules_config['mm_config'],
                                               self.modules_config['vncl_cell_config'],
+                                              self.modules_config['proposals_tagger_config'],
                                               num_proposals=self.num_proposals,
                                               progs_vocab=self.programs_vocab,
                                               pretrained_ope=pretrained_ope,
@@ -172,14 +173,14 @@ class DenseVideo2TextTrainer(Trainer):
         print('\nInitializing the Optimizer...')
         if self.trainer_config.optimizer_config.optimizer_name == 'Adagrad':
             self.optimizer = optim.Adagrad([{'params': self.dense_captioner.mm_enc.parameters()},
-                                            {'params': self.dense_captioner.proposal_fc.parameters()},
+                                            {'params': self.dense_captioner.proposal_enc.parameters()},
                                             {'params': self.dense_captioner.rnn_cell.parameters()},
                                             {'params': self.dense_captioner.fc.parameters()},
                                             {'params': self.dense_captioner.clip_captioner.parameters()}],
                                            lr=self.trainer_config.learning_rate)
         else:
             self.optimizer = optim.Adam([{'params': self.dense_captioner.mm_enc.parameters()},
-                                         {'params': self.dense_captioner.proposal_fc.parameters(), 'lr': self.trainer_config.optimizer_config.programmer_lr},
+                                         {'params': self.dense_captioner.proposal_enc.parameters(), 'lr': self.trainer_config.optimizer_config.programmer_lr},
                                          {'params': self.dense_captioner.rnn_cell.parameters(), 'lr': self.trainer_config.optimizer_config.programmer_lr},
                                          {'params': self.dense_captioner.fc.parameters(), 'lr': self.trainer_config.optimizer_config.programmer_lr},
                                          {'params': self.dense_captioner.clip_captioner.avscn_dec.parameters(), 'lr': self.trainer_config.optimizer_config.captioning_lr},
@@ -723,15 +724,17 @@ class DenseVideo2TextTrainer(Trainer):
 
                     total_time_iters+=(time.perf_counter()-time_start_iter)
                     lrs = self.lr_scheduler.get_last_lr()
-                    log_msg = '\rEpoch:{0:03d} Phase:{1:6s} Iter:{2:04d}/{3:04d} avg-Time:{4:.1f}s lr:{5:.6f} Loss:{6:9.4f} [cap-loss:{7:9.4f} prog-loss:{8:9.4f} sem-enc-loss:{9:9.4f} pos-tag-loss:{10:9.4f} iou-loss:{11:9.4f}]'.format(epoch, phase, i, 
-                                                                                                                                                                                                                                       len(self.loaders[phase]), 
-                                                                                                                                                                                                                                       total_time_iters/i,
-                                                                                                                                                                                                                                       lrs[0], loss.item(), 
-                                                                                                                                                                                                                                       cap_loss.item(), 
-                                                                                                                                                                                                                                       prog_loss.item(), 
-                                                                                                                                                                                                                                       sem_enc_loss.item(),
-                                                                                                                                                                                                                                       pos_loss.item(),
-                                                                                                                                                                                                                                       iou_loss.item())
+                    log_msg = '\rEpoch:{0:03d} Phase:{1:6s} Iter:{2:04d}/{3:04d} avg-Time:{4:.1f}s lr:{5:.6f} Loss:{6:9.4f}\
+                        [cap-loss:{7:9.4f} prog-loss:{8:9.4f} sem-enc-loss:{9:9.4f} pos-tag-loss:{10:9.4f} iou-loss:{11:9.4f} proposals-loss:{11:9.4f}]'.format(epoch, phase, i, 
+                                                                                                                                                                len(self.loaders[phase]), 
+                                                                                                                                                                total_time_iters/i,
+                                                                                                                                                                lrs[0], loss.item(), 
+                                                                                                                                                                cap_loss.item(), 
+                                                                                                                                                                prog_loss.item(), 
+                                                                                                                                                                sem_enc_loss.item(),
+                                                                                                                                                                pos_loss.item(),
+                                                                                                                                                                iou_loss.item(),
+                                                                                                                                                                proposals_loss.item())
                     self.logger.info(log_msg)
                     sys.stdout.write(log_msg)
 
@@ -916,9 +919,14 @@ if __name__ == '__main__':
     mm_config.str = get_mm_str(mm_config)
     print(mm_config.str)
 
+    proposals_tagger_config = ConfigDict(config['proposals_tagger_config'])
+    proposals_tagger_config.str = get_proposals_tagger_str(proposals_tagger_config)
+    print(proposals_tagger_config)
+
     vncl_cell_config = ConfigDict(config['vncl_cell_config'])
     vncl_cell_config.str = get_vncl_cell_str(vncl_cell_config)
     print(vncl_cell_config.str, '\n')
+
 
     print('Initializing the experiment.......')
     modules_config = {'dense_captioner_config': dense_captioner_config,
@@ -928,7 +936,8 @@ if __name__ == '__main__':
                       'avscn_dec_config': avscn_dec_config,
                       'semsynan_dec_config': semsynan_dec_config,
                       'mm_config': mm_config,
-                      'vncl_cell_config': vncl_cell_config}
+                      'vncl_cell_config': vncl_cell_config,
+                      'proposals_tagger_config': proposals_tagger_config}
     # modules_config = [sem_tagger_config, syn_embedd_config, avscn_dec_config, semsynan_dec_config, vncl_cell_config]
     trainer = DenseVideo2TextTrainer(trainer_config, modules_config, args.dataset_folder, args.output_folder)
 

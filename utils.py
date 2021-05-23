@@ -166,7 +166,7 @@ def get_dense_captioner_str(config):
 def get_sem_tagger_str(config):
   drops = str([config.in_drop_p] + config.drop_ps)
   hs = str(config.h_sizes)
-  return f'sem in-{config.in_size}.hs-{hs}.out-{config.out_size}.drops-{drops}.lastbn-{config.have_last_bn}'
+  return f'sem hs-{hs}.out-{config.out_size}.drops-{drops}.lastbn-{config.have_last_bn}'
 
 
 def get_syn_embedd_str(config):
@@ -202,3 +202,9 @@ def get_mm_str(config):
 
 def get_vncl_cell_str(config):
   return f'vncl-cell mm-{config.mm_size}.vh-{config.vh_size}.h1-{config.h1_size}'
+
+
+def get_proposals_tagger_str(config):
+  drops = str([config.in_drop_p] + config.drop_ps)
+  hs = str(config.h_sizes)
+  return f'sem hs-{hs}.drops-{drops}.lastbn-{config.have_last_bn}'
