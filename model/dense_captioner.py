@@ -560,7 +560,7 @@ class DenseCaptioner(nn.Module):
             if len(vidx_to_skip) > 0:
                 self.current_proposals = torch.clone(self.current_proposals)
                 v_p = torch.cat([f[vidx_to_skip, self.p[vidx_to_skip], :] for f in v_feats], dim=1)
-                proposals = self.proposal_enc(v_p)
+                proposals = self.proposal_enc(v_p)[0]
                 self.current_proposals[vidx_to_skip, :] = proposals
                 proposals_logits[vidx_to_skip, self.p[vidx_to_skip], :] = proposals
 
