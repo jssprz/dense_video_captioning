@@ -529,7 +529,7 @@ class DenseVideo2TextTrainer(Trainer):
             # Evaluate the loss function
             self.logger.info('loss computation....')
             # import ipdb; ipdb.set_trace() # BREAKPOINT
-            loss, prog_loss, cap_loss, sem_enc_loss, pos_loss, iou_loss, proposals_loss = self.criterion(gt_captions=gt_captions, gt_cap_lens=gt_cap_lens, pred_captions=caps_logits, 
+            loss, prog_loss, cap_loss, sem_enc_loss, pos_loss, proposals_loss, iou_reward = self.criterion(gt_captions=gt_captions, gt_cap_lens=gt_cap_lens, pred_captions=caps_logits, 
                                                                                          gt_caps_sem_enc=gt_caps_sem_enc, pred_caps_sem_enc=caps_sem_enc, gt_pos_seq=gt_pos, 
                                                                                          pred_pos_seq=pos_tags_logits, gt_program=gt_program, gt_prog_len=gt_prog_len, 
                                                                                          pred_program=prog_logits, gt_intervals=gt_intervals, pred_intervals=intervals,
@@ -548,7 +548,7 @@ class DenseVideo2TextTrainer(Trainer):
             self.logger.info('optimizer step...')
             self.optimizer.step()
 
-        return loss, prog_loss, cap_loss, sem_enc_loss, pos_loss, iou_loss, proposals_loss, program, captions, intervals, caps_count, truncate_prog_at
+        return loss, prog_loss, cap_loss, sem_enc_loss, pos_loss, proposals_loss, iou_reward, program, captions, intervals, caps_count, truncate_prog_at
 
     def __evaluate(self, predicted_sentences, phase):
         scores = score(self.ground_truth[phase], predicted_sentences)
@@ -709,7 +709,7 @@ class DenseVideo2TextTrainer(Trainer):
                     time_start_iter = time.perf_counter()
                     video_feats = [cnn, c3d]
                     use_rl = False
-                    loss, prog_loss, cap_loss, sem_enc_loss, pos_loss, iou_loss, proposals_loss, program, captions, intervals, caps_count, truncated_pos = self.__process_batch(video_feats, feats_count, gt_intervals, gt_caps_count, gt_caps, gt_caps_sem_enc, gt_pos, gt_upos,
+                    loss, prog_loss, cap_loss, sem_enc_loss, pos_loss, proposals_loss, iou_reward, program, captions, intervals, caps_count, truncated_pos = self.__process_batch(video_feats, feats_count, gt_intervals, gt_caps_count, gt_caps, gt_caps_sem_enc, gt_pos, gt_upos,
                                                                                                                                                  gt_cap_lens, gt_prog, gt_prog_len, gt_proposals, teacher_forcing_ratio, phase, use_rl=use_rl)
                     loss_count += loss.item()
 
@@ -719,22 +719,19 @@ class DenseVideo2TextTrainer(Trainer):
                     self.writer.add_scalar('end2end/{}-iters-cap_loss'.format(phase), cap_loss, iteration)
                     self.writer.add_scalar('end2end/{}-iters-sem_enc_loss'.format(phase), sem_enc_loss, iteration)
                     self.writer.add_scalar('end2end/{}-iters-pos_tag_loss'.format(phase), pos_loss, iteration)
-                    self.writer.add_scalar('end2end/{}-iters-iou_loss'.format(phase), iou_loss, iteration)
+                    # self.writer.add_scalar('end2end/{}-iters-iou_loss'.format(phase), iou_loss, iteration)
                     self.writer.add_scalar('end2end/{}-iters-proposals_loss'.format(phase), proposals_loss, iteration)
+                    self.writer.add_scalar('end2end/{}-iters-iou_reward'.format(phase), iou_reward, iteration)
 
                     total_time_iters+=(time.perf_counter()-time_start_iter)
                     lrs = self.lr_scheduler.get_last_lr()
-                    log_msg = '\rEpoch:{0:03d} Phase:{1:6s} Iter:{2:04d}/{3:04d} avg-Time:{4:.1f}s lr:{5:.6f} Loss:{6:9.4f}\
-                        [cap-loss:{7:9.4f} prog-loss:{8:9.4f} sem-enc-loss:{9:9.4f} pos-tag-loss:{10:9.4f} iou-loss:{11:9.4f} proposals-loss:{11:9.4f}]'.format(epoch, phase, i, 
-                                                                                                                                                                len(self.loaders[phase]), 
-                                                                                                                                                                total_time_iters/i,
-                                                                                                                                                                lrs[0], loss.item(), 
-                                                                                                                                                                cap_loss.item(), 
-                                                                                                                                                                prog_loss.item(), 
-                                                                                                                                                                sem_enc_loss.item(),
-                                                                                                                                                                pos_loss.item(),
-                                                                                                                                                                iou_loss.item(),
-                                                                                                                                                                proposals_loss.item())
+                    log_msg = (
+                        '\rEpoch:{0:03d} Phase:{1:6s} Iter:{2:04d}/{3:04d} avg-Time:{4:.1f}s lr:{5:.6f} iou-reward:{12:9.4f} Loss:{6:9.4f}'
+                        '\t[cap-loss:{7:9.4f} prog-loss:{8:9.4f} sem-enc-loss:{9:9.4f} pos-tag-loss:{10:9.4f} proposals-loss:{11:9.4f}]'
+                    ).format(
+                        epoch, phase, i, len(self.loaders[phase]), total_time_iters/i, lrs[0], loss.item(), cap_loss.item(), prog_loss.item(), 
+                        sem_enc_loss.item(), pos_loss.item(), proposals_loss.item(), iou_reward.item()
+                    )
                     self.logger.info(log_msg)
                     sys.stdout.write(log_msg)
 

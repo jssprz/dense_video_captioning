@@ -26,9 +26,10 @@ class SentenceLengthLoss(nn.Module):
             if self.reduction=='mean':
                 return loss / lens.size(0)
         else:
-            mask1 = torch.cat([l.repeat(self.max_words) for l in lens], dim=0).unsqueeze(1)
-            mask2 = torch.cat([r.repeat(self.max_words) for r in rewards], dim=0).unsqueeze(1)
-            wighted_log_probs = torch.reciprocal((mask1 * mask2) ** self.beta) * torch.log_softmax(logits, dim=1)
+            mask1 = torch.cat([l.repeat(l) for l in lens], dim=0).unsqueeze(1).to(logits.device)
+            mask2 = torch.cat([r.repeat(l) for l, r in zip(lens, rewards)], dim=0).unsqueeze(1).to(logits.device)
+            # mask = torch.max(torch.ones_like(mask1), mask1**self.beta - mask2**self.beta)
+            wighted_log_probs = torch.reciprocal(mask1**self.beta) * mask2 * torch.log_softmax(logits, dim=1)
             loss = self.crit(wighted_log_probs, targets)
             if self.reduction=='mean':
                 return loss / lens.size(0)
@@ -36,37 +37,30 @@ class SentenceLengthLoss(nn.Module):
         return loss  # self.reduction=='sum'
 
 
-class IoULoss(nn.Module):
-    def __init__(self, reduction):
-        super(IoULoss, self).__init__()
-        self.reduction = reduction
+def temp_iou(pred_intervals, gt_intervals, gt_count):
+    # compute intersection
+    max_min = torch.max(torch.stack([pred_intervals[:,:,0], gt_intervals[:,:,0]]), dim=0)[0]
+    min_max = torch.min(torch.stack([pred_intervals[:,:,1], gt_intervals[:,:,1]]), dim=0)[0]
+    intersection = (min_max - max_min).clamp(min=0)
+    # print('intersec:', intersection)
 
-    def forward(self, pred_intervals, gt_intervals):
-        # compute intersection
-        max_min = torch.max(torch.stack([pred_intervals[:,0], gt_intervals[:,0]]), dim=0)[0]
-        min_max = torch.min(torch.stack([pred_intervals[:,1], gt_intervals[:,1]]), dim=0)[0]
-        intersection = (min_max - max_min).clamp(min=0)
-        # print('intersec:', intersection)
+    # compute union
+    min_min = torch.min(torch.stack([pred_intervals[:,:,0], gt_intervals[:,:,0]]), dim=0)[0]
+    max_max = torch.max(torch.stack([pred_intervals[:,:,1], gt_intervals[:,:,1]]), dim=0)[0]
+    union = max_max - min_min
+    # print('union:', union)
 
-        # compute union
-        min_min = torch.min(torch.stack([pred_intervals[:,0], gt_intervals[:,0]]), dim=0)[0]
-        max_max = torch.max(torch.stack([pred_intervals[:,1], gt_intervals[:,1]]), dim=0)[0]
-        union = max_max - min_min
-        # print('union:', union)
-
-        # compute total IoU
-        tiou = torch.sum(torch.reciprocal(union) * intersection)
-
-        # convert in a minimization loss
-        if self.reduction=='mean':
-            return 1 - (tiou / pred_intervals.size(0))
-        elif self.reduction=='sum':
-            return pred_intervals.size(0) - tiou
+    # compute total IoU
+    return torch.tensor(
+        [(torch.reciprocal(union[n,:gt_count[n]]) * intersection[n,:gt_count[n]]).mean() for n in range(gt_count.size(0))]
+    )
 
 
 class DenseCaptioningLoss(nn.Module):
     def __init__(self, config, c_max_len, p_max_len, device):
         super(DenseCaptioningLoss, self).__init__()
+
+        self.config = config
 
         # captioning_loss function
         if config.captioning_loss == 'MSE':
@@ -106,12 +100,6 @@ class DenseCaptioningLoss(nn.Module):
         else:
             raise ValueError(f'wrong value \'{config.proposals_loss}\' for the proposals_loss option in Loss configuration')
 
-        # intervals_loss function
-        if config.intervals_loss == 'tIoU':
-            self.intervals_loss = IoULoss(reduction=config.intervals_loss_reduction)
-        else:
-            raise ValueError(f'wrong value \'{config.intervals_loss}\' for the intervals_loss option in Loss configuration')
-
         # multimodal_loss function
         # if mmloss == 'MSE':
         #     self.multimodal_loss = nn.MSELoss(reduction=config.mmloss_reduction)
@@ -129,7 +117,7 @@ class DenseCaptioningLoss(nn.Module):
 
         #TODO: compute gt flatten in the Dataset for removing it from here
 
-        l1, l2, l3, l4, l5, l6, l7, l8, l9, l10 = [], [], [], [], [], [], [], [], [], []
+        l1, l2, l3, l4, l5, l6, l7, l8 = [], [], [], [], [], [], [], []
         for n in range(bs):
             for i in range(gt_caps_count[n]):
                 l1.append(pred_captions[n, i, :gt_cap_lens[n,i]].reshape(-1, caps_vocab_size))
@@ -141,11 +129,8 @@ class DenseCaptioningLoss(nn.Module):
             l5.append(pred_caps_sem_enc[n, :gt_caps_count[n], :])
             l6.append(gt_caps_sem_enc[n, :gt_caps_count[n], :])
             
-            l7.append(pred_intervals[n, :gt_caps_count[n], :])
-            l8.append(gt_intervals[n, :gt_caps_count[n], :])
-            
-            l9.append(pred_proposals[n, :gt_proposals_count[n], :])
-            l10.append(gt_proposals[n, :gt_proposals_count[n], :])
+            l7.append(pred_proposals[n, :gt_proposals_count[n], :])
+            l8.append(gt_proposals[n, :gt_proposals_count[n], :])
 
         pred_captions = torch.cat(l1)
         gt_captions = torch.cat(l2)
@@ -155,12 +140,9 @@ class DenseCaptioningLoss(nn.Module):
         
         pred_caps_sem_enc = torch.cat(l5)
         gt_caps_sem_enc = torch.cat(l6)
-        
-        pred_intervals = torch.cat(l7)
-        gt_intervals = torch.cat(l8)
 
-        pred_proposals = torch.sigmoid(torch.cat(l9))
-        gt_proposals = torch.cat(l10)
+        pred_proposals = torch.sigmoid(torch.cat(l7))
+        gt_proposals = torch.cat(l8)
 
         # # straighten the output captions (removing the part of the pad)
         # # (total_len_of_captions x caps_vocab_size)
@@ -220,7 +202,11 @@ class DenseCaptioningLoss(nn.Module):
         # Compute All Loss Functions
 
         # programmer loss
-        prog_loss = self.programer_loss(pred_program, gt_program, gt_prog_len)  # length-weighted
+        if self.config.programer_iou_reward:
+            iou_reward = temp_iou(pred_intervals, gt_intervals, gt_caps_count)
+            prog_loss = self.programer_loss(pred_program, gt_program, gt_prog_len, iou_reward)  # length-weighted + reward
+        else:
+            prog_loss = self.programer_loss(pred_program, gt_program, gt_prog_len)  # length-weighted
         # prog_loss = self.programer_loss(pred_program, gt_program)  # CELoss
 
         # captioning loss
@@ -238,7 +224,7 @@ class DenseCaptioningLoss(nn.Module):
         proposals_loss = self.proposals_loss(pred_proposals, gt_proposals)
 
         # tIoU loss of intervals
-        iou_loss = self.intervals_loss(pred_intervals, gt_intervals)
+        # iou_loss = self.intervals_loss(pred_intervals, gt_intervals)
 
         # mm_loss = self.multimodal_loss(mm_v_encs, mm_t_encs)
 
@@ -248,4 +234,4 @@ class DenseCaptioningLoss(nn.Module):
         # loss = torch.sum(self.comb_weights * losses)
         loss = cap_loss + prog_loss + sem_enc_loss + pos_loss + proposals_loss
 
-        return loss, prog_loss, cap_loss, sem_enc_loss, pos_loss, iou_loss, proposals_loss
+        return loss, prog_loss, cap_loss, sem_enc_loss, pos_loss, proposals_loss, iou_reward.mean()
