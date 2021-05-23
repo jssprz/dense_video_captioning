@@ -129,8 +129,6 @@ class DenseCaptioningLoss(nn.Module):
 
         #TODO: compute gt flatten in the Dataset for removing it from here
 
-        print(gt_caps_count)
-
         l1, l2, l3, l4, l5, l6, l7, l8, l9, l10 = [], [], [], [], [], [], [], [], [], []
         for n in range(bs):
             for i in range(gt_caps_count[n]):

@@ -403,7 +403,7 @@ class DenseCaptioner(nn.Module):
             caps_sem_enc = torch.zeros(bs, max_caps, self.sem_enc_size).to(device)
             pos_tags = torch.zeros(bs, max_caps, max_cap).to(device)
             intervals = torch.zeros(bs, max_caps, 2).to(device)
-            proposals_logits = torch.zeros(bs, max_chunks, num_proposals)
+            proposals_logits = torch.zeros(bs, max_chunks, num_proposals).to(device)
 
         prog_logits = torch.zeros(program.size(0), program.size(1), self.progs_vocab_size).to(device)
         caps_logits = torch.zeros(captions.size(0), captions.size(1), captions.size(2), self.caps_vocab_size).to(device)
@@ -458,7 +458,9 @@ class DenseCaptioner(nn.Module):
                 elif a == 2 and caps_count[i] < intervals.size(1):
                     # generate, save interval to be described. It going to be used for constructiong a captioning sub-batch
                     vidx_to_describe.append(i)
-                    intervals[i, caps_count[i], :] = torch.tensor([self.p[i], self.q[i]])
+                    # intervals[i, caps_count[i], :] = torch.tensor([self.p[i], self.q[i]])
+                    intervals[i, caps_count[i], 0] = self.p[i]
+                    intervals[i, caps_count[i], 1] = self.q[i]
 
             # # skip
             # skip_mask = (a_id == 0).detach()
