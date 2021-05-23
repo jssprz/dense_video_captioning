@@ -52,7 +52,7 @@ def temp_iou(pred_intervals, gt_intervals, gt_count):
 
     # compute total IoU
     return torch.tensor(
-        [(torch.reciprocal(union[n,:gt_count[n]]) * intersection[n,:gt_count[n]]).mean() for n in range(gt_count.size(0))]
+        [(torch.reciprocal(union[n,:gt_count[n]]) * intersection[n,:gt_count[n]]).mean() if gt_count[n] else 0 for n in range(gt_count.size(0))]
     )
 
 
@@ -113,7 +113,7 @@ class DenseCaptioningLoss(nn.Module):
                 gt_intervals, pred_intervals, gt_proposals, pred_proposals, gt_caps_count, pred_caps_count, gt_proposals_count, truncate_prog_at=None, mm_v_encs=None, mm_t_encs=None):
         bs, _, _, caps_vocab_size = pred_captions.size()
         pos_vocab_size = pred_pos_seq.size(3)
-        progs_vocab_size = pred_captions.size(2)
+        progs_vocab_size = pred_program.size(2)
 
         #TODO: compute gt flatten in the Dataset for removing it from here
 
@@ -154,9 +154,10 @@ class DenseCaptioningLoss(nn.Module):
             pos_loss = torch.tensor(float('inf'))
             sem_enc_loss = torch.tensor(float('inf'))
 
+        # programmer loss
         if truncate_prog_at is not None:
             # (bs*truncate_prog_at x progs_vocab_size)
-            pred_program = pred_program[:, :truncate_prog_at].reshape(-1, pred_program.size(2))
+            pred_program = pred_program[:, :truncate_prog_at].reshape(-1, progs_vocab_size)
             
             # (bs*truncate_prog_at)
             gt_program = gt_program[:, :truncate_prog_at].flatten()
@@ -171,14 +172,12 @@ class DenseCaptioningLoss(nn.Module):
             # straighten the target captions (remove the part of the pad) and then flatten it
             # (total_len_of_programs)
             gt_program = torch.cat([gt_program[n, :gt_prog_len[n]] for n in range(bs)], dim=0)
-
-        # programmer loss
         if self.config.programer_iou_reward:
             iou_reward = temp_iou(pred_intervals, gt_intervals, gt_caps_count)
             prog_loss = self.programer_loss(pred_program, gt_program, gt_prog_len, iou_reward)  # length-weighted + reward
         else:
             prog_loss = self.programer_loss(pred_program, gt_program, gt_prog_len)  # length-weighted
-        # prog_loss = self.programer_loss(pred_program, gt_program)  # CELoss
+            # prog_loss = self.programer_loss(pred_program, gt_program)  # CELoss
 
         # event proposals loss
         pred_proposals = torch.sigmoid(torch.cat(l7))

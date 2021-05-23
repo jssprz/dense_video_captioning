@@ -715,7 +715,10 @@ class DenseVideo2TextTrainer(Trainer):
 
                     iteration = epoch * len(self.loaders[phase]) + i
                     self.writer.add_scalar('end2end/{}-iters-loss'.format(phase), loss, iteration)
-                    self.writer.add_scalar('end2end/{}-iters-prog_loss'.format(phase), prog_loss, iteration)
+                    if self.trainer_config.criterion_config.programer_iou_reward:
+                        self.writer.add_scalar('end2end/{}-iters-rinforced_prog_loss'.format(phase), prog_loss, iteration)
+                    else:
+                        self.writer.add_scalar('end2end/{}-iters-prog_loss'.format(phase), prog_loss, iteration)
                     self.writer.add_scalar('end2end/{}-iters-cap_loss'.format(phase), cap_loss, iteration)
                     self.writer.add_scalar('end2end/{}-iters-sem_enc_loss'.format(phase), sem_enc_loss, iteration)
                     self.writer.add_scalar('end2end/{}-iters-pos_tag_loss'.format(phase), pos_loss, iteration)
@@ -844,7 +847,7 @@ class DenseVideo2TextTrainer(Trainer):
                 # densecap_metrics_results, pred_intervals = densecap_metrics_results.get()
 
                 # self.__process_results(prog_metrics_results, pred_caps, phase, epoch-1, save_checkpoints_dir, 'programmer')
-                self.__process_results(cap_metrics_results, pred_progs, phase, epoch-1, save_checkpoints_dir, 'captioning')
+                self.__process_results(cap_metrics_results, pred_caps, phase, epoch-1, save_checkpoints_dir, 'captioning')
                 self.__process_results(densecap_metrics_results, pred_intervals, phase, epoch-1, save_checkpoints_dir, 'densecap')
 
                 msg = '----early stopped at epoch {} after {} without any improvement-----'.format(epoch, early_stop_limit)
