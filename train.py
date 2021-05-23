@@ -761,7 +761,7 @@ class DenseVideo2TextTrainer(Trainer):
 
                         # save intervals for computing evaluation metrics
                         all_intervals.append(intervals.to('cpu'))
-                        all_tstamps.append(tstamps/(fps**2))
+                        all_tstamps.append(tstamps/(fps.unsqueeze(1)**2))
 
                         # for predicted_tokens, vid in zip(outputs, video_ids):
                         #     predicted_sentences[vid] = [self.__decode_from_tokens(predicted_tokens)]

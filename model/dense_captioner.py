@@ -402,7 +402,7 @@ class DenseCaptioner(nn.Module):
             proposals_logits = torch.zeros_like(gt_proposals)
         else:
             # iterate until all pointers reach the end
-            condition = lambda i: i < max_prog and not torch.all(self.p >= feats_count - 1) and not torch.all(caps_count >= max_caps)
+            condition = lambda i: i < max_prog and not torch.all(self.p >= max_chunks - 1) and not torch.all(caps_count >= max_caps)
 
             # initialize result tensors according to the maximum sizes
             program = torch.zeros(bs, max_prog).to(device)
