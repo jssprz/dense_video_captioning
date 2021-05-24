@@ -51,7 +51,7 @@ def temp_iou(pred_intervals, gt_intervals, gt_count):
     # print('union:', union)
 
     # compute total IoU
-    return torch.tensor(
+    return torch.FloatTensor(
         [(torch.reciprocal(union[n,:gt_count[n]]) * intersection[n,:gt_count[n]]).mean() if gt_count[n] else 0 for n in range(gt_count.size(0))]
     )
 
