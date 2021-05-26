@@ -519,8 +519,7 @@ class DenseVideo2TextTrainer(Trainer):
                                                                                                                                                                         max_prog=self.avg_truncation,#max_prog=self.max_prog,
                                                                                                                                                                         max_caps=self.avg_caps,#max_caps=self.max_caps,
                                                                                                                                                                         max_cap=self.max_words,
-                                                                                                                                                                        max_chunks=self.avg_truncation, # the maximum value of start pointers is lower than the max_prog to be generated
-                                                                                                                                                                        num_proposals=self.num_proposals)
+                                                                                                                                                                        max_chunks=self.avg_truncation) # the maximum value of start pointers is lower than the max_prog to be generated
 
             if 'val' in phase:
                 gt_caps_count = gt_caps_count.to(self.device)

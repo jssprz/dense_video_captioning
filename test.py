@@ -146,7 +146,7 @@ if __name__ == '__main__':
       prog_logits, program, _, _, _, captions, intervals, caps_count, _, _ = dense_captioner(v_feats=video_feats, feats_count=feats_count, prog_len=None, teacher_forcing_p=0,
                                                                                              gt_program=None, gt_captions=None, gt_caps_count=None, gt_sem_enc=None, gt_pos=None, 
                                                                                              gt_intervals=None, max_prog=max_prog, max_caps=tester_config.max_caps, 
-                                                                                             max_cap=tester_config.max_words)
+                                                                                             max_cap=tester_config.max_words, max_chunks=tester_config.truncate_at)
 
       print(f'video {vidx}:')
       p = decode_from_tokens(programs_vocab, program[0], until_eos=False)

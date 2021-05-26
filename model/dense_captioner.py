@@ -385,7 +385,7 @@ class DenseCaptioner(nn.Module):
         self.a_logits = self.fc(torch.cat((self.h, self.current_proposals), dim=1))
 
     def forward(self, v_feats, feats_count, prog_len=100, teacher_forcing_p=.5, gt_program=None, gt_captions=None, gt_caps_count=None, gt_sem_enc=None, 
-                gt_pos=None, gt_intervals=None, gt_proposals=None, max_prog=None, max_caps=None, max_cap=None, max_chunks=None, num_proposals=None):
+                gt_pos=None, gt_intervals=None, gt_proposals=None, max_prog=None, max_caps=None, max_cap=None, max_chunks=None):
         # initialize
         bs, device = v_feats[0].size(0), v_feats[0].device
 
