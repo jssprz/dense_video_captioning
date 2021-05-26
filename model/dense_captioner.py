@@ -341,7 +341,7 @@ class DenseCaptioner(nn.Module):
 
     def get_clip_feats(self, v_feats, start_idx, end_idx):
         bs = start_idx.size(0)
-#        import ipdb; ipdb.set_trace() # BREAKPOINT
+        # import ipdb; ipdb.set_trace() # BREAKPOINT
         feats = [torch.zeros(bs, self.max_clip_len, f.size(2)).to(f.device) for f in v_feats]
         pool = torch.zeros(bs, sum([f.size(2) for f in feats])).to(feats[0].device)
         for i, (s, e) in enumerate(zip(start_idx, end_idx)):
@@ -361,6 +361,20 @@ class DenseCaptioner(nn.Module):
 
         return pool, feats
         # return torch.stack(pool), feats
+
+    # TODO: check if using a moving pool is faster than the pool in each step
+    # it is needed to initialize the moving_pool_sum, last_window_sum, and moving_pool to zero,
+    # call this function at the begining (with p,q = 0,1), and after each enqueue
+    def update_feats_moving_pool(self, v_feats, i):
+        feats_count = self.q[i] - self.p[i]
+        if feats_count % self.temp_window_pool == 0:
+            self.moving_pool_sum[i, :] += (self.last_window_sum[i, :] + torch.cat((v_feats[0][i,self.q[i],:], v_feats[0][i,self.q[i],:]), dim=-1)) / self.temp_window_pool
+            self.last_window_sum[i, :] = torch.zeros(v_feats[0].size(-1) + v_feats[1].size(-1)).to(v_feats[0].device)
+            self.moving_pool[i,:] = self.moving_pool_sum[i,:] / (feats_count / self.temp_window_pool)
+        else:
+            self.last_window_sum[i, :] += torch.cat((v_feats[0][i,self.q[i],:], v_feats[0][i,self.q[i],:]), dim=-1)
+            last_window_pool = self.last_window_sum[i, :] / (feats_count % self.temp_window_pool)
+            self.moving_pool[i,:] = (self.moving_pool_sum[i,:] + last_window_pool) / (feats_count // self.temp_window_pool + 1)
 
     def __step__(self, t, v_feats):
         self.v_p_q_pool, self.v_p_q_feats = self.get_clip_feats(v_feats, self.p, self.q)
@@ -410,7 +424,7 @@ class DenseCaptioner(nn.Module):
             caps_sem_enc = torch.zeros(bs, max_caps, self.sem_enc_size).to(device)
             pos_tags = torch.zeros(bs, max_caps, max_cap).to(device)
             intervals = torch.zeros(bs, max_caps, 2).to(device)
-            proposals_logits = torch.zeros(bs, max_chunks, num_proposals).to(device)
+            proposals_logits = torch.zeros(bs, max_chunks, self.num_proposals).to(device)
 
         prog_logits = torch.zeros(program.size(0), program.size(1), self.progs_vocab_size).to(device)
         caps_logits = torch.zeros(captions.size(0), captions.size(1), captions.size(2), self.caps_vocab_size).to(device)
