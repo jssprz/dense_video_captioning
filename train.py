@@ -438,24 +438,17 @@ class DenseVideo2TextTrainer(Trainer):
         # gt_prog_len = gt_prog_len.to(self.device)
         # gt_caps_sem_enc = gt_caps_sem_enc.to(self.device)
 
-        # determine position for truncating. At least minimum program length steps, considering at least a caption for each video
+        # determine position for truncating the programs
         if phase=='train':
             # determine the number instructions that are necessary for matching the i-th interval
             temp_prog_pos = torch.zeros(gt_intervals.size(0), gt_intervals.size(1)).to(gt_intervals.device)
             temp_prog_pos[:,0] = gt_intervals[:,0,1] + 1
             for i in range(1, gt_intervals.size(1)):
-                # if i == 0:
-                    # temp_prog_pos[:,i] = gt_intervals[:,i,1]*2 - gt_intervals[:,i,0] + 1
-                    # temp_prog_pos[:,i] = gt_intervals[:,i,1] + 1
-                # else:
-                    # mask = gt_intervals[:,i,0] < gt_intervals[:,i-1,1]
-                    # temp_prog_pos[mask, i-1] -= (gt_intervals[mask,i-1,1] - gt_intervals[mask,i,0])
-                    # temp_prog_pos[:,i] = temp_prog_pos[:,i-1] + (gt_intervals[:,i,1] - gt_intervals[:,i,0])*2 + 1
-                    # temp_prog_pos[:,i] = temp_prog_pos[:,i-1] + (gt_intervals[mask,i,0] - gt_intervals[mask,i-1,0]) + (gt_intervals[:,i,1] - gt_intervals[:,i,0]) + 1
                 temp_prog_pos[:,i] = temp_prog_pos[:,i-1] + (gt_intervals[:,i,0] - gt_intervals[:,i-1,0]) + (gt_intervals[:,i,1] - gt_intervals[:,i,0]) + 1
 
-            truncate_prog_at = int(max(torch.min(gt_prog_len), torch.max(temp_prog_pos[:, 0])))
-            self.logger.info(f'the gt programs of len {gt_prog_len} will be truncated around {truncate_prog_at}')
+            # at least minimum program length steps, considering at least min_caps_truncation captions for each video
+            truncate_prog_at = int(max(torch.min(gt_prog_len), torch.max(temp_prog_pos[:, self.trainer_config.min_caps_truncation])))
+            self.logger.info(f'the gt programs of len {gt_prog_len} will be truncated at {truncate_prog_at}')
             
             # determine the number of captions/intervals that must be generated for each video, truncating at truncate_prog_at
             self.logger.info(f'gt caps count: {gt_caps_count}')
@@ -595,7 +588,13 @@ class DenseVideo2TextTrainer(Trainer):
         min_metrics = ['Recall']
         for name, result in metrics_results.items():
             self.writer.add_scalar(f'end2end/{phase}-{component}-{name}', result, epoch)
-            if name in self.best_metrics[component][phase] and ((name in min_metrics and result > self.best_metrics[component][phase][name][1]) or (name not in min_metrics and result < self.best_metrics[component][phase][name][1])):
+            if name in self.best_metrics[component][phase] and (
+                (
+                    name in min_metrics and result < self.best_metrics[component][phase][name][1]
+                ) or (
+                    name not in min_metrics and result > self.best_metrics[component][phase][name][1]                    
+                )
+            ):
                 self.best_metrics[component][phase][name] = (epoch, result)
                 if name in ['Bleu_4','METEOR', 'ROUGE_L', 'CIDEr', 'All_Metrics']:
                     self.early_stop = 0
@@ -634,20 +633,23 @@ class DenseVideo2TextTrainer(Trainer):
             self.logger.info(log_msg)
 
             model_dict = self.dense_captioner.state_dict()
-            # 1. filter out unnecessary keys
+
+            # 1. filter out unnecessary parameters (not included in the current architecture)
             pretrained_dict = {k: v for k, v in checkpoint['dense_captioner'].items() if k in model_dict}
-            # 2. overwrite entries in the existing state dict
+            
+            # 2. include in the dictionary to be loaded the new parameters in the current architecture
             for k, v in model_dict.items():
-                if k not in pretrained_dict or k[:2]=='fc':
+                if k not in pretrained_dict: #or k[:2]=='fc':
                     pretrained_dict[k] = v
-            # model_dict.update(pretrained_dict)
+
             # 3. load the new state dict
             self.dense_captioner.load_state_dict(pretrained_dict)
 
-            #self.dense_captioner.load_state_dict(checkpoint['dense_captioner'])
+            # 4. freeze the part of the model that was trained before
             if self.trainer_config.resume_config.unfreeze_at > 0:
-                self.dense_captioner.freeze(self.trainer_config.resume_config)
-                begin_epoch = 0
+                self.dense_captioner.freeze(resume_config=self.trainer_config.resume_config)
+                if self.trainer_config.resume_config.begin_epoch != -1:
+                    begin_epoch = self.trainer_config.resume_config.begin_epoch
         else:
             begin_epoch = 0
             self.best_metrics = {'programmer': {}, 'captioning': {}, 'densecap': {}}
@@ -774,7 +776,7 @@ class DenseVideo2TextTrainer(Trainer):
                         #                                            self.__decode_from_tokens(captions[0].squeeze())))
 
                 # for sanity, replace the last checkpoint when epoch is power of 2
-                if phase == 'train' and (self.last_saved_epoch==-1 or epoch == 0 or not(epoch & (epoch-1))):
+                if phase == 'train' and (self.last_saved_epoch==-1 or not(epoch & (epoch-1))):
                     print('saving checkpoint...')
                     self.__save_checkpoint(epoch, save_checkpoints_dir, False)
 

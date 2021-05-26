@@ -84,7 +84,21 @@ if __name__ == '__main__':
   # Checkpoint
   checkpoint = torch.load(args.checkpoint_path, map_location='cpu')
   modules_config = checkpoint['modules_config']
-  max_prog = checkpoint['avg_tuncation']
+  truncate_at = checkpoint['avg_tuncation']
+  max_caps = checkpoint['avg_caps']
+
+  if tester_config.truncate_at < truncate_at:
+    print(f' The model is trained for generating {truncate_at} long programs, but {tester_config.truncate_at} long is going to be used')
+    truncate_at = tester_config.truncate_at
+  elif tester_config.truncate_at >= truncate_at:
+    print(f' The model is trained for generating {truncate_at} long programs only. You need to train the model for longer programs')
+
+  if tester_config.max_caps < max_caps:
+    print(f' The model is trained for generating until {max_caps} captions, but {tester_config.max_caps} are goint to be generated')
+    max_caps = tester_config.max_caps
+  elif tester_config.max_caps >= max_caps:
+    print(f' The model is trained for generating {max_caps} long programs only. You need to train the model for longer programs')
+
   # config_path = os.path.join(args.dataset_folder, 'train_config.json')
   # with open(config_path, 'r') as f:
   #     modules_config = json.load(f)
@@ -145,8 +159,8 @@ if __name__ == '__main__':
 
       prog_logits, program, _, _, _, captions, intervals, caps_count, _, _ = dense_captioner(v_feats=video_feats, feats_count=feats_count, prog_len=None, teacher_forcing_p=0,
                                                                                              gt_program=None, gt_captions=None, gt_caps_count=None, gt_sem_enc=None, gt_pos=None, 
-                                                                                             gt_intervals=None, max_prog=max_prog, max_caps=tester_config.max_caps, 
-                                                                                             max_cap=tester_config.max_words, max_chunks=tester_config.truncate_at)
+                                                                                             gt_intervals=None, max_prog=max_prog, max_caps=max_caps, 
+                                                                                             max_cap=tester_config.max_words, max_chunks=max_prog)
 
       print(f'video {vidx}:')
       p = decode_from_tokens(programs_vocab, program[0], until_eos=False)
