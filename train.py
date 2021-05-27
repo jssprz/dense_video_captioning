@@ -447,7 +447,7 @@ class DenseVideo2TextTrainer(Trainer):
                 temp_prog_pos[:,i] = temp_prog_pos[:,i-1] + (gt_intervals[:,i,0] - gt_intervals[:,i-1,0]) + (gt_intervals[:,i,1] - gt_intervals[:,i,0]) + 1
 
             # at least minimum program length steps, considering at least min_caps_truncation captions for each video
-            truncate_prog_at = int(max(torch.min(gt_prog_len), torch.max(temp_prog_pos[:, self.trainer_config.min_caps_truncation])))
+            truncate_prog_at = int(max(torch.min(gt_prog_len), torch.max(temp_prog_pos[:, self.trainer_config.min_caps_truncation-1])))
             self.logger.info(f'the gt programs of len {gt_prog_len} will be truncated at {truncate_prog_at}')
             
             # determine the number of captions/intervals that must be generated for each video, truncating at truncate_prog_at
