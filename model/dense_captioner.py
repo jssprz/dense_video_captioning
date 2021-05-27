@@ -249,7 +249,7 @@ class VNCLCell(nn.Module):
 
         # (batch_size x hidden_size)
         new_c = f * prev_c + i * c
-        new_h = o * torch.tanh(prev_c)
+        new_h = o * torch.tanh(new_c)
 
         return new_h, new_c
 
