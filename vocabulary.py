@@ -2,6 +2,7 @@
 """Defines the Vocabulary class
 """
 
+
 class Vocabulary(object):
     def __init__(self, lowercase=True):
         self.word2idx = {}
@@ -21,14 +22,14 @@ class Vocabulary(object):
         return instance
 
     def idx_to_word(self, idx):
-        return self.idx2word[idx] if idx in self.idx2word else '<unk>'
+        return self.idx2word[idx] if idx in self.idx2word else "<unk>"
 
     def __call__(self, word):
         """
         Returns the id corresponding to the word
         """
         w = word.lower() if self.lowercase else word
-        return self.word2idx['<unk>'] if w not in self.word2idx else self.word2idx[w]
+        return self.word2idx["<unk>"] if w not in self.word2idx else self.word2idx[w]
 
     def __len__(self):
         """

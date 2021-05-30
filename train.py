@@ -10,17 +10,31 @@ from multiprocessing import Pool
 import heapq
 from shutil import copyfile
 
-import h5py
 import numpy as np
 from numpy import linspace
 from scipy.signal import argrelextrema
 from sklearn.neighbors import KernelDensity
 import torch
-import torch.nn as nn
 import torch.optim as optim
 from tensorboardX import SummaryWriter
 
-from utils import get_freer_gpu, decode_from_tokens, load_texts, evaluate_from_tokens, densecap_evaluate_from_tokens, get_trainer_str, get_dense_captioner_str, get_sem_tagger_str, get_syn_embedd_str, get_syn_tagger_str, get_avscn_decoder_str, get_semsynan_decoder_str, get_mm_str, get_vncl_cell_str, get_proposals_tagger_str
+from utils import (
+    get_freer_gpu,
+    decode_from_tokens,
+    load_texts,
+    evaluate_from_tokens,
+    densecap_evaluate_from_tokens,
+    get_trainer_str,
+    get_dense_captioner_str,
+    get_sem_tagger_str,
+    get_syn_embedd_str,
+    get_syn_tagger_str,
+    get_avscn_decoder_str,
+    get_semsynan_decoder_str,
+    get_mm_str,
+    get_vncl_cell_str,
+    get_proposals_tagger_str,
+)
 from vocabulary import Vocabulary
 from configuration_dict import ConfigDict
 from loader import extract_split_data_from_corpus, data2tensors, get_dense_loader
@@ -33,60 +47,70 @@ class Trainer:
         self.trainer_config = trainer_config
         self.modules_config = modules_config
 
-        self.exp_name = f'({trainer_config.str})'
+        self.exp_name = f"({trainer_config.str})"
         for config in modules_config.values():
-            self.exp_name += f' ({config.str})'
+            self.exp_name += f" ({config.str})"
 
         self.out_folder = out_folder
 
-        # self.encoder_name = '{}-{}{}-drop{}'.format(self.config.encoder_num_layers, 
-        #                                             'bi' if self.config.encoder_bidirectional else '', 
+        # self.encoder_name = '{}-{}{}-drop{}'.format(self.config.encoder_num_layers,
+        #                                             'bi' if self.config.encoder_bidirectional else '',
         #                                             self.config.encoder_rnn_cell, self.config.encoder_drop_p)
-        # self.decoder_name = '{}-{}{}-drop{}-bs{}-{}-{}-{}'.format(self.config.decoder_num_layers,  
-        #                                                        self.config.decoder_rnn_cell, 
-        #                                                        '-attn' if self.config.decoder_attn else '', 
+        # self.decoder_name = '{}-{}{}-drop{}-bs{}-{}-{}-{}'.format(self.config.decoder_num_layers,
+        #                                                        self.config.decoder_rnn_cell,
+        #                                                        '-attn' if self.config.decoder_attn else '',
         #                                                        self.config.decoder_drop_p, self.config.decoder_beam_size,
-        #                                                        self.config.decoder_beam_search_logic, 
+        #                                                        self.config.decoder_beam_search_logic,
         #                                                        'train-max' if self.config.decoder_train_sample_max else 'train-dist',
         #                                                        'test-max' if self.config.decoder_test_sample_max else 'test-dist' )
         # self.loss_name = '{}-{}'.format(self.config.criterion_name, self.config.criterion_reduction)
-        
-        # self.exp_name = '{} ({}) ({}) ({}) batch{} {}'.format(self.config.dataset_name, 
-        #                                                       self.encoder_name, 
+
+        # self.exp_name = '{} ({}) ({}) ({}) batch{} {}'.format(self.config.dataset_name,
+        #                                                       self.encoder_name,
         #                                                       self.decoder_name,
         #                                                       self.loss_name,
         #                                                       self.config.batch_size,
         #                                                       self.config.learning_rate)
-        
+
         self.datetime_str = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
-        self.writer = SummaryWriter(log_dir=os.path.join(self.out_folder, 'log/runs/', f'{self.datetime_str} {trainer_config.str}'))
-        logging.basicConfig(filename=os.path.join(self.out_folder, f'log/output_{self.datetime_str}'),
-                            filemode='a',
-                            format='%(asctime)s,%(msecs)d %(levelname)s %(message)s',
-                            datefmt='%H:%M:%S',
-                            level=logging.INFO)
-        self.logger = logging.getLogger(f'{self.exp_name}')
-        self.logger.info(f'Experiment: {self.exp_name}')
+        self.writer = SummaryWriter(
+            log_dir=os.path.join(
+                self.out_folder,
+                "log/runs/",
+                f"{self.datetime_str} {trainer_config.str}",
+            )
+        )
+        logging.basicConfig(
+            filename=os.path.join(self.out_folder, f"log/output_{self.datetime_str}"),
+            filemode="a",
+            format="%(asctime)s,%(msecs)d %(levelname)s %(message)s",
+            datefmt="%H:%M:%S",
+            level=logging.INFO,
+        )
+        self.logger = logging.getLogger(f"{self.exp_name}")
+        self.logger.info(f"Experiment: {self.exp_name}")
 
-        print('Experiment: {}'.format(self.datetime_str), '\n')
+        print("Experiment: {}".format(self.datetime_str), "\n")
         # print(self.exp_name, '\n')
-        print('Process id {}'.format(os.getpid()), '\n')
+        print("Process id {}".format(os.getpid()), "\n")
 
-        if trainer_config.device == 'gpu' and torch.cuda.is_available():
+        if trainer_config.device == "gpu" and torch.cuda.is_available():
             freer_gpu_id = get_freer_gpu()
-            self.device = torch.device('cuda:{}'.format(freer_gpu_id))
+            self.device = torch.device("cuda:{}".format(freer_gpu_id))
             torch.cuda.empty_cache()
-            self.logger.info('Running on cuda:{} device'.format(freer_gpu_id))
-            print('Running on cuda:{} device'.format(freer_gpu_id))
+            self.logger.info("Running on cuda:{} device".format(freer_gpu_id))
+            print("Running on cuda:{} device".format(freer_gpu_id))
         else:
-            self.device = torch.device('cpu')
-            self.logger.info('Running on cpu device')
-            print('Running on cpu device')
+            self.device = torch.device("cpu")
+            self.logger.info("Running on cpu device")
+            print("Running on cpu device")
 
 
 class DenseVideo2TextTrainer(Trainer):
     def __init__(self, trainer_config, modules_config, dataset_folder, out_folder):
-        super(DenseVideo2TextTrainer, self).__init__(trainer_config, modules_config, out_folder)
+        super(DenseVideo2TextTrainer, self).__init__(
+            trainer_config, modules_config, out_folder
+        )
 
         self.dataset_folder = dataset_folder
 
@@ -101,7 +125,7 @@ class DenseVideo2TextTrainer(Trainer):
         # projected_size = 512
         # hidden_size = 1024  # Number of hidden layer units of the cyclic network
         # mid_size = 128  # The middle of the boundary detection layer represents the dimension
-        
+
         # n_tags = 300
         # global_tagger_hidden_size = 1024
         # specific_tagger_hidden_size = 128
@@ -109,12 +133,12 @@ class DenseVideo2TextTrainer(Trainer):
         # embedding_size = 300  #1024
         # rnn_in_size = 300  #1024
         # rnn_hidden_size = 1024
-        
+
         # self.__load_ground_truth_captions()
         # self.__load_fusion_ground_truth_captions()
 
         # load vocabularies
-        with open(os.path.join(dataset_folder, 'dense_corpus2.pkl'), "rb") as f:
+        with open(os.path.join(dataset_folder, "dense_corpus2.pkl"), "rb") as f:
             self.corpus = pickle.load(f)
             idx2op_dict = self.corpus[4]
             idx2word_dict = self.corpus[6]
@@ -122,20 +146,20 @@ class DenseVideo2TextTrainer(Trainer):
             idx2upos_dict = self.corpus[9]
 
         self.programs_vocab = Vocabulary.from_idx2word_dict(idx2op_dict, False)
-        self.logger.info('Size of programs_vocab: {}'.format(len(self.programs_vocab)))
-        print('Size of programs_vocab: {}'.format(len(self.programs_vocab)))
+        self.logger.info("Size of programs_vocab: {}".format(len(self.programs_vocab)))
+        print("Size of programs_vocab: {}".format(len(self.programs_vocab)))
 
         self.caps_vocab = Vocabulary.from_idx2word_dict(idx2word_dict, False)
-        self.logger.info('Size of caps_vocab: {}'.format(len(self.caps_vocab)))
-        print('Size of caps_vocab: {}'.format(len(self.caps_vocab)))
+        self.logger.info("Size of caps_vocab: {}".format(len(self.caps_vocab)))
+        print("Size of caps_vocab: {}".format(len(self.caps_vocab)))
 
         self.pos_vocab = Vocabulary.from_idx2word_dict(idx2pos_dict, False)
-        self.logger.info('Size of pos_vocab: {}'.format(len(self.pos_vocab)))
-        print('Size of pos_vocab: {}'.format(len(self.pos_vocab)))
+        self.logger.info("Size of pos_vocab: {}".format(len(self.pos_vocab)))
+        print("Size of pos_vocab: {}".format(len(self.pos_vocab)))
 
         self.upos_vocab = Vocabulary.from_idx2word_dict(idx2upos_dict, False)
-        self.logger.info('Size of upos_vocab: {}'.format(len(self.upos_vocab)))
-        print('Size of upos_vocab: {}'.format(len(self.upos_vocab)), '\n')
+        self.logger.info("Size of upos_vocab: {}".format(len(self.upos_vocab)))
+        print("Size of upos_vocab: {}".format(len(self.upos_vocab)), "\n")
 
         # Pretrained Embeddings
         pretrained_ope = None
@@ -146,121 +170,178 @@ class DenseVideo2TextTrainer(Trainer):
         self.__init_dense_loader()
 
         # Load ground-truth for computing evaluation metrics
-        print('\nLoading ground truth...')
+        print("\nLoading ground truth...")
         self.__load_ground_truth()
 
         # Model
-        print('\nInitializing the Model...')
-        self.dense_captioner = DenseCaptioner(self.modules_config['dense_captioner_config'],
-                                              self.modules_config['sem_tagger_config'],
-                                              self.modules_config['syn_embedd_config'],
-                                              self.modules_config['syn_tagger_config'],
-                                              self.modules_config['avscn_dec_config'],
-                                              self.modules_config['semsynan_dec_config'],
-                                              self.modules_config['mm_config'],
-                                              self.modules_config['vncl_cell_config'],
-                                              self.modules_config['proposals_tagger_config'],
-                                              num_proposals=self.num_proposals,
-                                              progs_vocab=self.programs_vocab,
-                                              pretrained_ope=pretrained_ope,
-                                              caps_vocab=self.caps_vocab,
-                                              pretrained_we=pretrained_we,
-                                              pos_vocab=self.pos_vocab,
-                                              pretrained_pe=pretrained_pe,                                              
-                                              device=self.device)
+        print("\nInitializing the Model...")
+        self.dense_captioner = DenseCaptioner(
+            self.modules_config["dense_captioner_config"],
+            self.modules_config["sem_tagger_config"],
+            self.modules_config["syn_embedd_config"],
+            self.modules_config["syn_tagger_config"],
+            self.modules_config["avscn_dec_config"],
+            self.modules_config["semsynan_dec_config"],
+            self.modules_config["mm_config"],
+            self.modules_config["vncl_cell_config"],
+            self.modules_config["proposals_tagger_config"],
+            num_proposals=self.num_proposals,
+            progs_vocab=self.programs_vocab,
+            pretrained_ope=pretrained_ope,
+            caps_vocab=self.caps_vocab,
+            pretrained_we=pretrained_we,
+            pos_vocab=self.pos_vocab,
+            pretrained_pe=pretrained_pe,
+            device=self.device,
+        )
 
         # Optimizer
-        print('\nInitializing the Optimizer...')
-        if self.trainer_config.optimizer_config.optimizer_name == 'Adagrad':
-            self.optimizer = optim.Adagrad([{'params': self.dense_captioner.mm_enc.parameters()},
-                                            {'params': self.dense_captioner.proposal_enc.parameters()},
-                                            {'params': self.dense_captioner.rnn_cell.parameters()},
-                                            {'params': self.dense_captioner.fc.parameters()},
-                                            {'params': self.dense_captioner.clip_captioner.parameters()}],
-                                           lr=self.trainer_config.learning_rate)
+        print("\nInitializing the Optimizer...")
+        if self.trainer_config.optimizer_config.optimizer_name == "Adagrad":
+            self.optimizer = optim.Adagrad(
+                [
+                    {"params": self.dense_captioner.mm_enc.parameters()},
+                    {"params": self.dense_captioner.proposal_enc.parameters()},
+                    {"params": self.dense_captioner.rnn_cell.parameters()},
+                    {"params": self.dense_captioner.fc.parameters()},
+                    {"params": self.dense_captioner.clip_captioner.parameters()},
+                ],
+                lr=self.trainer_config.learning_rate,
+            )
         else:
-            self.optimizer = optim.Adam([{'params': self.dense_captioner.mm_enc.parameters()},
-                                         {'params': self.dense_captioner.proposal_enc.parameters(), 'lr': self.trainer_config.optimizer_config.programmer_lr},
-                                         {'params': self.dense_captioner.rnn_cell.parameters(), 'lr': self.trainer_config.optimizer_config.programmer_lr},
-                                         {'params': self.dense_captioner.fc.parameters(), 'lr': self.trainer_config.optimizer_config.programmer_lr},
-                                         {'params': self.dense_captioner.clip_captioner.avscn_dec.parameters(), 'lr': self.trainer_config.optimizer_config.captioning_lr},
-                                         {'params': self.dense_captioner.clip_captioner.semsynan_dec.parameters(), 'lr': self.trainer_config.optimizer_config.captioning_lr},
-                                         {'params': self.dense_captioner.clip_captioner.encoder.sem_model.parameters(), 'lr': self.trainer_config.optimizer_config.sem_enc_lr},
-                                         {'params': self.dense_captioner.clip_captioner.encoder.syn_model.parameters(), 'lr': self.trainer_config.optimizer_config.syn_enc_lr}],
-                                        lr=self.trainer_config.optimizer_config.learning_rate) #, weight_decay=.0001)
+            self.optimizer = optim.Adam(
+                [
+                    {"params": self.dense_captioner.mm_enc.parameters()},
+                    {
+                        "params": self.dense_captioner.proposal_enc.parameters(),
+                        "lr": self.trainer_config.optimizer_config.programmer_lr,
+                    },
+                    {
+                        "params": self.dense_captioner.rnn_cell.parameters(),
+                        "lr": self.trainer_config.optimizer_config.programmer_lr,
+                    },
+                    {
+                        "params": self.dense_captioner.fc.parameters(),
+                        "lr": self.trainer_config.optimizer_config.programmer_lr,
+                    },
+                    {
+                        "params": self.dense_captioner.clip_captioner.avscn_dec.parameters(),
+                        "lr": self.trainer_config.optimizer_config.captioning_lr,
+                    },
+                    {
+                        "params": self.dense_captioner.clip_captioner.semsynan_dec.parameters(),
+                        "lr": self.trainer_config.optimizer_config.captioning_lr,
+                    },
+                    {
+                        "params": self.dense_captioner.clip_captioner.encoder.sem_model.parameters(),
+                        "lr": self.trainer_config.optimizer_config.sem_enc_lr,
+                    },
+                    {
+                        "params": self.dense_captioner.clip_captioner.encoder.syn_model.parameters(),
+                        "lr": self.trainer_config.optimizer_config.syn_enc_lr,
+                    },
+                ],
+                lr=self.trainer_config.optimizer_config.learning_rate,
+            )  # , weight_decay=.0001)
 
         # learning-rate decay scheduler
-        lambda1 = lambda epoch: self.trainer_config.lr_decay_factor ** (epoch // 40)
-        lambda2 = lambda epoch: self.trainer_config.lr_decay_factor ** (epoch // 40)
-        lambda3 = lambda epoch: self.trainer_config.lr_decay_factor ** (epoch // 40)
-        lambda4 = lambda epoch: self.trainer_config.lr_decay_factor ** (epoch // 40)
-        lambda5 = lambda epoch: self.trainer_config.lr_decay_factor ** (epoch // 40)
-        lambda6 = lambda epoch: self.trainer_config.lr_decay_factor ** (epoch // 40)
-        lambda7 = lambda epoch: self.trainer_config.lr_decay_factor ** (epoch // 40)
-        lambda8 = lambda epoch: self.trainer_config.lr_decay_factor ** (epoch // 40)
-        self.lr_scheduler = optim.lr_scheduler.LambdaLR(optimizer=self.optimizer,
-                                                        lr_lambda=[lambda1, lambda2, lambda3, lambda4, lambda5, lambda6, lambda7, lambda8])
+        def lambda1(epoch):
+            return self.trainer_config.lr_decay_factor ** (epoch // 40)
+
+        def lambda2(epoch):
+            return self.trainer_config.lr_decay_factor ** (epoch // 40)
+
+        def lambda3(epoch):
+            return self.trainer_config.lr_decay_factor ** (epoch // 40)
+
+        def lambda4(epoch):
+            return self.trainer_config.lr_decay_factor ** (epoch // 40)
+
+        def lambda5(epoch):
+            return self.trainer_config.lr_decay_factor ** (epoch // 40)
+
+        def lambda6(epoch):
+            return self.trainer_config.lr_decay_factor ** (epoch // 40)
+
+        def lambda7(epoch):
+            return self.trainer_config.lr_decay_factor ** (epoch // 40)
+
+        def lambda8(epoch):
+            return self.trainer_config.lr_decay_factor ** (epoch // 40)
+
+        self.lr_scheduler = optim.lr_scheduler.LambdaLR(
+            optimizer=self.optimizer,
+            lr_lambda=[
+                lambda1,
+                lambda2,
+                lambda3,
+                lambda4,
+                lambda5,
+                lambda6,
+                lambda7,
+                lambda8,
+            ],
+        )
 
         # Loss function
-        self.criterion = DenseCaptioningLoss(config=trainer_config.criterion_config,
-                                             c_max_len=self.max_words,
-                                             p_max_len=self.max_prog,
-                                             device=self.device)
+        self.criterion = DenseCaptioningLoss(
+            config=trainer_config.criterion_config,
+            c_max_len=self.max_words,
+            p_max_len=self.max_prog,
+            device=self.device,
+        )
 
-        print('\n****We are ready to start the training process****\n')
-
-    def __init_vocab(self, corpus):
-        self.vocab = Vocabulary.from_words(['<pad>', '<start>', '<end>', '<unk>'])
-        self.vocab.add_sentences(self.corpus)
-        print('Vocabulary has {} words.'.format(len(self.vocab)))
+        print("\n****We are ready to start the training process****\n")
 
     def __load_ground_truth(self):
         self.ref_programs, self.ref_captions, self.ref_densecaps = {}, {}, {}
 
-        ref_progams_txt_path = {'val_1': os.path.join(self.dataset_folder,'val_1_ref_programs.txt')}
-        ref_captions_txt_path = {'val_1': os.path.join(self.dataset_folder,'val_1_ref_captions.txt')}
-        ref_densecap_json_path = {'val_1': os.path.join(self.dataset_folder,'val_1_ref_densecap.json')}
+        ref_progams_txt_path = {
+            "val_1": os.path.join(self.dataset_folder, "val_1_ref_programs.txt")
+        }
+        ref_captions_txt_path = {
+            "val_1": os.path.join(self.dataset_folder, "val_1_ref_captions.txt")
+        }
+        ref_densecap_json_path = {
+            "val_1": os.path.join(self.dataset_folder, "val_1_ref_densecap.json")
+        }
 
-        ref_vidxs_blacklists = {'val_1': self.trainer_config.valid_blacklist}
-        ref_cidxs_blacklists = {'val_1': [cidx for vidx in ref_vidxs_blacklists['val_1'] for cidx in self.corpus[1][1][self.corpus[1][0].index(vidx)]]}
+        ref_vidxs_blacklists = {"val_1": self.trainer_config.valid_blacklist}
+        ref_cidxs_blacklists = {
+            "val_1": [
+                cidx
+                for vidx in ref_vidxs_blacklists["val_1"]
+                for cidx in self.corpus[1][1][self.corpus[1][0].index(vidx)]
+            ]
+        }
 
-        for phase in ['val_1']:
-            self.ref_programs[phase] = load_texts(ref_progams_txt_path[phase], blacklist=ref_vidxs_blacklists[phase])
-            self.ref_captions[phase] = load_texts(ref_captions_txt_path[phase], blacklist=ref_cidxs_blacklists[phase])
-            with open(ref_densecap_json_path[phase], 'r') as f:
+        for phase in ["val_1"]:
+            self.ref_programs[phase] = load_texts(
+                ref_progams_txt_path[phase], blacklist=ref_vidxs_blacklists[phase]
+            )
+            self.ref_captions[phase] = load_texts(
+                ref_captions_txt_path[phase], blacklist=ref_cidxs_blacklists[phase]
+            )
+            with open(ref_densecap_json_path[phase], "r") as f:
                 self.ref_densecaps[phase] = json.load(f)
                 for vidx in ref_vidxs_blacklists[phase]:
                     del self.ref_densecaps[phase][str(vidx)]
 
-            print(f' For phase {phase} were sekiped:\n  vidxs: {ref_vidxs_blacklists[phase]}\n  cidxs: {ref_cidxs_blacklists[phase]}')
+            print(
+                f" For phase {phase} were sekiped:\n  vidxs: {ref_vidxs_blacklists[phase]}\n  cidxs: {ref_cidxs_blacklists[phase]}"
+            )
 
             # self.ref_programs[phase] = {k:self.ref_programs[phase][k] for k in range(3)}
             # self.ref_captions[phase] = {k:self.ref_captions[phase][k] for k in range(33844, 33844+8)}
             # self.ref_densecaps[phase] = {str(k):self.ref_densecaps[phase][str(k)] for k in range(3)}
 
-    def __load_fusion_ground_truth_captions(self):
-        configs = [#ConfigurationFile('config.ini', 'MSVD-sem-syn-cn-max'),
-                   #ConfigurationFile('config.ini', 'MSR-VTT-sem-syn-cn-max'),
-                   #ConfigurationFile('config.ini', 'VATEX-sem-syn-cn-max'),
-                   ConfigurationFile('config.ini', 'TRECVID-sem-syn-cn-max')]
-
-        # this is the ground truth captions
-        self.ground_truth = {'valid': {}}
-        for config in configs:
-            reference_txt_path = {'valid': 'results/{}_val_references.txt'.format(config.dataset_name)}
-
-            for phase in ['valid']:
-                current_len = len(self.ground_truth[phase])
-                for line in list(open(reference_txt_path[phase], 'r')):
-                    row = line.split('\t')
-                    idx = current_len + int(row[0])
-                    sentence = row[1].strip()
-                    if idx in self.ground_truth[phase]:
-                        self.ground_truth[phase][idx].append(sentence)
-                    else:
-                        self.ground_truth[phase][idx] = [sentence]
-
-    def __get_most_freq_words(self, caps, caps_upos, postags=['NOUN', 'ADJ', 'VERB'], words_to_discard=['<unk>']):
+    def __get_most_freq_words(
+        self,
+        caps,
+        caps_upos,
+        postags=["NOUN", "ADJ", "VERB"],
+        words_to_discard=["<unk>"],
+    ):
         widx2count, uidxs_to_use = {}, [self.upos_vocab(tag) for tag in postags]
 
         for v_caps, v_caps_upos in zip(caps, caps_upos):
@@ -275,19 +356,34 @@ class DenseVideo2TextTrainer(Trainer):
         for w in words_to_discard:
             del widx2count[self.caps_vocab(w)]
 
-        freq_words = heapq.nlargest(self.modules_config['sem_tagger_config'].out_size, widx2count, key=widx2count.get)
-        self.logger.info(f'TAGs-IDXs: {freq_words}')
-        self.logger.info(f'TAGs-words:' + ' '.join([self.caps_vocab.idx_to_word(idx) for idx in freq_words]))
-        self.logger.info(f'TAGs-freq: {[widx2count[idx] for idx in freq_words]}')
-        self.logger.info(f'TAGs-total freq of tags: {sum([widx2count[idx] for idx in freq_words])}')
-        self.logger.info(f'TAGs-mean freq of tags: {np.mean([widx2count[idx] for idx in freq_words])}')
+        freq_words = heapq.nlargest(
+            self.modules_config["sem_tagger_config"].out_size,
+            widx2count,
+            key=widx2count.get,
+        )
+        self.logger.info(f"TAGs-IDXs: {freq_words}")
+        self.logger.info(
+            f"TAGs-words:"
+            + " ".join([self.caps_vocab.idx_to_word(idx) for idx in freq_words])
+        )
+        self.logger.info(f"TAGs-freq: {[widx2count[idx] for idx in freq_words]}")
+        self.logger.info(
+            f"TAGs-total freq of tags: {sum([widx2count[idx] for idx in freq_words])}"
+        )
+        self.logger.info(
+            f"TAGs-mean freq of tags: {np.mean([widx2count[idx] for idx in freq_words])}"
+        )
 
         return freq_words
 
-    def __get_sem_enc(self, freq_words, caps, caps_upos, postags=['NOUN', 'ADJ', 'VERB']):
+    def __get_sem_enc(
+        self, freq_words, caps, caps_upos, postags=["NOUN", "ADJ", "VERB"]
+    ):
         uidxs_to_use = [self.upos_vocab(tag) for tag in postags]
 
-        X = torch.zeros(len(caps), self.max_caps, self.modules_config['sem_tagger_config'].out_size)
+        X = torch.zeros(
+            len(caps), self.max_caps, self.modules_config["sem_tagger_config"].out_size
+        )
         for i, (v_caps, v_caps_upos) in enumerate(zip(caps, caps_upos)):
             for j, (cap, upos) in enumerate(zip(v_caps, v_caps_upos)):
                 for widx, uidx in zip(cap, upos):
@@ -296,7 +392,9 @@ class DenseVideo2TextTrainer(Trainer):
 
         return X
 
-    def __get_interval_mask(self, intervals, max_num_chunks, proposals=None, num_estimates=128):
+    def __get_interval_mask(
+        self, intervals, max_num_chunks, proposals=None, num_estimates=128
+    ):
         aux = intervals[:, :, 1] - intervals[:, :, 0]
         data = aux.view(-1)
         print(aux.size(), data.size())
@@ -306,75 +404,158 @@ class DenseVideo2TextTrainer(Trainer):
             # print(data.unsqueeze(1).numpy().shape)
             # print(data)
             # np.save('data.npy', data)
-            kde = KernelDensity(kernel='gaussian', bandwidth=1.0).fit(data.unsqueeze(1).numpy())
+            kde = KernelDensity(kernel="gaussian", bandwidth=1.0).fit(
+                data.unsqueeze(1).numpy()
+            )
             s = linspace(0, self.max_interval, num=num_estimates)
             # print(s)
-            e = kde.score_samples(s.reshape(-1,1))
+            e = kde.score_samples(s.reshape(-1, 1))
             # print(e)
             # print(argrelextrema(e, np.less)[0])
             proposals = s[argrelextrema(e, np.less)[0]]
-            
-            self.logger.info(f'PROPOSALS: Number of event-proposals: {len(proposals)}')
-            self.logger.info(f'PROPOSALS: Event-proposals: {proposals}')
+
+            self.logger.info(f"PROPOSALS: Number of event-proposals: {len(proposals)}")
+            self.logger.info(f"PROPOSALS: Event-proposals: {proposals}")
 
         # determine cluster of each interval
         result = torch.zeros_like(aux, dtype=torch.int)
         result[aux < proposals[0]] = 0
         for i in range(1, len(proposals)):
-            result[(aux >= proposals[i-1]) * (aux <= proposals[i])] = i
+            result[(aux >= proposals[i - 1]) * (aux <= proposals[i])] = i
         result[aux > proposals[-1]] = len(proposals)
 
         # compute mask
         mask = torch.zeros(intervals.size(0), max_num_chunks, len(proposals) + 1)
         for i in range(intervals.size(0)):
             for j in range(intervals.size(1)):
-                mask[i, int(intervals[i,j,0]):int(intervals[i,j,1]), result[i,j]] = 1
-        
+                mask[
+                    i, int(intervals[i, j, 0]) : int(intervals[i, j, 1]), result[i, j]
+                ] = 1
+
         return mask, proposals
 
     def __init_dense_loader(self):
-        print('Initializing data loaders...')
+        print("Initializing data loaders...")
 
         # get train split data
-        print(' initializing train split data loader...')
-        vidxs, cidxs, intervals, fps, progs, prog_lens, caps, pos, upos, cap_lens = extract_split_data_from_corpus(self.corpus, split=0)
-        cidxs_t, intervals_t, caps_count_t, progs_t, caps_t, pos_t, upos_t, cap_lens_t = data2tensors(cidxs, intervals, progs, prog_lens, caps, pos, upos, cap_lens)
+        print(" initializing train split data loader...")
+        (
+            vidxs,
+            cidxs,
+            intervals,
+            fps,
+            progs,
+            prog_lens,
+            caps,
+            pos,
+            upos,
+            cap_lens,
+        ) = extract_split_data_from_corpus(self.corpus, split=0)
+        (
+            cidxs_t,
+            intervals_t,
+            caps_count_t,
+            progs_t,
+            caps_t,
+            pos_t,
+            upos_t,
+            cap_lens_t,
+        ) = data2tensors(cidxs, intervals, progs, prog_lens, caps, pos, upos, cap_lens)
         self.max_prog = progs_t.size(1)
         self.max_caps = caps_t.size(1)
         self.max_words = caps_t.size(2)
-        self.max_interval = torch.max(intervals_t.view(-1, 2)[:,1]-intervals_t.view(-1, 2)[:,0])
-        self.last_interval_end = torch.max(intervals_t.view(-1, 2)[:,1])
+        self.max_interval = torch.max(
+            intervals_t.view(-1, 2)[:, 1] - intervals_t.view(-1, 2)[:, 0]
+        )
+        self.last_interval_end = torch.max(intervals_t.view(-1, 2)[:, 1])
 
         # determine the K most frequent words for semantic encodings from the train split
-        freq_words = self.__get_most_freq_words(caps, upos, postags=self.modules_config['sem_tagger_config'].upos_tags, words_to_discard=self.modules_config['sem_tagger_config'].words_to_discard)
+        freq_words = self.__get_most_freq_words(
+            caps,
+            upos,
+            postags=self.modules_config["sem_tagger_config"].upos_tags,
+            words_to_discard=self.modules_config["sem_tagger_config"].words_to_discard,
+        )
 
         # determine the ground truth for semantic enconding
         caps_sem_enc_t = self.__get_sem_enc(freq_words, caps, upos)
 
         # TODO: determine the ground truth for event masking
-        event_mask_t, event_proposals = self.__get_interval_mask(intervals_t, max_num_chunks=self.trainer_config.max_num_chunks, num_estimates=500)
+        event_mask_t, event_proposals = self.__get_interval_mask(
+            intervals_t,
+            max_num_chunks=self.trainer_config.max_num_chunks,
+            num_estimates=500,
+        )
         self.num_proposals = len(event_proposals) + 1
 
         # get train loader
         # h5_path = os.path.join(self.dataset_folder, self.trainer_config.features_filename)
         # self.h5_train = h5py.File(self.trainer_config.train_h5_file_path, 'r')
         # train_dataset = self.h5_train[self.trainer_config.h5_file_group_name]
-        # train_loader = get_dense_loader(h5_dataset=train_dataset, vidxs=vidxs, vidxs_blcklist=self.trainer_config.valid_blacklist, cidxs=cidxs_t, 
-        #                                 intervals=intervals_t, caps_count=caps_count_t, captions=caps_t, caps_sem_enc=caps_sem_enc_t, pos=pos_t, 
-        #                                 upos=upos_t, cap_lens=cap_lens_t, progs=progs_t, prog_lens=prog_lens, batch_size=self.trainer_config.batch_size, 
+        # train_loader = get_dense_loader(h5_dataset=train_dataset, vidxs=vidxs, vidxs_blcklist=self.trainer_config.valid_blacklist, cidxs=cidxs_t,
+        #                                 intervals=intervals_t, caps_count=caps_count_t, captions=caps_t, caps_sem_enc=caps_sem_enc_t, pos=pos_t,
+        #                                 upos=upos_t, cap_lens=cap_lens_t, progs=progs_t, prog_lens=prog_lens, batch_size=self.trainer_config.batch_size,
         #                                 train=True, num_workers=trainer_config.loader_num_workers, pin_memory=trainer_config.loader_pin_memory)
 
-        train_loader = get_dense_loader(h5_file_path=self.trainer_config.train_h5_file_path, h5_file_group_name=self.trainer_config.h5_file_group_name,
-                                        vidxs=vidxs, vidxs_blcklist=self.trainer_config.valid_blacklist, vfps=fps, cidxs=cidxs_t, 
-                                        intervals=intervals_t, caps_count=caps_count_t, captions=caps_t, caps_sem_enc=caps_sem_enc_t, pos=pos_t, 
-                                        upos=upos_t, cap_lens=cap_lens_t, progs=progs_t, prog_lens=prog_lens, event_proposals=event_mask_t, batch_size=self.trainer_config.batch_size, 
-                                        train=True, num_workers=trainer_config.loader_num_workers, pin_memory=trainer_config.loader_pin_memory)
+        train_loader = get_dense_loader(
+            h5_file_path=self.trainer_config.train_h5_file_path,
+            h5_file_group_name=self.trainer_config.h5_file_group_name,
+            vidxs=vidxs,
+            vidxs_blcklist=self.trainer_config.valid_blacklist,
+            vfps=fps,
+            cidxs=cidxs_t,
+            intervals=intervals_t,
+            caps_count=caps_count_t,
+            captions=caps_t,
+            caps_sem_enc=caps_sem_enc_t,
+            pos=pos_t,
+            upos=upos_t,
+            cap_lens=cap_lens_t,
+            progs=progs_t,
+            prog_lens=prog_lens,
+            event_proposals=event_mask_t,
+            batch_size=self.trainer_config.batch_size,
+            train=True,
+            num_workers=trainer_config.loader_num_workers,
+            pin_memory=trainer_config.loader_pin_memory,
+        )
 
         # get valid split data
-        print(' initializing valid split data loader...')
-        vidxs, cidxs, intervals, fps, progs, prog_lens, caps, pos, upos, cap_lens = extract_split_data_from_corpus(self.corpus, split=1)
-        cidxs_t, intervals_t, caps_count_t, progs_t, caps_t, pos_t, upos_t, cap_lens_t = data2tensors(cidxs, intervals, progs, prog_lens, caps, pos, upos, cap_lens,
-                                                                                                      self.max_prog, self.max_caps, self.max_words)
+        print(" initializing valid split data loader...")
+        (
+            vidxs,
+            cidxs,
+            intervals,
+            fps,
+            progs,
+            prog_lens,
+            caps,
+            pos,
+            upos,
+            cap_lens,
+        ) = extract_split_data_from_corpus(self.corpus, split=1)
+        (
+            cidxs_t,
+            intervals_t,
+            caps_count_t,
+            progs_t,
+            caps_t,
+            pos_t,
+            upos_t,
+            cap_lens_t,
+        ) = data2tensors(
+            cidxs,
+            intervals,
+            progs,
+            prog_lens,
+            caps,
+            pos,
+            upos,
+            cap_lens,
+            self.max_prog,
+            self.max_caps,
+            self.max_words,
+        )
         # self.max_prog = max(self.max_prog, progs_t.size(1))
         # self.max_caps = max(self.max_caps, caps_t.size(1))
         # self.max_words = max(self.max_words, caps_t.size(2))
@@ -385,46 +566,77 @@ class DenseVideo2TextTrainer(Trainer):
         caps_sem_enc_t = self.__get_sem_enc(freq_words, caps, upos)
 
         # TODO: determine the ground truth for event masking
-        event_mask_t, _ = self.__get_interval_mask(intervals_t, max_num_chunks=self.trainer_config.max_num_chunks, proposals=event_proposals, num_estimates=128)
+        event_mask_t, _ = self.__get_interval_mask(
+            intervals_t,
+            max_num_chunks=self.trainer_config.max_num_chunks,
+            proposals=event_proposals,
+            num_estimates=128,
+        )
 
         # get valid loader
         # self.h5_val = h5py.File(self.trainer_config.valid_h5_file_path, 'r')
         # val_dataset = self.h5_val[self.trainer_config.h5_file_group_name]
-        # val_loader = get_dense_loader(h5_dataset=val_dataset, vidxs=vidxs, vidxs_blcklist=self.trainer_config.valid_blacklist, cidxs=cidxs_t, 
-        #                               intervals=intervals_t, caps_count=caps_count_t, captions=caps_t, caps_sem_enc=caps_sem_enc_t, pos=pos_t, 
-        #                               upos=upos_t, cap_lens=cap_lens_t, progs=progs_t, prog_lens=prog_lens, batch_size=self.trainer_config.batch_size*3, 
+        # val_loader = get_dense_loader(h5_dataset=val_dataset, vidxs=vidxs, vidxs_blcklist=self.trainer_config.valid_blacklist, cidxs=cidxs_t,
+        #                               intervals=intervals_t, caps_count=caps_count_t, captions=caps_t, caps_sem_enc=caps_sem_enc_t, pos=pos_t,
+        #                               upos=upos_t, cap_lens=cap_lens_t, progs=progs_t, prog_lens=prog_lens, batch_size=self.trainer_config.batch_size*3,
         #                               train=False, num_workers=trainer_config.loader_num_workers, pin_memory=trainer_config.loader_pin_memory)
 
-        val_loader = get_dense_loader(h5_file_path=self.trainer_config.valid_h5_file_path, h5_file_group_name=self.trainer_config.h5_file_group_name,
-                                      vidxs=vidxs, vidxs_blcklist=self.trainer_config.valid_blacklist, vfps=fps, cidxs=cidxs_t, 
-                                      intervals=intervals_t, caps_count=caps_count_t, captions=caps_t, caps_sem_enc=caps_sem_enc_t, pos=pos_t, 
-                                      upos=upos_t, cap_lens=cap_lens_t, progs=progs_t, prog_lens=prog_lens, event_proposals=event_mask_t, batch_size=self.trainer_config.batch_size*3, 
-                                      train=False, num_workers=trainer_config.loader_num_workers, pin_memory=trainer_config.loader_pin_memory)
+        val_loader = get_dense_loader(
+            h5_file_path=self.trainer_config.valid_h5_file_path,
+            h5_file_group_name=self.trainer_config.h5_file_group_name,
+            vidxs=vidxs,
+            vidxs_blcklist=self.trainer_config.valid_blacklist,
+            vfps=fps,
+            cidxs=cidxs_t,
+            intervals=intervals_t,
+            caps_count=caps_count_t,
+            captions=caps_t,
+            caps_sem_enc=caps_sem_enc_t,
+            pos=pos_t,
+            upos=upos_t,
+            cap_lens=cap_lens_t,
+            progs=progs_t,
+            prog_lens=prog_lens,
+            event_proposals=event_mask_t,
+            batch_size=self.trainer_config.batch_size * 3,
+            train=False,
+            num_workers=trainer_config.loader_num_workers,
+            pin_memory=trainer_config.loader_pin_memory,
+        )
 
-        self.logger.info(f'Max program len: {self.max_prog}')
-        self.logger.info(f'Max caption len: {self.max_words}')
-        self.logger.info(f'Max intervals count: {self.max_caps}')
-        self.logger.info(f'Max interval len: {int(self.max_interval)}')
-        self.logger.info(f'Last interval end: {int(self.last_interval_end)}')
+        self.logger.info(f"Max program len: {self.max_prog}")
+        self.logger.info(f"Max caption len: {self.max_words}")
+        self.logger.info(f"Max intervals count: {self.max_caps}")
+        self.logger.info(f"Max interval len: {int(self.max_interval)}")
+        self.logger.info(f"Last interval end: {int(self.last_interval_end)}")
 
-        print(f' Max program len: {self.max_prog}')
-        print(f' Max caption len: {self.max_words}')
-        print(f' Max intervals count: {self.max_caps}')
-        print(f' Max interval len: {int(self.max_interval)}')
-        print(f' Last interval end: {int(self.last_interval_end)}')
-        print(f' Number of event-proposals: {self.num_proposals}')
+        print(f" Max program len: {self.max_prog}")
+        print(f" Max caption len: {self.max_words}")
+        print(f" Max intervals count: {self.max_caps}")
+        print(f" Max interval len: {int(self.max_interval)}")
+        print(f" Last interval end: {int(self.last_interval_end)}")
+        print(f" Number of event-proposals: {self.num_proposals}")
 
-        self.loaders = {'train': train_loader, 'val_1': val_loader}
+        self.loaders = {"train": train_loader, "val_1": val_loader}
 
-    def __get_sentences(self, all_outputs, all_video_ids):
-        predicted_sentences = {}
-        for outputs, video_ids in zip(all_outputs, all_video_ids):
-            for predicted_tokens, vid in zip(outputs, video_ids):
-                predicted_sentences[vid] = [self.__decode_from_tokens(predicted_tokens)]
-        return predicted_sentences
-
-    def __process_batch(self, video_feats, feats_count, gt_intervals, gt_caps_count, gt_captions, gt_caps_sem_enc, gt_pos, gt_upos, gt_cap_lens, gt_program, gt_prog_len,
-                        gt_proposals, teacher_forcing_ratio=.5, phase='train', use_rl=False):
+    def __process_batch(
+        self,
+        video_feats,
+        feats_count,
+        gt_intervals,
+        gt_caps_count,
+        gt_captions,
+        gt_caps_sem_enc,
+        gt_pos,
+        gt_upos,
+        gt_cap_lens,
+        gt_program,
+        gt_prog_len,
+        gt_proposals,
+        teacher_forcing_ratio=0.5,
+        phase="train",
+        use_rl=False,
+    ):
         bsz = video_feats[0].size(0)
 
         # Move all tensors to device
@@ -439,22 +651,40 @@ class DenseVideo2TextTrainer(Trainer):
         # gt_caps_sem_enc = gt_caps_sem_enc.to(self.device)
 
         # determine position for truncating the programs
-        if phase=='train':
+        if phase == "train":
             # determine the number instructions that are necessary for matching the i-th interval
-            temp_prog_pos = torch.zeros(gt_intervals.size(0), gt_intervals.size(1)).to(gt_intervals.device)
-            temp_prog_pos[:,0] = gt_intervals[:,0,1] + 1
+            temp_prog_pos = torch.zeros(gt_intervals.size(0), gt_intervals.size(1)).to(
+                gt_intervals.device
+            )
+            temp_prog_pos[:, 0] = gt_intervals[:, 0, 1] + 1
             for i in range(1, gt_intervals.size(1)):
-                temp_prog_pos[:,i] = temp_prog_pos[:,i-1] + (gt_intervals[:,i,0] - gt_intervals[:,i-1,0]) + (gt_intervals[:,i,1] - gt_intervals[:,i,0]) + 1
+                temp_prog_pos[:, i] = (
+                    temp_prog_pos[:, i - 1]
+                    + (gt_intervals[:, i, 0] - gt_intervals[:, i - 1, 0])
+                    + (gt_intervals[:, i, 1] - gt_intervals[:, i, 0])
+                    + 1
+                )
 
             # at least minimum program length steps, considering at least min_caps_truncation captions for each video
-            truncate_prog_at = int(max(torch.min(gt_prog_len), torch.max(temp_prog_pos[:, self.trainer_config.min_caps_truncation-1])))
-            self.logger.info(f'the gt programs of len {gt_prog_len} will be truncated at {truncate_prog_at}')
-            
+            truncate_prog_at = int(
+                max(
+                    torch.min(gt_prog_len),
+                    torch.max(
+                        temp_prog_pos[:, self.trainer_config.min_caps_truncation - 1]
+                    ),
+                )
+            )
+            self.logger.info(
+                f"the gt programs of len {gt_prog_len} will be truncated at {truncate_prog_at}"
+            )
+
             # determine the number of captions/intervals that must be generated for each video, truncating at truncate_prog_at
-            self.logger.info(f'gt caps count: {gt_caps_count}')
-            gt_caps_count = torch.sum((gt_intervals[:,:,1] > 0) * (temp_prog_pos <= truncate_prog_at), dim=1).to(self.device)
+            self.logger.info(f"gt caps count: {gt_caps_count}")
+            gt_caps_count = torch.sum(
+                (gt_intervals[:, :, 1] > 0) * (temp_prog_pos <= truncate_prog_at), dim=1
+            ).to(self.device)
             # gt_caps_count = torch.sum((gt_intervals[:,:,1] > 0) * (temp_prog_pos < truncate_prog_at), dim=1).to(self.device)
-            self.logger.info(f'tuncated gt caps count: {gt_caps_count}')
+            self.logger.info(f"tuncated gt caps count: {gt_caps_count}")
 
             # truncate gt batch tensors before move them to the device
             max_caps = torch.max(gt_caps_count)
@@ -468,15 +698,17 @@ class DenseVideo2TextTrainer(Trainer):
 
             self.avg_truncation += truncate_prog_at
             self.avg_caps += int(torch.mean(gt_caps_count.float()))
-            self.avg_feats += int(torch.mean(gt_intervals[torch.arange(bsz), gt_caps_count-1, 1]))
-        elif 'val' in phase:
+            self.avg_feats += int(
+                torch.mean(gt_intervals[torch.arange(bsz), gt_caps_count - 1, 1])
+            )
+        elif "val" in phase:
             # truncate gt batch tensors according to average parameters, and move them to the device
             truncate_prog_at = self.avg_truncation
             gt_program = gt_program[:, :truncate_prog_at].to(self.device)
-            gt_captions = gt_captions[:, :self.avg_caps].to(self.device)
-            gt_caps_sem_enc = gt_caps_sem_enc[:, :self.avg_caps].to(self.device)
-            gt_pos = gt_pos[:, :self.avg_caps].to(self.device)
-            gt_intervals = gt_intervals[:, :self.avg_caps].to(self.device)
+            gt_captions = gt_captions[:, : self.avg_caps].to(self.device)
+            gt_caps_sem_enc = gt_caps_sem_enc[:, : self.avg_caps].to(self.device)
+            gt_pos = gt_pos[:, : self.avg_caps].to(self.device)
+            gt_intervals = gt_intervals[:, : self.avg_caps].to(self.device)
             # gt_upos = gt_upos[:, :self.avg_caps].to(self.device)
             # gt_proposals = gt_proposals[:, :int(torch.max(gt_intervals[:,self.avg_caps,0]))].to(self.device)
 
@@ -497,85 +729,140 @@ class DenseVideo2TextTrainer(Trainer):
 
         self.optimizer.zero_grad()
 
-        with torch.set_grad_enabled(phase == 'train'):
-            prog_logits, program, caps_logits, caps_sem_enc, pos_tags_logits, captions, intervals, caps_count, proposals_logits, proposals_count = self.dense_captioner(v_feats=video_feats,
-                                                                                                                                                                        feats_count=feats_count,
-                                                                                                                                                                        prog_len=truncate_prog_at,
-                                                                                                                                                                        teacher_forcing_p=teacher_forcing_ratio,
-                                                                                                                                                                        gt_program=gt_program,
-                                                                                                                                                                        gt_captions=gt_captions,
-                                                                                                                                                                        gt_caps_count=gt_caps_count,
-                                                                                                                                                                        gt_sem_enc=gt_caps_sem_enc,
-                                                                                                                                                                        gt_pos=gt_pos,
-                                                                                                                                                                        gt_intervals=gt_intervals,
-                                                                                                                                                                        gt_proposals=gt_proposals,
-                                                                                                                                                                        max_prog=self.avg_truncation,#max_prog=self.max_prog,
-                                                                                                                                                                        max_caps=self.avg_caps,#max_caps=self.max_caps,
-                                                                                                                                                                        max_cap=self.max_words,
-                                                                                                                                                                        max_chunks=self.avg_truncation) # the maximum value of start pointers is lower than the max_prog to be generated
+        with torch.set_grad_enabled(phase == "train"):
+            (
+                prog_logits,
+                program,
+                caps_logits,
+                caps_sem_enc,
+                pos_tags_logits,
+                captions,
+                intervals,
+                caps_count,
+                proposals_logits,
+                proposals_count,
+            ) = self.dense_captioner(
+                v_feats=video_feats,
+                feats_count=feats_count,
+                prog_len=truncate_prog_at,
+                teacher_forcing_p=teacher_forcing_ratio,
+                gt_program=gt_program,
+                gt_captions=gt_captions,
+                gt_caps_count=gt_caps_count,
+                gt_sem_enc=gt_caps_sem_enc,
+                gt_pos=gt_pos,
+                gt_intervals=gt_intervals,
+                gt_proposals=gt_proposals,
+                max_prog=self.avg_truncation,  # max_prog=self.max_prog,
+                max_caps=self.avg_caps,  # max_caps=self.max_caps,
+                max_cap=self.max_words,
+                max_chunks=self.avg_truncation,
+            )  # the maximum value of start pointers is lower than the max_prog to be generated
 
-            if 'val' in phase:
+            if "val" in phase:
                 gt_caps_count = gt_caps_count.to(self.device)
                 gt_caps_count = torch.min(gt_caps_count, caps_count)
 
             # Evaluate the loss function
-            self.logger.info('loss computation....')
+            self.logger.info("loss computation....")
             # import ipdb; ipdb.set_trace() # BREAKPOINT
-            loss, prog_loss, cap_loss, sem_enc_loss, pos_loss, proposals_loss, iou_reward = self.criterion(gt_captions=gt_captions, gt_cap_lens=gt_cap_lens, pred_captions=caps_logits, 
-                                                                                         gt_caps_sem_enc=gt_caps_sem_enc, pred_caps_sem_enc=caps_sem_enc, gt_pos_seq=gt_pos, 
-                                                                                         pred_pos_seq=pos_tags_logits, gt_program=gt_program, gt_prog_len=gt_prog_len, 
-                                                                                         pred_program=prog_logits, gt_intervals=gt_intervals, pred_intervals=intervals,
-                                                                                         gt_proposals=gt_proposals, pred_proposals=proposals_logits, gt_caps_count=gt_caps_count, 
-                                                                                         pred_caps_count=caps_count, gt_proposals_count=proposals_count, truncate_prog_at=truncate_prog_at)
+            (
+                loss,
+                prog_loss,
+                cap_loss,
+                sem_enc_loss,
+                pos_loss,
+                proposals_loss,
+                iou_reward,
+            ) = self.criterion(
+                gt_captions=gt_captions,
+                gt_cap_lens=gt_cap_lens,
+                pred_captions=caps_logits,
+                gt_caps_sem_enc=gt_caps_sem_enc,
+                pred_caps_sem_enc=caps_sem_enc,
+                gt_pos_seq=gt_pos,
+                pred_pos_seq=pos_tags_logits,
+                gt_program=gt_program,
+                gt_prog_len=gt_prog_len,
+                pred_program=prog_logits,
+                gt_intervals=gt_intervals,
+                pred_intervals=intervals,
+                gt_proposals=gt_proposals,
+                pred_proposals=proposals_logits,
+                gt_caps_count=gt_caps_count,
+                pred_caps_count=caps_count,
+                gt_proposals_count=proposals_count,
+                truncate_prog_at=truncate_prog_at,
+            )
 
-        if phase == 'train':
+        if phase == "train":
             # compute backward pass for somputing the gradients
-            self.logger.info('loss backward....')
+            self.logger.info("loss backward....")
             loss.backward()
 
             # clip gradients to prevent NaNs in the prog-loss
-            # nn.utils.clip_grad_norm_(self.dense_captioner.rnn_cell.parameters(), 0.5) 
+            # nn.utils.clip_grad_norm_(self.dense_captioner.rnn_cell.parameters(), 0.5)
 
             # update the parameters
-            self.logger.info('optimizer step...')
+            self.logger.info("optimizer step...")
             self.optimizer.step()
 
-        return loss, prog_loss, cap_loss, sem_enc_loss, pos_loss, proposals_loss, iou_reward, program, captions, intervals, caps_count, truncate_prog_at
-
-    def __evaluate(self, predicted_sentences, phase):
-        scores = score(self.ground_truth[phase], predicted_sentences)
-        weights = {'Bleu_1':0., 'Bleu_2': 0.0, 'Bleu_3': 0.0, 'Bleu_4': 1.4, 'CIDEr': 1.17, 'METEOR': 2., 'ROUGE_L':1.}
-        scores['All_Metrics'] = sum([scores[k] * weights[k] for k in scores.keys()])
-        return scores
+        return (
+            loss,
+            prog_loss,
+            cap_loss,
+            sem_enc_loss,
+            pos_loss,
+            proposals_loss,
+            iou_reward,
+            program,
+            captions,
+            intervals,
+            caps_count,
+            truncate_prog_at,
+        )
 
     def __save_checkpoint(self, epoch, save_checkpoints_dir, new_best=False):
         if new_best:
-            chkpt_filename = f'best_chkpt_{epoch}.pt'
+            chkpt_filename = f"best_chkpt_{epoch}.pt"
         else:
-            chkpt_filename = f'chkpt_{epoch}.pt'
+            chkpt_filename = f"chkpt_{epoch}.pt"
 
         if self.last_saved_epoch == epoch:
             # the checkpoint was saved after training at this epoch, we don't need to save it again, we copy it only
-            copyfile(os.path.join(save_checkpoints_dir, f'chkpt_{epoch}.pt'), os.path.join(save_checkpoints_dir, chkpt_filename))
-            print(' the checkpoint was copied only')
+            copyfile(
+                os.path.join(save_checkpoints_dir, f"chkpt_{epoch}.pt"),
+                os.path.join(save_checkpoints_dir, chkpt_filename),
+            )
+            print(" the checkpoint was copied only")
         else:
             # save the new checkpoint (best or not)
-            torch.save(obj={'epoch': epoch,
-                            'trainer_config': self.trainer_config,
-                            'modules_config': self.modules_config,
-                            'dense_captioner': self.dense_captioner.state_dict(),
-                            'optimizer': self.optimizer.state_dict(),
-                            'best_metrics': self.best_metrics,
-                            'avg_tuncation': self.avg_truncation,
-                            'avg_caps': self.avg_caps},
-                        f=os.path.join(save_checkpoints_dir, chkpt_filename))
-            print(' saved')
+            torch.save(
+                obj={
+                    "epoch": epoch,
+                    "trainer_config": self.trainer_config,
+                    "modules_config": self.modules_config,
+                    "dense_captioner": self.dense_captioner.state_dict(),
+                    "optimizer": self.optimizer.state_dict(),
+                    "best_metrics": self.best_metrics,
+                    "avg_tuncation": self.avg_truncation,
+                    "avg_caps": self.avg_caps,
+                },
+                f=os.path.join(save_checkpoints_dir, chkpt_filename),
+            )
+            print(" saved")
 
         # remove previously saved
         if new_best and self.last_best_saved_epoch != -1:
-            os.remove(os.path.join(save_checkpoints_dir, f'best_chkpt_{self.last_best_saved_epoch}.pt'))
+            os.remove(
+                os.path.join(
+                    save_checkpoints_dir, f"best_chkpt_{self.last_best_saved_epoch}.pt"
+                )
+            )
         elif not new_best and self.last_saved_epoch != -1:
-            os.remove(os.path.join(save_checkpoints_dir, f'chkpt_{self.last_saved_epoch}.pt'))
+            os.remove(
+                os.path.join(save_checkpoints_dir, f"chkpt_{self.last_saved_epoch}.pt")
+            )
 
         # update the last saved epoch
         if new_best:
@@ -583,63 +870,92 @@ class DenseVideo2TextTrainer(Trainer):
         else:
             self.last_saved_epoch = epoch
 
-    def __process_results(self, metrics_results, prediction, phase, epoch, save_checkpoints_dir, component):
-        self.logger.info(f'{phase} set metrics for {component}: {metrics_results}')
-        min_metrics = ['Recall']
+    def __process_results(
+        self, metrics_results, prediction, phase, epoch, save_checkpoints_dir, component
+    ):
+        self.logger.info(f"{phase} set metrics for {component}: {metrics_results}")
+        min_metrics = ["Recall"]
         for name, result in metrics_results.items():
-            self.writer.add_scalar(f'end2end/{phase}-{component}-{name}', result, epoch)
+            self.writer.add_scalar(f"end2end/{phase}-{component}-{name}", result, epoch)
             if name in self.best_metrics[component][phase] and (
                 (
-                    name in min_metrics and result < self.best_metrics[component][phase][name][1]
-                ) or (
-                    name not in min_metrics and result > self.best_metrics[component][phase][name][1]                    
+                    name in min_metrics
+                    and result < self.best_metrics[component][phase][name][1]
+                )
+                or (
+                    name not in min_metrics
+                    and result > self.best_metrics[component][phase][name][1]
                 )
             ):
                 self.best_metrics[component][phase][name] = (epoch, result)
-                if name in ['Bleu_4','METEOR', 'ROUGE_L', 'CIDEr', 'All_Metrics']:
+                if name in ["Bleu_4", "METEOR", "ROUGE_L", "CIDEr", "All_Metrics"]:
                     self.early_stop = 0
-                    torch.save(prediction, os.path.join(save_checkpoints_dir, f'chkpt_{epoch}_{component}_output.json'))
+                    torch.save(
+                        prediction,
+                        os.path.join(
+                            save_checkpoints_dir,
+                            f"chkpt_{epoch}_{component}_output.json",
+                        ),
+                    )
                     # with open(os.path.join(save_checkpoints_dir, f'chkpt_{epoch}_{component}_output.json'), 'w') as f:
                     #    json.dump(prediction, f)
-                if component=='densecap' and name == 'METEOR' and phase == 'val_1':
-                    print('saving best checkpoint...')
+                if component == "densecap" and name == "METEOR" and phase == "val_1":
+                    print("saving best checkpoint...")
                     self.__save_checkpoint(epoch, save_checkpoints_dir, True)
 
-    def train_model(self, resume=False, checkpoint_path=None, min_num_epochs=50, early_stop_limit=10):
+    def train_model(
+        self, resume=False, checkpoint_path=None, min_num_epochs=50, early_stop_limit=10
+    ):
         parallel_pool = Pool()
         # self.logger.info('Training captioning model on [{}] dataset with [{}] encoder and [{}] decoder'
         #                  .format(self.config.dataset_name, self.encoder_name, self.decoder_name))
 
-        save_checkpoints_dir = os.path.join(self.out_folder, 'models', self.trainer_config.str, self.datetime_str)
+        save_checkpoints_dir = os.path.join(
+            self.out_folder, "models", self.trainer_config.str, self.datetime_str
+        )
         if not os.path.exists(save_checkpoints_dir):
             os.makedirs(save_checkpoints_dir)
 
         if resume and os.path.exists(checkpoint_path):
-            self.logger.info(f'Resuming from checkpoint: {checkpoint_path}')
-            print(f'Resuming from checkpoint: {checkpoint_path}.... ')
-            
-            checkpoint = torch.load(checkpoint_path, map_location='cpu')
-            begin_epoch = checkpoint['epoch']
-            self.best_metrics = checkpoint['best_metrics']
-            self.avg_caps = checkpoint['avg_caps']
+            self.logger.info(f"Resuming from checkpoint: {checkpoint_path}")
+            print(f"Resuming from checkpoint: {checkpoint_path}.... ")
 
-            log_msg = f' (epoch {begin_epoch})'
-            for phase in ['val_1']:
-                log_msg += f'\n  Captioning metrics {phase}: \n   '
-                log_msg += '\t'.join([f'{k}:({e:03d}, {v:.3f})' for k, (e, v) in self.best_metrics['captioning'][phase].items()])
-                log_msg += f'\n  DenseCaptioning metrics {phase}: \n   '
-                log_msg += '\t'.join([f'{k}:({e:03d}, {v:.3f})' for k, (e, v) in self.best_metrics['densecap'][phase].items()])
-            print(log_msg, '\n')
+            checkpoint = torch.load(checkpoint_path, map_location="cpu")
+            begin_epoch = checkpoint["epoch"]
+            self.best_metrics = checkpoint["best_metrics"]
+            self.avg_caps = checkpoint["avg_caps"]
+
+            log_msg = f" (epoch {begin_epoch})"
+            for phase in ["val_1"]:
+                log_msg += f"\n  Captioning metrics {phase}: \n   "
+                log_msg += "\t".join(
+                    [
+                        f"{k}:({e:03d}, {v:.3f})"
+                        for k, (e, v) in self.best_metrics["captioning"][phase].items()
+                    ]
+                )
+                log_msg += f"\n  DenseCaptioning metrics {phase}: \n   "
+                log_msg += "\t".join(
+                    [
+                        f"{k}:({e:03d}, {v:.3f})"
+                        for k, (e, v) in self.best_metrics["densecap"][phase].items()
+                    ]
+                )
+            print(log_msg, "\n")
             self.logger.info(log_msg)
 
             model_dict = self.dense_captioner.state_dict()
 
             # 1. filter out unnecessary parameters (not included in the current architecture)
-            pretrained_dict = {k: v for k, v in checkpoint['dense_captioner'].items() if k in model_dict}
-            
+            pretrained_dict = {
+                k: v
+                for k, v in checkpoint["dense_captioner"].items()
+                if k in model_dict
+            }
+
             # 2. include in the dictionary to be loaded the new parameters in the current architecture
             for k, v in model_dict.items():
-                if k not in pretrained_dict: #or k[:2]=='fc':
+                if k not in pretrained_dict:  # or k[:2]=='fc':
                     pretrained_dict[k] = v
 
             # 3. load the new state dict
@@ -647,34 +963,58 @@ class DenseVideo2TextTrainer(Trainer):
 
             # 4. freeze the part of the model that was trained before
             if self.trainer_config.resume_config.unfreeze_at > 0:
-                self.dense_captioner.freeze(resume_config=self.trainer_config.resume_config)
+                self.dense_captioner.freeze(
+                    resume_config=self.trainer_config.resume_config
+                )
                 if self.trainer_config.resume_config.begin_epoch != -1:
                     begin_epoch = self.trainer_config.resume_config.begin_epoch
         else:
             begin_epoch = 0
-            self.best_metrics = {'programmer': {}, 'captioning': {}, 'densecap': {}}
-            for p in ['val_1']:
+            self.best_metrics = {"programmer": {}, "captioning": {}, "densecap": {}}
+            for p in ["val_1"]:
                 # self.best_metrics['programmer'][p] = {'Bleu_1': (0, 0), 'Bleu_2': (0, 0), 'Bleu_3': (0, 0), 'Bleu_4': (0, 0),
                 #                              'METEOR': (0, 0), 'ROUGE_L': (0, 0), 'CIDEr': (0, 0), 'SPICE': (0, 0), 'All_Metrics': (0, 0)}
-                self.best_metrics['captioning'][p] = {'Bleu_1': (0, 0), 'Bleu_2': (0, 0), 'Bleu_3': (0, 0), 'Bleu_4': (0, 0),
-                                                      'METEOR': (0, 0), 'ROUGE_L': (0, 0), 'CIDEr': (0, 0), 'SPICE': (0, 0),
-                                                      'All_Metrics': (0, 0)}
-                self.best_metrics['densecap'][p] = {'Bleu_1': (0, 0), 'Bleu_2': (0, 0), 'Bleu_3': (0, 0), 'Bleu_4': (0, 0),
-                                                    'METEOR': (0, 0), 'ROUGE_L': (0, 0), 'CIDEr': (0, 0), 'SPICE': (0, 0),
-                                                    'Recall': (0, float('inf')), 'Precision': (0, 0), 'All_Metrics': (0, 0)}
+                self.best_metrics["captioning"][p] = {
+                    "Bleu_1": (0, 0),
+                    "Bleu_2": (0, 0),
+                    "Bleu_3": (0, 0),
+                    "Bleu_4": (0, 0),
+                    "METEOR": (0, 0),
+                    "ROUGE_L": (0, 0),
+                    "CIDEr": (0, 0),
+                    "SPICE": (0, 0),
+                    "All_Metrics": (0, 0),
+                }
+                self.best_metrics["densecap"][p] = {
+                    "Bleu_1": (0, 0),
+                    "Bleu_2": (0, 0),
+                    "Bleu_3": (0, 0),
+                    "Bleu_4": (0, 0),
+                    "METEOR": (0, 0),
+                    "ROUGE_L": (0, 0),
+                    "CIDEr": (0, 0),
+                    "SPICE": (0, 0),
+                    "Recall": (0, float("inf")),
+                    "Precision": (0, 0),
+                    "All_Metrics": (0, 0),
+                }
 
         self.dense_captioner.to(self.device)
-        print('\nParameters of Dense Captioner model:\n')
+        print("\nParameters of Dense Captioner model:\n")
         total_size = 0
         for n, p in self.dense_captioner.named_parameters():
             # print(n, p.size(), p.device)
             total_size += torch.numel(p)
-        print(' total size: ', (total_size*8)/(1024**3), '\n')
+        print(" total size: ", (total_size * 8) / (1024 ** 3), "\n")
 
         # Start training process
         self.early_stop, self.last_saved_epoch, self.last_best_saved_epoch = 0, -1, -1
-        time_phases = {'train': 0, 'val_1': 0}
-        prog_metrics_results, cap_metrics_results, densecap_metrics_results = None, None, None
+        time_phases = {"train": 0, "val_1": 0}
+        prog_metrics_results, cap_metrics_results, densecap_metrics_results = (
+            None,
+            None,
+            None,
+        )
         for epoch in range(begin_epoch, 1000):
             # unfreeze the freezed part of the model if needed
             if epoch == self.trainer_config.resume_config.unfreeze_at:
@@ -682,90 +1022,230 @@ class DenseVideo2TextTrainer(Trainer):
 
             # determine teacher_forcing_ratio according to the convergence_speed_factor and current epoch
             k = self.trainer_config.convergence_speed_factor
-            teacher_forcing_ratio = max(.6, k / (k + np.exp(epoch / k)))  # inverse sigmoid decay
-            self.writer.add_scalar('end2end/teacher_forcing_ratio', teacher_forcing_ratio, epoch)
+            # inverse sigmoid decay
+            teacher_forcing_ratio = max(0.6, k / (k + np.exp(epoch / k)))
+            self.writer.add_scalar(
+                "end2end/teacher_forcing_ratio", teacher_forcing_ratio, epoch
+            )
 
-            loss_phases = {'train': 0, 'val_1': 0}
-            for phase in ['train', 'val_1']:
+            loss_phases = {"train": 0, "val_1": 0}
+            for phase in ["train", "val_1"]:
                 # prepare gradients of the model according to the phase to be performed
-                if phase == 'train':
+                if phase == "train":
                     self.dense_captioner.train()
                     self.avg_truncation = 0
                     self.avg_caps = 0
                     self.avg_feats = 0
                 else:
                     self.dense_captioner.eval()
-                    self.avg_truncation //= len(self.loaders['train'])
-                    self.avg_caps //= len(self.loaders['train'])
-                    self.avg_feats //= len(self.loaders['train'])
-                    self.writer.add_scalar('end2end/{}-epochs-avg_truncation'.format(phase), self.avg_truncation, epoch)
-                    self.writer.add_scalar('end2end/{}-epochs-avg_caps'.format(phase), self.avg_caps, epoch)
-                    self.writer.add_scalar('end2end/{}-epochs-avg_feats'.format(phase), self.avg_feats, epoch)
+                    self.avg_truncation //= len(self.loaders["train"])
+                    self.avg_caps //= len(self.loaders["train"])
+                    self.avg_feats //= len(self.loaders["train"])
+                    self.writer.add_scalar(
+                        "end2end/{}-epochs-avg_truncation".format(phase),
+                        self.avg_truncation,
+                        epoch,
+                    )
+                    self.writer.add_scalar(
+                        "end2end/{}-epochs-avg_caps".format(phase), self.avg_caps, epoch
+                    )
+                    self.writer.add_scalar(
+                        "end2end/{}-epochs-avg_feats".format(phase),
+                        self.avg_feats,
+                        epoch,
+                    )
 
                 # predicted_sentences = {}
                 time_start_epoch, total_time_iters = time.perf_counter(), 0
                 loss_count = 0
-                all_programs, all_captions, all_prog_ids, all_caps_ids, all_intervals, all_tstamps = [], [], [], [], [], []
-                for i, (vidx, cidxs, cnn, c3d, feats_count, tstamps, fps, gt_intervals, gt_caps_count, gt_caps, gt_caps_sem_enc, gt_pos, gt_upos, gt_cap_lens, gt_prog, gt_prog_len, gt_proposals) in enumerate(self.loaders[phase], start=1):
+                (
+                    all_programs,
+                    all_captions,
+                    all_prog_ids,
+                    all_caps_ids,
+                    all_intervals,
+                    all_tstamps,
+                ) = ([], [], [], [], [], [])
+                for (
+                    i,
+                    (
+                        vidx,
+                        cidxs,
+                        cnn,
+                        c3d,
+                        feats_count,
+                        tstamps,
+                        fps,
+                        gt_intervals,
+                        gt_caps_count,
+                        gt_caps,
+                        gt_caps_sem_enc,
+                        gt_pos,
+                        gt_upos,
+                        gt_cap_lens,
+                        gt_prog,
+                        gt_prog_len,
+                        gt_proposals,
+                    ),
+                ) in enumerate(self.loaders[phase], start=1):
                     time_start_iter = time.perf_counter()
                     video_feats = [cnn, c3d]
                     use_rl = False
-                    loss, prog_loss, cap_loss, sem_enc_loss, pos_loss, proposals_loss, iou_reward, program, captions, intervals, caps_count, truncated_pos = self.__process_batch(video_feats, feats_count, gt_intervals, gt_caps_count, gt_caps, gt_caps_sem_enc, gt_pos, gt_upos,
-                                                                                                                                                 gt_cap_lens, gt_prog, gt_prog_len, gt_proposals, teacher_forcing_ratio, phase, use_rl=use_rl)
+                    (
+                        loss,
+                        prog_loss,
+                        cap_loss,
+                        sem_enc_loss,
+                        pos_loss,
+                        proposals_loss,
+                        iou_reward,
+                        program,
+                        captions,
+                        intervals,
+                        caps_count,
+                        truncated_pos,
+                    ) = self.__process_batch(
+                        video_feats,
+                        feats_count,
+                        gt_intervals,
+                        gt_caps_count,
+                        gt_caps,
+                        gt_caps_sem_enc,
+                        gt_pos,
+                        gt_upos,
+                        gt_cap_lens,
+                        gt_prog,
+                        gt_prog_len,
+                        gt_proposals,
+                        teacher_forcing_ratio,
+                        phase,
+                        use_rl=use_rl,
+                    )
                     loss_count += loss.item()
 
                     iteration = epoch * len(self.loaders[phase]) + i
-                    self.writer.add_scalar('end2end/{}-iters-loss'.format(phase), loss, iteration)
+                    self.writer.add_scalar(
+                        "end2end/{}-iters-loss".format(phase), loss, iteration
+                    )
                     if self.trainer_config.criterion_config.programer_iou_reward:
-                        self.writer.add_scalar('end2end/{}-iters-rinforced_prog_loss'.format(phase), prog_loss, iteration)
+                        self.writer.add_scalar(
+                            "end2end/{}-iters-rinforced_prog_loss".format(phase),
+                            prog_loss,
+                            iteration,
+                        )
                     else:
-                        self.writer.add_scalar('end2end/{}-iters-prog_loss'.format(phase), prog_loss, iteration)
-                    self.writer.add_scalar('end2end/{}-iters-cap_loss'.format(phase), cap_loss, iteration)
-                    self.writer.add_scalar('end2end/{}-iters-sem_enc_loss'.format(phase), sem_enc_loss, iteration)
-                    self.writer.add_scalar('end2end/{}-iters-pos_tag_loss'.format(phase), pos_loss, iteration)
+                        self.writer.add_scalar(
+                            "end2end/{}-iters-prog_loss".format(phase),
+                            prog_loss,
+                            iteration,
+                        )
+                    self.writer.add_scalar(
+                        "end2end/{}-iters-cap_loss".format(phase), cap_loss, iteration
+                    )
+                    self.writer.add_scalar(
+                        "end2end/{}-iters-sem_enc_loss".format(phase),
+                        sem_enc_loss,
+                        iteration,
+                    )
+                    self.writer.add_scalar(
+                        "end2end/{}-iters-pos_tag_loss".format(phase),
+                        pos_loss,
+                        iteration,
+                    )
                     # self.writer.add_scalar('end2end/{}-iters-iou_loss'.format(phase), iou_loss, iteration)
-                    self.writer.add_scalar('end2end/{}-iters-proposals_loss'.format(phase), proposals_loss, iteration)
-                    self.writer.add_scalar('end2end/{}-iters-iou_reward'.format(phase), iou_reward, iteration)
+                    self.writer.add_scalar(
+                        "end2end/{}-iters-proposals_loss".format(phase),
+                        proposals_loss,
+                        iteration,
+                    )
+                    self.writer.add_scalar(
+                        "end2end/{}-iters-iou_reward".format(phase),
+                        iou_reward,
+                        iteration,
+                    )
 
-                    total_time_iters+=(time.perf_counter()-time_start_iter)
+                    total_time_iters += time.perf_counter() - time_start_iter
                     lrs = self.lr_scheduler.get_last_lr()
                     log_msg = (
-                        '\rEpoch:{0:03d} Phase:{1:6s} Iter:{2:04d}/{3:04d} avg-Time:{4:.1f}s lr:{5:.6f} iou-reward:{12:9.4f} Loss:{6:9.4f}'
-                        '\t[cap-loss:{7:9.4f} prog-loss:{8:9.4f} sem-enc-loss:{9:9.4f} pos-tag-loss:{10:9.4f} proposals-loss:{11:9.4f}]'
+                        "\rEpoch:{0:03d} Phase:{1:6s} Iter:{2:04d}/{3:04d} avg-Time:{4:.1f}s lr:{5:.6f} iou-reward:{12:9.4f} Loss:{6:9.4f}"
+                        "\t[cap-loss:{7:9.4f} prog-loss:{8:9.4f} sem-enc-loss:{9:9.4f} pos-tag-loss:{10:9.4f} proposals-loss:{11:9.4f}]"
                     ).format(
-                        epoch, phase, i, len(self.loaders[phase]), total_time_iters/i, lrs[0], loss.item(), cap_loss.item(), prog_loss.item(), 
-                        sem_enc_loss.item(), pos_loss.item(), proposals_loss.item(), iou_reward.item()
+                        epoch,
+                        phase,
+                        i,
+                        len(self.loaders[phase]),
+                        total_time_iters / i,
+                        lrs[0],
+                        loss.item(),
+                        cap_loss.item(),
+                        prog_loss.item(),
+                        sem_enc_loss.item(),
+                        pos_loss.item(),
+                        proposals_loss.item(),
+                        iou_reward.item(),
                     )
                     self.logger.info(log_msg)
                     sys.stdout.write(log_msg)
 
                     if iteration % self.trainer_config.step_to_print == 0:
-                        if phase == 'train':
-                            pred = decode_from_tokens(self.programs_vocab, program[0], until_eos=False, max_length=truncated_pos)
-                            gt = decode_from_tokens(self.programs_vocab, gt_prog[0], until_eos=False, max_length=truncated_pos)
+                        if phase == "train":
+                            pred = decode_from_tokens(
+                                self.programs_vocab,
+                                program[0],
+                                until_eos=False,
+                                max_length=truncated_pos,
+                            )
+                            gt = decode_from_tokens(
+                                self.programs_vocab,
+                                gt_prog[0],
+                                until_eos=False,
+                                max_length=truncated_pos,
+                            )
                         else:
-                            pred = decode_from_tokens(self.programs_vocab, program[0], until_eos=False, max_length=self.max_prog)
-                            gt = decode_from_tokens(self.programs_vocab, gt_prog[0], until_eos=False, max_length=self.max_prog)
-                        self.logger.info(f'PRED PROG: {pred}')
-                        self.logger.info(f'PRED INTERV: {intervals[0, :gt_caps_count[0]]}')
-                        self.logger.info(f'GT PROG: {gt}')
-                        self.logger.info(f'GT INTERV: {gt_intervals[0, :gt_caps_count[0]]}')
+                            pred = decode_from_tokens(
+                                self.programs_vocab,
+                                program[0],
+                                until_eos=False,
+                                max_length=self.max_prog,
+                            )
+                            gt = decode_from_tokens(
+                                self.programs_vocab,
+                                gt_prog[0],
+                                until_eos=False,
+                                max_length=self.max_prog,
+                            )
+                        self.logger.info(f"PRED PROG: {pred}")
+                        self.logger.info(
+                            f"PRED INTERV: {intervals[0, :gt_caps_count[0]]}"
+                        )
+                        self.logger.info(f"GT PROG: {gt}")
+                        self.logger.info(
+                            f"GT INTERV: {gt_intervals[0, :gt_caps_count[0]]}"
+                        )
                         # sample_diff = torch.sum(program[0] != gt_prog[0])
-                        sample_diff = sum([s1!=s2 for s1, s2 in zip(pred.split(' '), gt.split(' '))])
-                        self.logger.info(f'sample-pred-prog-diff: {sample_diff}')
+                        sample_diff = sum(
+                            [s1 != s2 for s1, s2 in zip(pred.split(" "), gt.split(" "))]
+                        )
+                        self.logger.info(f"sample-pred-prog-diff: {sample_diff}")
 
-                    if phase != 'train':
+                    if phase != "train":
                         # save programs and the videos' idx for computing evaluation metrics
-                        all_programs.append(program.to('cpu'))
+                        all_programs.append(program.to("cpu"))
                         all_prog_ids.append(vidx)
 
                         # save captions and the captions' idx for computing evaluation metrics (only the first caps_count captions are evaluated)
-                        all_captions.append((captions.to('cpu'), caps_count.to('cpu'), gt_caps_count.to('cpu')))
+                        all_captions.append(
+                            (
+                                captions.to("cpu"),
+                                caps_count.to("cpu"),
+                                gt_caps_count.to("cpu"),
+                            )
+                        )
                         all_caps_ids.append(cidxs)
 
                         # save intervals for computing evaluation metrics
-                        all_intervals.append(intervals.to('cpu'))
-                        all_tstamps.append(tstamps/(fps.unsqueeze(1)**2))
+                        all_intervals.append(intervals.to("cpu"))
+                        all_tstamps.append(tstamps / (fps.unsqueeze(1) ** 2))
 
                         # for predicted_tokens, vid in zip(outputs, video_ids):
                         #     predicted_sentences[vid] = [self.__decode_from_tokens(predicted_tokens)]
@@ -776,50 +1256,97 @@ class DenseVideo2TextTrainer(Trainer):
                         #                                            self.__decode_from_tokens(captions[0].squeeze())))
 
                 # for sanity, replace the last checkpoint when epoch is power of 2
-                if phase == 'train' and (self.last_saved_epoch==-1 or not(epoch & (epoch-1))):
-                    print('saving checkpoint...')
+                if phase == "train" and (
+                    self.last_saved_epoch == -1 or not (epoch & (epoch - 1))
+                ):
+                    print("saving checkpoint...")
                     self.__save_checkpoint(epoch, save_checkpoints_dir, False)
 
-                avg_loss = loss_count/len(self.loaders[phase])
+                avg_loss = loss_count / len(self.loaders[phase])
                 loss_phases[phase] = avg_loss
-                self.writer.add_scalar('end2end/{}-epochs-avg-loss'.format(phase), avg_loss, epoch)
+                self.writer.add_scalar(
+                    "end2end/{}-epochs-avg-loss".format(phase), avg_loss, epoch
+                )
 
-                if phase != 'train':
+                if phase != "train":
                     self.early_stop += 1
                     # predicted_sentences = pool.apply_async(self.__get_sentences, [all_outputs, all_video_ids])
 
-                    #if cap_metrics_results is not None:
-                        # get async results
-                        # cap_metrics_results, pred_caps = cap_metrics_results.get()
-                        # prog_metrics_results, pred_progs = prog_metrics_results.get()
-                        # densecap_metrics_results, pred_intervals = densecap_metrics_results.get()
+                    # if cap_metrics_results is not None:
+                    # get async results
+                    # cap_metrics_results, pred_caps = cap_metrics_results.get()
+                    # prog_metrics_results, pred_progs = prog_metrics_results.get()
+                    # densecap_metrics_results, pred_intervals = densecap_metrics_results.get()
 
                     # print('evaluating progs...')
                     # prog_metrics_results, pred_progs = evaluate_from_tokens(self.programs_vocab, all_programs, all_prog_ids, self.ref_programs[phase], False)
-                    print('evaluating captions (basic)...')
-                    cap_metrics_results, pred_caps = evaluate_from_tokens(self.caps_vocab, all_captions, all_caps_ids, self.ref_captions[phase])
-                    print('evaluating captions (dense)...')
-                    densecap_metrics_results, pred_intervals = densecap_evaluate_from_tokens(self.caps_vocab, all_prog_ids, all_tstamps, all_intervals, all_captions, self.ref_densecaps[phase])
+                    print("evaluating captions (basic)...")
+                    cap_metrics_results, pred_caps = evaluate_from_tokens(
+                        self.caps_vocab,
+                        all_captions,
+                        all_caps_ids,
+                        self.ref_captions[phase],
+                    )
+                    print("evaluating captions (dense)...")
+                    (
+                        densecap_metrics_results,
+                        pred_intervals,
+                    ) = densecap_evaluate_from_tokens(
+                        self.caps_vocab,
+                        all_prog_ids,
+                        all_tstamps,
+                        all_intervals,
+                        all_captions,
+                        self.ref_densecaps[phase],
+                    )
 
                     # process results, saving the checkpoint if any improvement occurs
                     # self.__process_results(prog_metrics_results, pred_progs, phase, epoch-1, save_checkpoints_dir, 'programmer')
-                    self.__process_results(cap_metrics_results, pred_caps, phase, epoch, save_checkpoints_dir, 'captioning')
-                    self.__process_results(densecap_metrics_results, pred_intervals, phase, epoch, save_checkpoints_dir, 'densecap')
+                    self.__process_results(
+                        cap_metrics_results,
+                        pred_caps,
+                        phase,
+                        epoch,
+                        save_checkpoints_dir,
+                        "captioning",
+                    )
+                    self.__process_results(
+                        densecap_metrics_results,
+                        pred_intervals,
+                        phase,
+                        epoch,
+                        save_checkpoints_dir,
+                        "densecap",
+                    )
 
                     # report results if any improvement occurs
                     if self.early_stop == 0:
-                        log_msg = f'\n IMPROVEMENT ON {phase} at epoch {epoch} !'
+                        log_msg = f"\n IMPROVEMENT ON {phase} at epoch {epoch} !"
 
                         # log_msg += '\n Programmer metrics: \n   '
                         # log_msg += '\t'.join([f'{k}:({e:03d}, {v:.3f})' for k, (e, v) in self.best_metrics['programmer'][phase].items()])
 
-                        log_msg += '\n  Captioning metrics: \n   '
-                        log_msg += '\t'.join([f'{k}:({e:03d}, {v:.3f})' for k, (e, v) in self.best_metrics['captioning'][phase].items()])
+                        log_msg += "\n  Captioning metrics: \n   "
+                        log_msg += "\t".join(
+                            [
+                                f"{k}:({e:03d}, {v:.3f})"
+                                for k, (e, v) in self.best_metrics["captioning"][
+                                    phase
+                                ].items()
+                            ]
+                        )
 
-                        log_msg += '\n  DenseCaptioning metrics: \n   '
-                        log_msg += '\t'.join([f'{k}:({e:03d}, {v:.3f})' for k, (e, v) in self.best_metrics['densecap'][phase].items()])
+                        log_msg += "\n  DenseCaptioning metrics: \n   "
+                        log_msg += "\t".join(
+                            [
+                                f"{k}:({e:03d}, {v:.3f})"
+                                for k, (e, v) in self.best_metrics["densecap"][
+                                    phase
+                                ].items()
+                            ]
+                        )
 
-                        print(log_msg, '\n')
+                        print(log_msg, "\n")
                         self.logger.info(log_msg)
 
                     # prog_metrics_results = parallel_pool.apply_async(evaluate_from_tokens, [self.programs_vocab, all_programs, all_prog_ids, self.ref_programs[phase], False])
@@ -828,17 +1355,19 @@ class DenseVideo2TextTrainer(Trainer):
 
                 time_phases[phase] += time.perf_counter() - time_start_epoch
 
-            log_msg = '\n'
+            log_msg = "\n"
             for k, v in loss_phases.items():
-                log_msg += ' {0}-avg-loss:{1:9.4f}'.format(k, v)
+                log_msg += " {0}-avg-loss:{1:9.4f}".format(k, v)
             for k, v in time_phases.items():
-                log_msg += ' {0}-avg-time:{1:9.3f}h'.format(k, (v/3600)/(epoch+1))
-            log_msg += ' teacher_forcing_ratio:{0:.3f} enc-lr:{1:.6f} dec-lr:{1:.6f}'.format(teacher_forcing_ratio, lrs[0], lrs[1])
+                log_msg += " {0}-avg-time:{1:9.3f}h".format(k, (v / 3600) / (epoch + 1))
+            log_msg += " teacher_forcing_ratio:{0:.3f} enc-lr:{1:.6f} dec-lr:{1:.6f}".format(
+                teacher_forcing_ratio, lrs[0], lrs[1]
+            )
             # vid = video_ids[0]
             # log_msg += '\n[vid {}]:\nWE: {}\nGT: {}'.format(vid, predicted_sentences[vid], self.ground_truth['valid'][vid])
-            
+
             self.logger.info(log_msg)
-            sys.stdout.write(log_msg+'\n')
+            sys.stdout.write(log_msg + "\n")
 
             # check if the training must be early sopped
             if epoch >= min_num_epochs and self.early_stop >= early_stop_limit * 2:
@@ -848,15 +1377,33 @@ class DenseVideo2TextTrainer(Trainer):
                 # densecap_metrics_results, pred_intervals = densecap_metrics_results.get()
 
                 # self.__process_results(prog_metrics_results, pred_caps, phase, epoch-1, save_checkpoints_dir, 'programmer')
-                self.__process_results(cap_metrics_results, pred_caps, phase, epoch-1, save_checkpoints_dir, 'captioning')
-                self.__process_results(densecap_metrics_results, pred_intervals, phase, epoch-1, save_checkpoints_dir, 'densecap')
+                self.__process_results(
+                    cap_metrics_results,
+                    pred_caps,
+                    phase,
+                    epoch - 1,
+                    save_checkpoints_dir,
+                    "captioning",
+                )
+                self.__process_results(
+                    densecap_metrics_results,
+                    pred_intervals,
+                    phase,
+                    epoch - 1,
+                    save_checkpoints_dir,
+                    "densecap",
+                )
 
-                msg = '----early stopped at epoch {} after {} without any improvement-----'.format(epoch, early_stop_limit)
+                msg = "----early stopped at epoch {} after {} without any improvement-----".format(
+                    epoch, early_stop_limit
+                )
                 self.logger.debug(msg)
                 print(msg)
                 break
 
-            self.writer.add_scalar('end2end/learning-rate', self.optimizer.param_groups[0]['lr'], epoch)
+            self.writer.add_scalar(
+                "end2end/learning-rate", self.optimizer.param_groups[0]["lr"], epoch
+            )
             self.lr_scheduler.step()
 
         # close h5 files
@@ -866,91 +1413,111 @@ class DenseVideo2TextTrainer(Trainer):
             loader.close_h5_file()
 
         # log best results
-        self.logger.info('Best results: {}'.format(str(self.best_metrics)))
+        self.logger.info("Best results: {}".format(str(self.best_metrics)))
 
         return self.best_metrics
 
 
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Generate captions por test samples')
-    parser.add_argument('-chkpt', '--checkpoint_path', type=str, default='',
-                    help='Set the path to pre-trained model (by default is empty).')
-    parser.add_argument('-data', '--dataset_folder', type=str, default='data/MSVD',
-                    help='Set the path to dataset folder (by default is data/MSVD).')
-    parser.add_argument('-out', '--output_folder', type=str, default='results/MSVD',
-                    help='Set the path to output folder (by default is results/MSVD).')
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Generate captions por test samples")
+    parser.add_argument(
+        "-chkpt",
+        "--checkpoint_path",
+        type=str,
+        default="",
+        help="Set the path to pre-trained model (by default is empty).",
+    )
+    parser.add_argument(
+        "-data",
+        "--dataset_folder",
+        type=str,
+        default="data/MSVD",
+        help="Set the path to dataset folder (by default is data/MSVD).",
+    )
+    parser.add_argument(
+        "-out",
+        "--output_folder",
+        type=str,
+        default="results/MSVD",
+        help="Set the path to output folder (by default is results/MSVD).",
+    )
 
     args = parser.parse_args()
 
     # load hiper-parameters
-    print('Loading configuration file...')
-    config_path = os.path.join(args.dataset_folder, 'train_config.json')
-    with open(config_path, 'r') as f:
+    print("Loading configuration file...")
+    config_path = os.path.join(args.dataset_folder, "train_config.json")
+    with open(config_path, "r") as f:
         config = json.load(f)
 
-    trainer_config = ConfigDict(config['trainer_config'])
+    trainer_config = ConfigDict(config["trainer_config"])
     trainer_config.str = get_trainer_str(trainer_config)
     print(trainer_config.str)
 
-    dense_captioner_config = ConfigDict(config['dense_captioner_config'])
+    dense_captioner_config = ConfigDict(config["dense_captioner_config"])
     dense_captioner_config.str = get_dense_captioner_str(dense_captioner_config)
     print(dense_captioner_config.str)
 
-    sem_tagger_config = ConfigDict(config['sem_tagger_config'])
+    sem_tagger_config = ConfigDict(config["sem_tagger_config"])
     sem_tagger_config.str = get_sem_tagger_str(sem_tagger_config)
     print(sem_tagger_config.str)
 
-    syn_embedd_config = ConfigDict(config['syn_embedd_config'])
+    syn_embedd_config = ConfigDict(config["syn_embedd_config"])
     syn_embedd_config.str = get_syn_embedd_str(syn_embedd_config)
     print(syn_embedd_config.str)
 
-    syn_tagger_config = ConfigDict(config['syn_tagger_config'])
+    syn_tagger_config = ConfigDict(config["syn_tagger_config"])
     syn_tagger_config.str = get_syn_tagger_str(syn_tagger_config)
     print(syn_tagger_config.str)
 
-    avscn_dec_config = ConfigDict(config['avscn_decoder_config'])
+    avscn_dec_config = ConfigDict(config["avscn_decoder_config"])
     avscn_dec_config.str = get_avscn_decoder_str(avscn_dec_config)
     print(avscn_dec_config.str)
 
-    semsynan_dec_config = ConfigDict(config['semsynan_decoder_config'])
+    semsynan_dec_config = ConfigDict(config["semsynan_decoder_config"])
     semsynan_dec_config.str = get_semsynan_decoder_str(semsynan_dec_config)
     print(semsynan_dec_config.str)
 
-    mm_config = ConfigDict(config['multimodal_config'])
+    mm_config = ConfigDict(config["multimodal_config"])
     mm_config.str = get_mm_str(mm_config)
     print(mm_config.str)
 
-    proposals_tagger_config = ConfigDict(config['proposals_tagger_config'])
+    proposals_tagger_config = ConfigDict(config["proposals_tagger_config"])
     proposals_tagger_config.str = get_proposals_tagger_str(proposals_tagger_config)
     print(proposals_tagger_config)
 
-    vncl_cell_config = ConfigDict(config['vncl_cell_config'])
+    vncl_cell_config = ConfigDict(config["vncl_cell_config"])
     vncl_cell_config.str = get_vncl_cell_str(vncl_cell_config)
-    print(vncl_cell_config.str, '\n')
+    print(vncl_cell_config.str, "\n")
 
-
-    print('Initializing the experiment.......')
-    modules_config = {'dense_captioner_config': dense_captioner_config,
-                      'sem_tagger_config': sem_tagger_config,
-                      'syn_embedd_config': syn_embedd_config,
-                      'syn_tagger_config': syn_tagger_config,
-                      'avscn_dec_config': avscn_dec_config,
-                      'semsynan_dec_config': semsynan_dec_config,
-                      'mm_config': mm_config,
-                      'vncl_cell_config': vncl_cell_config,
-                      'proposals_tagger_config': proposals_tagger_config}
+    print("Initializing the experiment.......")
+    modules_config = {
+        "dense_captioner_config": dense_captioner_config,
+        "sem_tagger_config": sem_tagger_config,
+        "syn_embedd_config": syn_embedd_config,
+        "syn_tagger_config": syn_tagger_config,
+        "avscn_dec_config": avscn_dec_config,
+        "semsynan_dec_config": semsynan_dec_config,
+        "mm_config": mm_config,
+        "vncl_cell_config": vncl_cell_config,
+        "proposals_tagger_config": proposals_tagger_config,
+    }
     # modules_config = [sem_tagger_config, syn_embedd_config, avscn_dec_config, semsynan_dec_config, vncl_cell_config]
-    trainer = DenseVideo2TextTrainer(trainer_config, modules_config, args.dataset_folder, args.output_folder)
+    trainer = DenseVideo2TextTrainer(
+        trainer_config, modules_config, args.dataset_folder, args.output_folder
+    )
 
-    print('Training.........')
+    print("Training.........")
     # try:
-    best_results = trainer.train_model(resume=args.checkpoint_path != '',
-                                       checkpoint_path=args.checkpoint_path,
-                                       early_stop_limit=trainer_config.early_stop_limit)
-    print('Best results in the test set: {}'.format(str(best_results)))
+    best_results = trainer.train_model(
+        resume=args.checkpoint_path != "",
+        checkpoint_path=args.checkpoint_path,
+        early_stop_limit=trainer_config.early_stop_limit,
+    )
+    print("Best results in the test set: {}".format(str(best_results)))
     # except Exception as e:
     #     print(f'An error occurred during training/validation process: {e}')
     #     trainer.h5_train.close()
     #     trainer.h5_val.close()
 
-    print('--- END ---')
+    print("--- END ---")

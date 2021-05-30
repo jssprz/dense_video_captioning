@@ -11,7 +11,7 @@ class ConfigurationFile:
         except Exception:
             raise ValueError(" {} is not a valid section".format(section_name))
 
-        self.__data_dir = section['DATA_DIR']
+        self.__data_dir = section["DATA_DIR"]
 
     @property
     def data_dir(self):
