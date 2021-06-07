@@ -399,11 +399,13 @@ class DenseCaptioner(nn.Module):
             self.clip_captioner.reset_parameters()
 
         if resume_config.freeze_programmer:
+            self.embedding.requires_grad = False
             self.mm_enc.requires_grad = False
             self.rnn_cell.requires_grad = False
             self.proposal_enc.requires_grad = False
             self.fc.requires_grad = False
         elif resume_config.random_programmer:
+            self.embedding.reset_parameters()
             self.mm_enc.reset_parameters()
             self.rnn_cell.reset_parameters()
             self.proposal_enc.reset_parameters()

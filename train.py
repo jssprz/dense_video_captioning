@@ -214,6 +214,10 @@ class DenseVideo2TextTrainer(Trainer):
                         "lr": self.trainer_config.optimizer_config.proposals_lr,
                     },
                     {
+                        "params": self.dense_captioner.embedding.parameters(),
+                        "lr": self.trainer_config.optimizer_config.programmer_lr,
+                    },
+                    {
                         "params": self.dense_captioner.rnn_cell.parameters(),
                         "lr": self.trainer_config.optimizer_config.programmer_lr,
                     },
@@ -250,10 +254,11 @@ class DenseVideo2TextTrainer(Trainer):
         lambda6 = lambda epoch: self.trainer_config.lr_decay_factor ** (epoch // 40)
         lambda7 = lambda epoch: self.trainer_config.lr_decay_factor ** (epoch // 40)
         lambda8 = lambda epoch: self.trainer_config.lr_decay_factor ** (epoch // 40)
+        lambda9 = lambda epoch: self.trainer_config.lr_decay_factor ** (epoch // 40)
 
         self.lr_scheduler = optim.lr_scheduler.LambdaLR(
             optimizer=self.optimizer,
-            lr_lambda=[lambda1, lambda2, lambda3, lambda4, lambda5, lambda6, lambda7, lambda8,],
+            lr_lambda=[lambda1, lambda2, lambda3, lambda4, lambda5, lambda6, lambda7, lambda8, lambda9],
         )
 
         # Loss function
@@ -336,7 +341,7 @@ class DenseVideo2TextTrainer(Trainer):
 
     def __get_interval_mask(self, intervals, caps_count, max_num_chunks, proposals=None, num_estimates=128):
         aux = intervals[:, :, 1] - intervals[:, :, 0]
-        data = torch.cat([aux[i,:c] for i, c in enumerate(caps_count)])
+        data = torch.cat([aux[i, :c] for i, c in enumerate(caps_count)])
         # data = (aux[aux>0]).view(-1)
         print(aux.size(), data.size())
 
@@ -350,7 +355,6 @@ class DenseVideo2TextTrainer(Trainer):
             self.logger.info(f"PROPOSALS: Number of event-proposals: {len(proposals)}")
             self.logger.info(f"PROPOSALS: Event-proposals: {proposals}")
 
-
         # determine cluster of each interval
         result = torch.zeros_like(aux, dtype=torch.int).fill_(-1)
 
@@ -363,9 +367,9 @@ class DenseVideo2TextTrainer(Trainer):
             result[(aux >= proposals[i - 1]) * (aux <= proposals[i])] = i
         result[aux > proposals[-1]] = len(proposals)
 
-        clusters_sizes = [(result==i).sum().item() for i in range(len(proposals))]
-        print('count of intervals per cluster: ', clusters_sizes)
-        print('total intervals grouped: ', sum(clusters_sizes))
+        clusters_sizes = [(result == i).sum().item() for i in range(len(proposals))]
+        print("count of intervals per cluster: ", clusters_sizes)
+        print("total intervals grouped: ", sum(clusters_sizes))
 
         # compute mask
         mask = torch.zeros(intervals.size(0), max_num_chunks, len(proposals) + 1)
@@ -461,9 +465,7 @@ class DenseVideo2TextTrainer(Trainer):
 
         # determine the ground truth for event masking
         event_mask_t, _ = self.__get_interval_mask(
-            intervals_t, caps_count_t,
-            max_num_chunks=self.trainer_config.max_num_chunks,
-            proposals=event_proposals,
+            intervals_t, caps_count_t, max_num_chunks=self.trainer_config.max_num_chunks, proposals=event_proposals,
         )
 
         val_loader = get_dense_loader(
