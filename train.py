@@ -205,10 +205,13 @@ class DenseVideo2TextTrainer(Trainer):
         else:
             self.optimizer = optim.Adam(
                 [
-                    {"params": self.dense_captioner.mm_enc.parameters()},
+                    {
+                        "params": self.dense_captioner.mm_enc.parameters(),
+                        "lr": self.trainer_config.optimizer_config.programmer_lr,
+                    },
                     {
                         "params": self.dense_captioner.proposal_enc.parameters(),
-                        "lr": self.trainer_config.optimizer_config.programmer_lr,
+                        "lr": self.trainer_config.optimizer_config.proposals_lr,
                     },
                     {
                         "params": self.dense_captioner.rnn_cell.parameters(),
@@ -239,29 +242,14 @@ class DenseVideo2TextTrainer(Trainer):
             )  # , weight_decay=.0001)
 
         # learning-rate decay scheduler
-        def lambda1(epoch):
-            return self.trainer_config.lr_decay_factor ** (epoch // 40)
-
-        def lambda2(epoch):
-            return self.trainer_config.lr_decay_factor ** (epoch // 40)
-
-        def lambda3(epoch):
-            return self.trainer_config.lr_decay_factor ** (epoch // 40)
-
-        def lambda4(epoch):
-            return self.trainer_config.lr_decay_factor ** (epoch // 40)
-
-        def lambda5(epoch):
-            return self.trainer_config.lr_decay_factor ** (epoch // 40)
-
-        def lambda6(epoch):
-            return self.trainer_config.lr_decay_factor ** (epoch // 40)
-
-        def lambda7(epoch):
-            return self.trainer_config.lr_decay_factor ** (epoch // 40)
-
-        def lambda8(epoch):
-            return self.trainer_config.lr_decay_factor ** (epoch // 40)
+        lambda1 = lambda epoch: self.trainer_config.lr_decay_factor ** (epoch // 40)
+        lambda2 = lambda epoch: self.trainer_config.lr_decay_factor ** (epoch // 40)
+        lambda3 = lambda epoch: self.trainer_config.lr_decay_factor ** (epoch // 40)
+        lambda4 = lambda epoch: self.trainer_config.lr_decay_factor ** (epoch // 40)
+        lambda5 = lambda epoch: self.trainer_config.lr_decay_factor ** (epoch // 40)
+        lambda6 = lambda epoch: self.trainer_config.lr_decay_factor ** (epoch // 40)
+        lambda7 = lambda epoch: self.trainer_config.lr_decay_factor ** (epoch // 40)
+        lambda8 = lambda epoch: self.trainer_config.lr_decay_factor ** (epoch // 40)
 
         self.lr_scheduler = optim.lr_scheduler.LambdaLR(
             optimizer=self.optimizer,
