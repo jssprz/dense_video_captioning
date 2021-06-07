@@ -341,11 +341,11 @@ class DenseCaptioner(nn.Module):
         self.pos_vocab_size = len(pos_vocab)
         self.sem_enc_size = sem_tagger_config.out_size
 
-        if pretrained_ope is not None:
-            self.embedding = nn.Embedding.from_pretrained(pretrained_ope)
-        else:
-            self.embedding = nn.Embedding(self.progs_vocab_size, self.embedding_size)
-        self.embedd_drop = nn.Dropout(config.drop_p)
+        # if pretrained_ope is not None:
+        #     self.embedding = nn.Embedding.from_pretrained(pretrained_ope)
+        # else:
+        #     self.embedding = nn.Embedding(self.progs_vocab_size, self.embedding_size)
+        # self.embedd_drop = nn.Dropout(config.drop_p)
 
         # self.mm_enc = MultiModal(
         #     v_enc_config=mm_config.v_enc_config,
