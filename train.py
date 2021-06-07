@@ -864,7 +864,6 @@ class DenseVideo2TextTrainer(Trainer):
                 # predicted_sentences = {}
                 time_start_epoch, total_time_iters = time.perf_counter(), 0
                 loss_count = 0
-                all_programs = []
                 all_captions = []
                 all_prog_ids = []
                 all_caps_ids = []
@@ -960,7 +959,7 @@ class DenseVideo2TextTrainer(Trainer):
                     if phase != "train":
                         # save programs and the videos' idx for computing evaluation metrics
                         # all_programs.append(program.to("cpu"))
-                        # all_prog_ids.append(vidx)
+                        all_prog_ids.append(vidx)
 
                         # save captions and the captions' idx for computing evaluation metrics (only the first caps_count captions are evaluated)
                         all_captions.append((captions.to("cpu"), caps_count.to("cpu"), gt_caps_count.to("cpu"),))
