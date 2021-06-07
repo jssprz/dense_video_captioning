@@ -179,7 +179,7 @@ class DenseVideo2TextTrainer(Trainer):
             self.modules_config["mm_config"],
             self.modules_config["vncl_cell_config"],
             self.modules_config["proposals_tagger_config"],
-            num_proposals=self.num_proposals,
+            # num_proposals=self.num_proposals,
             progs_vocab=self.programs_vocab,
             pretrained_ope=pretrained_ope,
             caps_vocab=self.caps_vocab,
@@ -403,10 +403,10 @@ class DenseVideo2TextTrainer(Trainer):
         caps_sem_enc_t = self.__get_sem_enc(freq_words, caps, upos)
 
         # determine the ground truth for event masking
-        event_mask_t, event_proposals = self.__get_interval_mask(
-            intervals_t, caps_count_t, max_num_chunks=self.trainer_config.max_num_chunks, num_estimates=16384,
-        )
-        self.num_proposals = len(event_proposals) + 1
+        # event_mask_t, event_proposals = self.__get_interval_mask(
+        #     intervals_t, caps_count_t, max_num_chunks=self.trainer_config.max_num_chunks, num_estimates=16384,
+        # )
+        # self.num_proposals = len(event_proposals) + 1
 
         train_loader = get_dense_loader(
             h5_file_path=self.trainer_config.train_h5_file_path,
@@ -424,7 +424,7 @@ class DenseVideo2TextTrainer(Trainer):
             cap_lens=cap_lens_t,
             progs=progs_t,
             prog_lens=prog_lens,
-            event_proposals=event_mask_t,
+            # event_proposals=event_mask_t,
             batch_size=self.trainer_config.batch_size,
             train=True,
             num_workers=trainer_config.loader_num_workers,
@@ -459,9 +459,9 @@ class DenseVideo2TextTrainer(Trainer):
         caps_sem_enc_t = self.__get_sem_enc(freq_words, caps, upos)
 
         # determine the ground truth for event masking
-        event_mask_t, _ = self.__get_interval_mask(
-            intervals_t, caps_count_t, max_num_chunks=self.trainer_config.max_num_chunks, proposals=event_proposals,
-        )
+        # event_mask_t, _ = self.__get_interval_mask(
+        #     intervals_t, caps_count_t, max_num_chunks=self.trainer_config.max_num_chunks, proposals=event_proposals,
+        # )
 
         val_loader = get_dense_loader(
             h5_file_path=self.trainer_config.valid_h5_file_path,
@@ -479,7 +479,7 @@ class DenseVideo2TextTrainer(Trainer):
             cap_lens=cap_lens_t,
             progs=progs_t,
             prog_lens=prog_lens,
-            event_proposals=event_mask_t,
+            # event_proposals=event_mask_t,
             batch_size=self.trainer_config.batch_size * 3,
             train=False,
             num_workers=trainer_config.loader_num_workers,
@@ -497,7 +497,7 @@ class DenseVideo2TextTrainer(Trainer):
         print(f" Max intervals count: {self.max_caps}")
         print(f" Max interval len: {int(self.max_interval)}")
         print(f" Last interval end: {int(self.last_interval_end)}")
-        print(f" Number of event-proposals: {self.num_proposals}")
+        # print(f" Number of event-proposals: {self.num_proposals}")
 
         self.loaders = {"train": train_loader, "val_1": val_loader}
 
@@ -514,7 +514,7 @@ class DenseVideo2TextTrainer(Trainer):
         gt_cap_lens,
         gt_program,
         gt_prog_len,
-        gt_proposals,
+        # gt_proposals,
         teacher_forcing_ratio=0.5,
         phase="train",
         use_rl=False,
@@ -612,7 +612,7 @@ class DenseVideo2TextTrainer(Trainer):
                 gt_sem_enc=gt_caps_sem_enc,
                 gt_pos=gt_pos,
                 gt_intervals=gt_intervals,
-                gt_proposals=gt_proposals,
+                gt_proposals=None,
                 max_prog=self.avg_truncation,  # max_prog=self.max_prog,
                 max_caps=self.avg_caps,  # max_caps=self.max_caps,
                 max_cap=self.max_words,
@@ -639,7 +639,7 @@ class DenseVideo2TextTrainer(Trainer):
                 pred_program=None,  # prog_logits,
                 gt_intervals=gt_intervals,
                 pred_intervals=None,  # intervals,
-                gt_proposals=gt_proposals,
+                gt_proposals=None,
                 pred_proposals=None,  # proposals_logits,
                 gt_caps_count=gt_caps_count,
                 pred_caps_count=caps_count,
@@ -888,7 +888,7 @@ class DenseVideo2TextTrainer(Trainer):
                         gt_cap_lens,
                         gt_prog,
                         gt_prog_len,
-                        gt_proposals,
+                        # gt_proposals,
                     ),
                 ) in enumerate(self.loaders[phase], start=1):
                     time_start_iter = time.perf_counter()
@@ -919,7 +919,7 @@ class DenseVideo2TextTrainer(Trainer):
                         gt_cap_lens,
                         gt_prog,
                         gt_prog_len,
-                        gt_proposals,
+                        # gt_proposals,
                         teacher_forcing_ratio,
                         phase,
                         use_rl=use_rl,

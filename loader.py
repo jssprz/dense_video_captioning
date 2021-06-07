@@ -23,7 +23,7 @@ class DenseCaptioningDataset(Dataset):
         cap_lens,
         progs,
         prog_lens,
-        event_proposals,
+        # event_proposals,
     ):
         super(DenseCaptioningDataset, self).__init__()
 
@@ -53,7 +53,7 @@ class DenseCaptioningDataset(Dataset):
         self.cap_lens = cap_lens
         self.progs = progs
         self.prog_lens = prog_lens
-        self.event_proposals = event_proposals
+        # self.event_proposals = event_proposals
 
     def close_h5_file(self):
         self.h5_dataset.close()
@@ -89,7 +89,7 @@ class DenseCaptioningDataset(Dataset):
                 self.cap_lens[index],
                 self.progs[index],
                 self.prog_lens[index],
-                self.event_proposals[index],
+                # self.event_proposals[index],
             )
         return None
 
@@ -205,7 +205,7 @@ def get_dense_loader(
     cap_lens,
     progs,
     prog_lens,
-    event_proposals,
+    # event_proposals,
     batch_size,
     train=True,
     num_workers=4,
@@ -227,7 +227,7 @@ def get_dense_loader(
         cap_lens,
         progs,
         prog_lens,
-        event_proposals,
+        # event_proposals,
     )
     return DataLoader(
         dataset=dataset,

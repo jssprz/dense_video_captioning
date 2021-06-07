@@ -315,7 +315,7 @@ class DenseCaptioner(nn.Module):
         mm_config,
         vncl_cell_config,
         proposals_tagger_config,
-        num_proposals,
+        # num_proposals,
         progs_vocab,
         pretrained_ope,
         caps_vocab,
@@ -334,7 +334,7 @@ class DenseCaptioner(nn.Module):
         self.embedding_size = config.embedding_size
         self.h_size = config.h_size
         self.mm_size = mm_config.out_size
-        self.num_proposals = num_proposals
+        # self.num_proposals = num_proposals
 
         self.progs_vocab_size = len(progs_vocab)
         self.caps_vocab_size = len(caps_vocab)
