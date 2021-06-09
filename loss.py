@@ -29,7 +29,6 @@ class SentenceLengthLoss(nn.Module):
             mask1 = torch.cat([l.repeat(l) for l in lens], dim=0).unsqueeze(1).to(logits.device)
             mask2 = torch.cat([r.repeat(l) for l, r in zip(lens, rewards)], dim=0).unsqueeze(1).to(logits.device)
             # mask = torch.max(torch.ones_like(mask1), mask1**self.beta - mask2**self.beta)
-            print(mask1.size(), mask2.size(), logits.size())
             wighted_log_probs = torch.reciprocal(mask1 ** self.beta) * mask2 * torch.log_softmax(logits, dim=1)
             loss = self.crit(wighted_log_probs, targets)
             if self.reduction == "mean":

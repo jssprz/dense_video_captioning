@@ -539,11 +539,8 @@ class DenseCaptioner(nn.Module):
         #     device
         # )
 
-        print(prog_logits.size())
-
         seq_pos = 0
         while condition(seq_pos):
-            sys.stdout.write(f'\r{seq_pos}')
             #    if seq_pos > prog_len - 5:
             #        import ipdb; ipdb.set_trace() # BREAKPOINT
             use_teacher_forcing = (random.random() < teacher_forcing_p) or seq_pos == 0
@@ -774,8 +771,6 @@ class DenseCaptioner(nn.Module):
 
         if self.training:
             caps_count = torch.min(caps_count, gt_caps_count)
-
-        print(prog_logits.size())
 
         return (
             prog_logits,
