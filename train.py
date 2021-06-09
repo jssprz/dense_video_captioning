@@ -533,71 +533,71 @@ class DenseVideo2TextTrainer(Trainer):
         # gt_pos = gt_pos.to(self.device)
         # gt_upos = gt_upos.to(self.device)
         # gt_cap_lens = gt_cap_lens.to(self.device)
-        gt_program = gt_program.to(self.device)
+        # gt_program = gt_program.to(self.device)
         # gt_prog_len = gt_prog_len.to(self.device)
         # gt_caps_sem_enc = gt_caps_sem_enc.to(self.device)
 
         # determine position for truncating the programs
-        # if phase == "train":
-        #     # determine the number instructions that are necessary for matching the i-th interval
-        #     temp_prog_pos = torch.zeros(gt_intervals.size(0), gt_intervals.size(1)).to(gt_intervals.device)
-        #     temp_prog_pos[:, 0] = gt_intervals[:, 0, 1] + 1
-        #     for i in range(1, gt_intervals.size(1)):
-        #         temp_prog_pos[:, i] = (
-        #             temp_prog_pos[:, i - 1]
-        #             + (gt_intervals[:, i, 0] - gt_intervals[:, i - 1, 0])
-        #             + (gt_intervals[:, i, 1] - gt_intervals[:, i, 0])
-        #             + 1
-        #         )
+        if phase == "train":
+            # determine the number instructions that are necessary for matching the i-th interval
+            temp_prog_pos = torch.zeros(gt_intervals.size(0), gt_intervals.size(1)).to(gt_intervals.device)
+            temp_prog_pos[:, 0] = gt_intervals[:, 0, 1] + 1
+            for i in range(1, gt_intervals.size(1)):
+                temp_prog_pos[:, i] = (
+                    temp_prog_pos[:, i - 1]
+                    + (gt_intervals[:, i, 0] - gt_intervals[:, i - 1, 0])
+                    + (gt_intervals[:, i, 1] - gt_intervals[:, i, 0])
+                    + 1
+                )
 
-        #     # at least minimum program length steps, considering at least min_caps_truncation captions for each video
-        #     truncate_prog_at = int(
-        #         max(torch.min(gt_prog_len), torch.max(temp_prog_pos[:, self.trainer_config.min_caps_truncation - 1]),)
-        #     )
-        #     self.logger.info(f"the gt programs of len {gt_prog_len} will be truncated at {truncate_prog_at}")
+            # at least minimum program length steps, considering at least min_caps_truncation captions for each video
+            truncate_prog_at = int(
+                max(torch.min(gt_prog_len), torch.max(temp_prog_pos[:, self.trainer_config.min_caps_truncation - 1]),)
+            )
+            self.logger.info(f"the gt programs of len {gt_prog_len} will be truncated at {truncate_prog_at}")
 
-        #     # determine the number of captions/intervals that must be generated for each video, truncating at truncate_prog_at
-        #     self.logger.info(f"gt caps count: {gt_caps_count}")
-        #     gt_caps_count = torch.sum((gt_intervals[:, :, 1] > 0) * (temp_prog_pos <= truncate_prog_at), dim=1).to(
-        #         self.device
-        #     )
-        #     # gt_caps_count = torch.sum((gt_intervals[:,:,1] > 0) * (temp_prog_pos < truncate_prog_at), dim=1).to(self.device)
-        #     self.logger.info(f"tuncated gt caps count: {gt_caps_count}")
+            # determine the number of captions/intervals that must be generated for each video, truncating at truncate_prog_at
+            self.logger.info(f"gt caps count: {gt_caps_count}")
+            gt_caps_count = torch.sum((gt_intervals[:, :, 1] > 0) * (temp_prog_pos <= truncate_prog_at), dim=1).to(
+                self.device
+            )
+            # gt_caps_count = torch.sum((gt_intervals[:,:,1] > 0) * (temp_prog_pos < truncate_prog_at), dim=1).to(self.device)
+            self.logger.info(f"tuncated gt caps count: {gt_caps_count}")
 
-        #     # truncate gt batch tensors before move them to the device
-        #     max_caps = torch.max(gt_caps_count)
-        #     gt_program = gt_program[:, :truncate_prog_at].to(self.device)
-        #     gt_captions = gt_captions[:, :max_caps].to(self.device)
-        #     gt_caps_sem_enc = gt_caps_sem_enc[:, :max_caps].to(self.device)
-        #     gt_pos = gt_pos[:, :max_caps].to(self.device)
-        #     gt_intervals = gt_intervals[:, :max_caps].to(self.device)
-        #     # gt_upos = gt_upos[:, :max_caps].to(self.device)
-        #     # gt_proposals = gt_proposals[:, :int(torch.max(gt_intervals[:,gt_caps_count-1,0]))].to(self.device)
+            # truncate gt batch tensors before move them to the device
+            max_caps = torch.max(gt_caps_count)
+            gt_program = gt_program[:, :truncate_prog_at].to(self.device)
+            # gt_captions = gt_captions[:, :max_caps].to(self.device)
+            # gt_caps_sem_enc = gt_caps_sem_enc[:, :max_caps].to(self.device)
+            # gt_pos = gt_pos[:, :max_caps].to(self.device)
+            gt_intervals = gt_intervals[:, :max_caps].to(self.device)
+            # gt_upos = gt_upos[:, :max_caps].to(self.device)
+            # gt_proposals = gt_proposals[:, :int(torch.max(gt_intervals[:,gt_caps_count-1,0]))].to(self.device)
 
-        #     self.avg_truncation += truncate_prog_at
-        #     self.avg_caps += int(torch.mean(gt_caps_count.float()))
-        #     self.avg_feats += int(torch.mean(gt_intervals[torch.arange(bsz), gt_caps_count - 1, 1]))
-        # elif "val" in phase:
-        #     # truncate gt batch tensors according to average parameters, and move them to the device
-        #     truncate_prog_at = self.avg_truncation
-        #     gt_program = gt_program[:, :truncate_prog_at].to(self.device)
-        #     gt_captions = gt_captions[:, : self.avg_caps].to(self.device)
-        #     gt_caps_sem_enc = gt_caps_sem_enc[:, : self.avg_caps].to(self.device)
-        #     gt_pos = gt_pos[:, : self.avg_caps].to(self.device)
-        #     gt_intervals = gt_intervals[:, : self.avg_caps].to(self.device)
-        #     # gt_upos = gt_upos[:, :self.avg_caps].to(self.device)
-        #     # gt_proposals = gt_proposals[:, :int(torch.max(gt_intervals[:,self.avg_caps,0]))].to(self.device)
+            self.avg_truncation += truncate_prog_at
+            self.avg_caps += int(torch.mean(gt_caps_count.float()))
+            self.avg_feats += int(torch.mean(gt_intervals[torch.arange(bsz), gt_caps_count - 1, 1]))
+        elif "val" in phase:
+            # truncate gt batch tensors according to average parameters, and move them to the device
+            truncate_prog_at = self.avg_truncation
+            gt_program = gt_program[:, :truncate_prog_at].to(self.device)
+            # gt_captions = gt_captions[:, : self.avg_caps].to(self.device)
+            # gt_caps_sem_enc = gt_caps_sem_enc[:, : self.avg_caps].to(self.device)
+            # gt_pos = gt_pos[:, : self.avg_caps].to(self.device)
+            gt_intervals = gt_intervals[:, : self.avg_caps].to(self.device)
+            # gt_upos = gt_upos[:, :self.avg_caps].to(self.device)
+            # gt_proposals = gt_proposals[:, :int(torch.max(gt_intervals[:,self.avg_caps,0]))].to(self.device)
 
-        #     # move the gt batch tensors to device for computing the generalization loss
-        #     # gt_program = gt_program.to(self.device)
-        #     # gt_captions = gt_captions.to(self.device)
-        #     # gt_caps_sem_enc = gt_caps_sem_enc.to(self.device)
-        #     # gt_pos = gt_pos.to(self.device)
-        #     # gt_intervals = gt_intervals.to(self.device)
-        #     # # gt_upos = gt_upos.to(self.device)
-        #     # gt_proposals = gt_proposals.to(self.device)
-        # else:
-        #     pass
+            # move the gt batch tensors to device for computing the generalization loss
+            # gt_program = gt_program.to(self.device)
+            # gt_captions = gt_captions.to(self.device)
+            # gt_caps_sem_enc = gt_caps_sem_enc.to(self.device)
+            # gt_pos = gt_pos.to(self.device)
+            # gt_intervals = gt_intervals.to(self.device)
+            # # gt_upos = gt_upos.to(self.device)
+            # gt_proposals = gt_proposals.to(self.device)
+        else:
+            pass
 
         # gt_cap_lens = gt_cap_lens.to(self.device)
         gt_prog_len = gt_prog_len.to(self.device)
@@ -620,7 +620,7 @@ class DenseVideo2TextTrainer(Trainer):
             ) = self.dense_captioner(
                 v_feats=video_feats,
                 feats_count=feats_count,
-                prog_len=torch.max(gt_prog_len),
+                prog_len=truncate_prog_at,
                 teacher_forcing_p=teacher_forcing_ratio,
                 gt_program=gt_program,
                 gt_captions=gt_captions,
@@ -629,8 +629,8 @@ class DenseVideo2TextTrainer(Trainer):
                 gt_pos=None,  # gt_pos,
                 gt_intervals=gt_intervals,
                 gt_proposals=gt_proposals,
-                max_prog=self.max_prog,  # max_prog=self.max_prog,
-                max_caps=self.max_caps,  # max_caps=self.max_caps,
+                max_prog=self.avg_truncation,  # max_prog=self.max_prog,
+                max_caps=self.avg_caps,  # max_caps=self.max_caps,
                 max_cap=self.max_words,
                 max_chunks=self.avg_truncation,
             )  # the maximum value of start pointers is lower than the max_prog to be generated
@@ -660,7 +660,7 @@ class DenseVideo2TextTrainer(Trainer):
                 gt_caps_count=gt_caps_count,
                 pred_caps_count=None,
                 gt_proposals_count=proposals_count,
-                truncate_prog_at=None,
+                truncate_prog_at=truncate_prog_at,
             )
 
         if phase == "train":
