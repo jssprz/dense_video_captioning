@@ -257,8 +257,7 @@ class DenseVideo2TextTrainer(Trainer):
         # lambda9 = lambda epoch: self.trainer_config.lr_decay_factor ** (epoch // 40)
 
         self.lr_scheduler = optim.lr_scheduler.LambdaLR(
-            optimizer=self.optimizer,
-            lr_lambda=[lambda1, lambda2, lambda3, lambda4, lambda5],
+            optimizer=self.optimizer, lr_lambda=[lambda1, lambda2, lambda3, lambda4, lambda5],
         )
 
         # Loss function
@@ -567,7 +566,7 @@ class DenseVideo2TextTrainer(Trainer):
             # truncate gt batch tensors before move them to the device
             max_caps = torch.max(gt_caps_count)
             gt_program = gt_program[:, :truncate_prog_at].to(self.device)
-            # gt_captions = gt_captions[:, :max_caps].to(self.device)
+            gt_captions = gt_captions[:, :max_caps].to(self.device)
             # gt_caps_sem_enc = gt_caps_sem_enc[:, :max_caps].to(self.device)
             # gt_pos = gt_pos[:, :max_caps].to(self.device)
             gt_intervals = gt_intervals[:, :max_caps].to(self.device)
@@ -581,7 +580,7 @@ class DenseVideo2TextTrainer(Trainer):
             # truncate gt batch tensors according to average parameters, and move them to the device
             truncate_prog_at = self.avg_truncation
             gt_program = gt_program[:, :truncate_prog_at].to(self.device)
-            # gt_captions = gt_captions[:, : self.avg_caps].to(self.device)
+            gt_captions = gt_captions[:, : self.avg_caps].to(self.device)
             # gt_caps_sem_enc = gt_caps_sem_enc[:, : self.avg_caps].to(self.device)
             # gt_pos = gt_pos[:, : self.avg_caps].to(self.device)
             gt_intervals = gt_intervals[:, : self.avg_caps].to(self.device)
