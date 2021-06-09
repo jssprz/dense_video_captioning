@@ -751,7 +751,7 @@ class DenseVideo2TextTrainer(Trainer):
             print(f"Resuming from checkpoint: {checkpoint_path}.... ")
 
             checkpoint = torch.load(checkpoint_path, map_location="cpu")
-            begin_epoch = checkpoint["epoch"]
+            begin_epoch = checkpoint["epoch"] + 1
             self.best_metrics = checkpoint["best_metrics"]
             self.avg_caps = checkpoint["avg_caps"]
 
