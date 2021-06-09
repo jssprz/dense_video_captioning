@@ -17,10 +17,10 @@ class DenseCaptioningDataset(Dataset):
         intervals,
         caps_count,
         captions,
-        caps_sem_enc,
-        pos,
-        upos,
-        cap_lens,
+        # caps_sem_enc,
+        # pos,
+        # upos,
+        # cap_lens,
         progs,
         prog_lens,
         event_proposals,
@@ -47,10 +47,10 @@ class DenseCaptioningDataset(Dataset):
         self.intervals = intervals
         self.caps_count = caps_count
         self.captions = captions
-        self.caps_sem_enc = caps_sem_enc
-        self.pos = pos
-        self.upos = upos
-        self.cap_lens = cap_lens
+        # self.caps_sem_enc = caps_sem_enc
+        # self.pos = pos
+        # self.upos = upos
+        # self.cap_lens = cap_lens
         self.progs = progs
         self.prog_lens = prog_lens
         self.event_proposals = event_proposals
@@ -83,10 +83,10 @@ class DenseCaptioningDataset(Dataset):
                 self.intervals[index],
                 self.caps_count[index],
                 self.captions[index],
-                self.caps_sem_enc[index],
-                self.pos[index],
-                self.upos[index],
-                self.cap_lens[index],
+                # self.caps_sem_enc[index],
+                # self.pos[index],
+                # self.upos[index],
+                # self.cap_lens[index],
                 self.progs[index],
                 self.prog_lens[index],
                 self.event_proposals[index],
@@ -199,10 +199,10 @@ def get_dense_loader(
     intervals,
     caps_count,
     captions,
-    caps_sem_enc,
-    pos,
-    upos,
-    cap_lens,
+    # caps_sem_enc,
+    # pos,
+    # upos,
+    # cap_lens,
     progs,
     prog_lens,
     event_proposals,
@@ -221,10 +221,10 @@ def get_dense_loader(
         intervals,
         caps_count,
         captions,
-        caps_sem_enc,
-        pos,
-        upos,
-        cap_lens,
+        # caps_sem_enc,
+        # pos,
+        # upos,
+        # cap_lens,
         progs,
         prog_lens,
         event_proposals,

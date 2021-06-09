@@ -9,6 +9,8 @@ from model.captioning.ensemble import Ensemble
 from model.embeddings.visual_semantic import MultiModal
 from model.tagging.semantic import TaggerMLP
 
+import sys
+
 
 class VNCLCell(nn.Module):
     def __init__(
@@ -376,19 +378,19 @@ class DenseCaptioner(nn.Module):
 
         self.fc = nn.Linear(in_features=config.h_size + num_proposals, out_features=self.progs_vocab_size,)
 
-        self.clip_captioner = Ensemble(
-            v_size=config.cnn_feats_size + config.c3d_feats_size,
-            sem_tagger_config=sem_tagger_config,
-            syn_embedd_config=syn_embedd_config,
-            syn_tagger_config=syn_tagger_config,
-            avscn_dec_config=avscn_dec_config,
-            semsynan_dec_config=semsynan_dec_config,
-            caps_vocab=caps_vocab,
-            pretrained_we=pretrained_we,
-            pos_vocab=pos_vocab,
-            pretrained_pe=pretrained_pe,
-            device=device,
-        )
+        # self.clip_captioner = Ensemble(
+        #     v_size=config.cnn_feats_size + config.c3d_feats_size,
+        #     sem_tagger_config=sem_tagger_config,
+        #     syn_embedd_config=syn_embedd_config,
+        #     syn_tagger_config=syn_tagger_config,
+        #     avscn_dec_config=avscn_dec_config,
+        #     semsynan_dec_config=semsynan_dec_config,
+        #     caps_vocab=caps_vocab,
+        #     pretrained_we=pretrained_we,
+        #     pos_vocab=pos_vocab,
+        #     pretrained_pe=pretrained_pe,
+        #     device=device,
+        # )
 
     def freeze(self, resume_config):
         if resume_config.freeze_captioning:
@@ -509,8 +511,8 @@ class DenseCaptioner(nn.Module):
             # initialize result tensors according to the sizes of ground truth
             program = torch.zeros_like(gt_program)
             captions = torch.zeros_like(gt_captions)
-            caps_sem_enc = torch.zeros_like(gt_sem_enc)
-            pos_tags = torch.zeros_like(gt_pos)
+            # caps_sem_enc = torch.zeros_like(gt_sem_enc)
+            # pos_tags = torch.zeros_like(gt_pos)
             intervals = torch.zeros_like(gt_intervals, dtype=torch.float)
             proposals_logits = torch.zeros_like(gt_proposals)
         else:
@@ -524,21 +526,24 @@ class DenseCaptioner(nn.Module):
             # initialize result tensors according to the maximum sizes
             program = torch.zeros(bs, max_prog).to(device)
             captions = torch.zeros((bs, max_caps, max_cap), dtype=torch.long).to(device)
-            caps_sem_enc = torch.zeros(bs, max_caps, self.sem_enc_size).to(device)
-            pos_tags = torch.zeros(bs, max_caps, max_cap).to(device)
+            # caps_sem_enc = torch.zeros(bs, max_caps, self.sem_enc_size).to(device)
+            # pos_tags = torch.zeros(bs, max_caps, max_cap).to(device)
             intervals = torch.zeros(bs, max_caps, 2).to(device)
             proposals_logits = torch.zeros(bs, max_chunks, self.num_proposals).to(device)
 
         prog_logits = torch.zeros(program.size(0), program.size(1), self.progs_vocab_size).to(device)
-        caps_logits = torch.zeros(captions.size(0), captions.size(1), captions.size(2), self.caps_vocab_size).to(
-            device
-        )
-        pos_tag_logits = torch.zeros(pos_tags.size(0), pos_tags.size(1), pos_tags.size(2), self.pos_vocab_size).to(
-            device
-        )
+        # caps_logits = torch.zeros(captions.size(0), captions.size(1), captions.size(2), self.caps_vocab_size).to(
+        #     device
+        # )
+        # pos_tag_logits = torch.zeros(pos_tags.size(0), pos_tags.size(1), pos_tags.size(2), self.pos_vocab_size).to(
+        #     device
+        # )
+
+        print(prog_logits.size())
 
         seq_pos = 0
         while condition(seq_pos):
+            sys.stdout.write(f'\r{seq_pos}')
             #    if seq_pos > prog_len - 5:
             #        import ipdb; ipdb.set_trace() # BREAKPOINT
             use_teacher_forcing = (random.random() < teacher_forcing_p) or seq_pos == 0
@@ -700,46 +705,47 @@ class DenseCaptioner(nn.Module):
                     gt_c = torch.stack(
                         [gt_captions[i][min(gt_captions.size(1) - 1, caps_count[i])] for i in vidx_to_describe]
                     )
-                    gt_p = torch.stack([gt_pos[i][min(gt_pos.size(1) - 1, caps_count[i])] for i in vidx_to_describe])
+                    # gt_p = torch.stack([gt_pos[i][min(gt_pos.size(1) - 1, caps_count[i])] for i in vidx_to_describe])
 
+                cap = gt_c
                 # generate captions
-                cap_logits, cap_sem_enc, pos_tag_seq_logits = self.clip_captioner(
-                    v_feats=clip_feats,
-                    v_global=clip_global,
-                    teacher_forcing_p=teacher_forcing_p,
-                    gt_captions=gt_c,
-                    gt_pos=gt_p,
-                    max_words=max_cap,
-                )
+                # cap_logits, cap_sem_enc, pos_tag_seq_logits = self.clip_captioner(
+                #     v_feats=clip_feats,
+                #     v_global=clip_global,
+                #     teacher_forcing_p=teacher_forcing_p,
+                #     gt_captions=gt_c,
+                #     gt_pos=gt_p,
+                #     max_words=max_cap,
+                # )
 
-                if self.training:
-                    use_teacher_forcing = True if random.random() < teacher_forcing_p or seq_pos == 0 else False
-                    if use_teacher_forcing:
-                        cap = gt_c
-                    elif self.train_sample_max:
-                        # select the words ids with the max probability,
-                        # (sub-batch_size x max-cap-len)
-                        cap = cap_logits.max(2)[1]
-                    else:
-                        # sample words from probability distribution
-                        # (sub-batch_size*max-cap-len x caps_vocab_size)
-                        cap = cap_logits.view(-1, self.caps_vocab_size)
-                        # (sub-batch_size*max-cap-len)
-                        cap = torch.multinomial(torch.softmax(cap, dim=1), 1).squeeze(1)
-                        # (sub-batch_size x max-cap-len)
-                        cap = cap.view(cap_logits.size(0), cap_logits.size(1))
-                elif self.test_sample_max:
-                    # select the words ids with the max probability,
-                    # (sub-batch_size x max-cap-len)
-                    cap = cap_logits.max(2)[1]
-                else:
-                    # sample words from probability distribution
-                    # (sub-batch_size*max-cap-len x caps_vocab_size)
-                    cap = cap_logits.view(-1, self.caps_vocab_size)
-                    # (sub-batch_size*max-cap-len)
-                    cap = torch.multinomial(torch.softmax(cap, dim=1), 1).squeeze(1)
-                    # (sub-batch_size x max-cap-len)
-                    cap = cap.view(cap_logits.size(0), cap_logits.size(1))
+                # if self.training:
+                #     use_teacher_forcing = True if random.random() < teacher_forcing_p or seq_pos == 0 else False
+                #     if use_teacher_forcing:
+                #         cap = gt_c
+                #     elif self.train_sample_max:
+                #         # select the words ids with the max probability,
+                #         # (sub-batch_size x max-cap-len)
+                #         cap = cap_logits.max(2)[1]
+                #     else:
+                #         # sample words from probability distribution
+                #         # (sub-batch_size*max-cap-len x caps_vocab_size)
+                #         cap = cap_logits.view(-1, self.caps_vocab_size)
+                #         # (sub-batch_size*max-cap-len)
+                #         cap = torch.multinomial(torch.softmax(cap, dim=1), 1).squeeze(1)
+                #         # (sub-batch_size x max-cap-len)
+                #         cap = cap.view(cap_logits.size(0), cap_logits.size(1))
+                # elif self.test_sample_max:
+                #     # select the words ids with the max probability,
+                #     # (sub-batch_size x max-cap-len)
+                #     cap = cap_logits.max(2)[1]
+                # else:
+                #     # sample words from probability distribution
+                #     # (sub-batch_size*max-cap-len x caps_vocab_size)
+                #     cap = cap_logits.view(-1, self.caps_vocab_size)
+                #     # (sub-batch_size*max-cap-len)
+                #     cap = torch.multinomial(torch.softmax(cap, dim=1), 1).squeeze(1)
+                #     # (sub-batch_size x max-cap-len)
+                #     cap = cap.view(cap_logits.size(0), cap_logits.size(1))
 
                 # TODO: sort visual and textual information according to the caption's length
 
@@ -754,18 +760,10 @@ class DenseCaptioner(nn.Module):
 
                 # save captions in the list of each video that was described in this step
                 self.prev_match = torch.clone(self.prev_match)
-                # for i, c, c_logits, c_sem_enc, c_pos_logits, m in zip(vidx_to_describe, cap, cap_logits, cap_sem_enc, pos_tag_seq_logits, match):
-                #     captions[i, caps_count[i], :] = c
-                #     caps_logits[i, caps_count[i], :, :] = c_logits
-                #     pos_tag_logits[i, caps_count[i], :, :] = c_pos_logits
-                #     caps_sem_enc[i, caps_count[i], :] = c_sem_enc
-                #     caps_count[i] += 1
-                #     self.prev_match[i, :] = m
-                # print(type(caps_count[vidx_to_describe]), caps_count[vidx_to_describe])
                 captions[vidx_to_describe, caps_count[vidx_to_describe], :] = cap
-                caps_logits[vidx_to_describe, caps_count[vidx_to_describe], :, :] = cap_logits
-                pos_tag_logits[vidx_to_describe, caps_count[vidx_to_describe], :, :] = pos_tag_seq_logits
-                caps_sem_enc[vidx_to_describe, caps_count[vidx_to_describe], :] = cap_sem_enc
+                # caps_logits[vidx_to_describe, caps_count[vidx_to_describe], :, :] = cap_logits
+                # pos_tag_logits[vidx_to_describe, caps_count[vidx_to_describe], :, :] = pos_tag_seq_logits
+                # caps_sem_enc[vidx_to_describe, caps_count[vidx_to_describe], :] = cap_sem_enc
                 caps_count[vidx_to_describe] += 1
                 self.prev_match[vidx_to_describe, :] = match
 
@@ -777,12 +775,14 @@ class DenseCaptioner(nn.Module):
         if self.training:
             caps_count = torch.min(caps_count, gt_caps_count)
 
+        print(prog_logits.size())
+
         return (
             prog_logits,
             program,
-            caps_logits,
-            caps_sem_enc,
-            pos_tag_logits,
+            None,  # caps_logits,
+            None,  # caps_sem_enc,
+            None,  # pos_tag_logits,
             captions,
             intervals,
             caps_count,
