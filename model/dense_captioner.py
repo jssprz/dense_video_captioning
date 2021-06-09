@@ -577,7 +577,7 @@ class DenseCaptioner(nn.Module):
             # updates the p and q positions for each video, and save sub-batch of video clips to be described
             intervals_to_describe, vidx_to_describe, vidx_to_skip = [], [], []
             for i, a in enumerate(a_id):
-                if a == 0:
+                if a == 0 and self.p[i] < feats_count[i]:
                     # skip
                     self.p[i] += 1
                     self.q[i] = self.p[i] + 1
