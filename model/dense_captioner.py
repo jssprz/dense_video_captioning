@@ -697,11 +697,11 @@ class DenseCaptioner(nn.Module):
                 # TODO: get ground-truth captions according to the position of p and q and the interval associated to each gt caption
 
                 gt_c, gt_p = None, None
-                if self.training:
-                    # get ground-truth captions and pos-tags according to the number of captions that have been generated per video
-                    gt_c = torch.stack(
-                        [gt_captions[i][min(gt_captions.size(1) - 1, caps_count[i])] for i in vidx_to_describe]
-                    )
+                # if self.training:
+                # get ground-truth captions and pos-tags according to the number of captions that have been generated per video
+                gt_c = torch.stack(
+                    [gt_captions[i][min(gt_captions.size(1) - 1, caps_count[i])] for i in vidx_to_describe]
+                )
                     # gt_p = torch.stack([gt_pos[i][min(gt_pos.size(1) - 1, caps_count[i])] for i in vidx_to_describe])
 
                 cap = gt_c
