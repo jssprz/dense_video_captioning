@@ -519,9 +519,9 @@ class DenseVideo2TextTrainer(Trainer):
         gt_program,
         gt_prog_len,
         gt_proposals,
+        epoch,
         teacher_forcing_ratio=0.5,
         phase="train",
-        use_rl=False,
     ):
         bsz = video_feats[0].size(0)
 
@@ -659,6 +659,7 @@ class DenseVideo2TextTrainer(Trainer):
                 gt_caps_count=gt_caps_count,
                 pred_caps_count=None,
                 gt_proposals_count=proposals_count,
+                epoch=epoch,
                 truncate_prog_at=truncate_prog_at,
             )
 
@@ -877,8 +878,7 @@ class DenseVideo2TextTrainer(Trainer):
                     )
 
                 # predicted_sentences = {}
-                time_start_epoch, total_time_iters = time.perf_counter(), 0
-                loss_count = 0
+                time_start_epoch, total_time_iters, loss_count = time.perf_counter(), 0, 0
                 all_programs = []
                 all_captions = []
                 all_prog_ids = []
@@ -908,8 +908,10 @@ class DenseVideo2TextTrainer(Trainer):
                     ),
                 ) in enumerate(self.loaders[phase], start=1):
                     time_start_iter = time.perf_counter()
+
                     video_feats = [cnn, c3d]
-                    use_rl = False
+                    iteration = epoch * len(self.loaders[phase]) + i
+
                     (
                         loss,
                         prog_loss,
@@ -936,27 +938,23 @@ class DenseVideo2TextTrainer(Trainer):
                         gt_prog,
                         gt_prog_len,
                         gt_proposals,
+                        epoch,
                         teacher_forcing_ratio,
                         phase,
-                        use_rl=use_rl,
                     )
                     loss_count += loss.item()
 
-                    iteration = epoch * len(self.loaders[phase]) + i
-                    self.writer.add_scalar("programmer/{}-iters-loss".format(phase), loss, iteration)
-                    if self.trainer_config.criterion_config.programer_iou_reward:
-                        self.writer.add_scalar(f"programmer/{phase}-iters-rinforced_prog_loss", prog_loss, iteration)
-                    else:
-                        self.writer.add_scalar(f"programmer/{phase}-iters-prog_loss", prog_loss, iteration)
-                    # self.writer.add_scalar('programmer/{}-iters-iou_loss'.format(phase), iou_loss, iteration)
+                    rl_strategy = self.trainer_config.criterion_config.rl_strategy
+                    self.writer.add_scalar(f"programmer/{phase}-iters-{rl_strategy}-loss", loss, iteration)
+                    self.writer.add_scalar(f"programmer/{phase}-iters-{rl_strategy}-prog_loss", prog_loss, iteration)
                     self.writer.add_scalar(f"programmer/{phase}-iters-proposals_loss", proposals_loss, iteration)
                     self.writer.add_scalar(f"programmer/{phase}-iters-iou_reward", iou_reward, iteration)
 
                     total_time_iters += time.perf_counter() - time_start_iter
                     lrs = self.lr_scheduler.get_last_lr()
                     log_msg = (
-                        "\rEpoch:{0:03d} Phase:{1:6s} Iter:{2:04d}/{3:04d} avg-Time:{4:.1f}s lr:{5:.6f} iou-reward:{9:9.4f} Loss:{6:9.4f}"
-                        "\t[prog-loss:{7:9.4f} proposals-loss:{8:9.4f}]"
+                        "\rEpoch:{0:03d} Phase:{1:6s} Iter:{2:04d}/{3:04d} avg-Time:{4:.1f}s lr:{5:.6f} iou-reward:{10:9.4f} Loss:{7:9.4f}"
+                        "\t[{6}-prog-loss:{8:9.4f} proposals-loss:{9:9.4f}]"
                     ).format(
                         epoch,
                         phase,
@@ -964,6 +962,7 @@ class DenseVideo2TextTrainer(Trainer):
                         len(self.loaders[phase]),
                         total_time_iters / i,
                         lrs[0],
+                        rl_strategy,
                         loss.item(),
                         prog_loss.item(),
                         proposals_loss.item(),

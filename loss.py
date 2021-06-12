@@ -13,28 +13,18 @@ class SentenceLengthLoss(nn.Module):
         else:
             self.crit = nn.NLLLoss(reduction="sum")
 
-    def forward(self, logits, targets, lens=None, rewards=None):
-        if (lens is None) and (rewards is None):
-            log_probs = torch.log_softmax(logits, dim=1)
-            loss = self.crit(log_probs, targets)
-            if self.reduction == "mean":
-                return loss / logits.size(0)
-        elif rewards is None:
-            mask = torch.cat([l.repeat(l) for l in lens], dim=0).unsqueeze(1).to(logits.device)
-            wighted_log_probs = torch.reciprocal(mask ** self.beta) * torch.log_softmax(logits, dim=1)
-            loss = self.crit(wighted_log_probs, targets)
-            if self.reduction == "mean":
-                return loss / lens.size(0)
-        else:
-            mask1 = torch.cat([l.repeat(l) for l in lens], dim=0).unsqueeze(1).to(logits.device)
-            mask2 = torch.cat([r.repeat(l) for l, r in zip(lens, rewards)], dim=0).unsqueeze(1).to(logits.device)
-            # mask = torch.max(torch.ones_like(mask1), mask1**self.beta - mask2**self.beta)
-            wighted_log_probs = torch.reciprocal(mask1 ** self.beta) * mask2 * torch.log_softmax(logits, dim=1)
-            loss = self.crit(wighted_log_probs, targets)
-            if self.reduction == "mean":
-                return loss / lens.size(0)
+    def forward(self, logits, targets, lens, rewards=None):
+        log_probs = torch.log_softmax(logits, dim=1)
+        len_mask = torch.cat([l.repeat(l) for l in lens], dim=0).unsqueeze(1).to(logits.device)
 
-        return loss  # self.reduction=='sum'
+        if rewards is None:
+            log_probs = torch.reciprocal(len_mask ** self.beta) * log_probs
+        else:
+            r_mask = torch.cat([r.repeat(l) for l, r in zip(lens, rewards)], dim=0).unsqueeze(1).to(logits.device)
+            log_probs = torch.reciprocal(len_mask ** self.beta) * (log_probs + torch.log(r_mask))
+
+        loss = self.crit(log_probs, targets)
+        return (loss / lens.size(0)) if self.reduction == "mean" else loss
 
 
 def temp_iou(pred_intervals, gt_intervals, gt_count):
@@ -57,6 +47,18 @@ def temp_iou(pred_intervals, gt_intervals, gt_count):
             for n in range(gt_count.size(0))
         ]
     )
+
+
+def get_reinforce_strategy(criterion_config, epoch):
+    rl_strategy = criterion_config.rl_strategy
+    if rl_strategy == "reinforce":
+        step_0_epochs = criterion_config.reinforce_config.step_0_epochs
+        return epoch > step_0_epochs, 0
+    elif rl_strategy == "mixer":
+        step_0_epochs = criterion_config.mixer_config.step_0_epochs
+        step_k_epochs = criterion_config.mixer_config.step_k_epochs
+        samples_delta = criterion_config.mixer_config.samples_delta
+        return epoch > step_0_epochs, (epoch - step_0_epochs) // step_k_epochs * samples_delta
 
 
 class DenseCaptioningLoss(nn.Module):
@@ -148,6 +150,7 @@ class DenseCaptioningLoss(nn.Module):
         gt_caps_count,
         pred_caps_count,
         gt_proposals_count,
+        epoch,
         truncate_prog_at=None,
         mm_v_encs=None,
         mm_t_encs=None,
@@ -189,13 +192,16 @@ class DenseCaptioningLoss(nn.Module):
         else:
             # straighten the output program (removing the part of the pad) and then flatten it
             # (total_len_of_programs x progs_vocab_size)
-            pred_program = torch.cat([pred_program[n, :gt_prog_len[n]] for n in range(bs)], dim=0)
+            pred_program = torch.cat([pred_program[n, : gt_prog_len[n]] for n in range(bs)], dim=0)
 
             # straighten the target captions (remove the part of the pad) and then flatten it
             # (total_len_of_programs)
-            gt_program = torch.cat([gt_program[n, :gt_prog_len[n]] for n in range(bs)], dim=0)
-        if self.config.programer_iou_reward:
-            iou_reward = temp_iou(pred_intervals, gt_intervals, gt_caps_count)
+            gt_program = torch.cat([gt_program[n, : gt_prog_len[n]] for n in range(bs)], dim=0)
+
+        iou_reward = temp_iou(pred_intervals, gt_intervals, gt_caps_count)
+
+        reinforce, reinforce_param = get_reinforce_strategy(self.config, epoch)
+        if reinforce and self.config.programer_use_iou_reward:
             # length-weighted + reward
             prog_loss = self.programer_loss(pred_program, gt_program, gt_prog_len, iou_reward)
         else:
