@@ -13,13 +13,14 @@ class SentenceLengthLoss(nn.Module):
         else:
             self.crit = nn.NLLLoss(reduction="sum")
 
-    def forward(self, logits, targets, lens, rewards=None):
+    def forward(self, logits, targets, lens, rewards=None, epsilon=1e-8):
         log_probs = torch.log_softmax(logits, dim=1)
         len_mask = torch.cat([l.repeat(l) for l in lens], dim=0).unsqueeze(1).to(logits.device)
 
         if rewards is None:
             log_probs = torch.reciprocal(len_mask ** self.beta) * log_probs
         else:
+            rewards = rewards.clamp(epsilon, 1-epsilon)
             r_mask = torch.cat([r.repeat(l) for l, r in zip(lens, rewards)], dim=0).unsqueeze(1).to(logits.device)
             log_probs = torch.reciprocal(len_mask ** self.beta) * (log_probs + torch.log(r_mask))
 
