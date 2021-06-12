@@ -41,6 +41,11 @@ from loader import extract_split_data_from_corpus, data2tensors, get_dense_loade
 from model.dense_captioner import DenseCaptioner
 from loss import DenseCaptioningLoss
 
+import resource
+
+rlimit = resource.getrlimit(resource.RLIMIT_NOFILE)
+resource.setrlimit(resource.RLIMIT_NOFILE, (2048, rlimit[1]))
+
 
 class Trainer:
     def __init__(self, trainer_config, modules_config, out_folder):
@@ -252,8 +257,7 @@ class DenseVideo2TextTrainer(Trainer):
         lambda8 = lambda epoch: self.trainer_config.lr_decay_factor ** (epoch // 40)
 
         self.lr_scheduler = optim.lr_scheduler.LambdaLR(
-            optimizer=self.optimizer,
-            lr_lambda=[lambda5, lambda6, lambda7, lambda8,],
+            optimizer=self.optimizer, lr_lambda=[lambda5, lambda6, lambda7, lambda8,],
         )
 
         # Loss function
@@ -601,7 +605,18 @@ class DenseVideo2TextTrainer(Trainer):
         self.optimizer.zero_grad()
 
         with torch.set_grad_enabled(phase == "train"):
-            (_, _, caps_logits, caps_sem_enc, pos_tags_logits, captions, intervals, caps_count, _, _,) = self.dense_captioner(
+            (
+                _,
+                _,
+                caps_logits,
+                caps_sem_enc,
+                pos_tags_logits,
+                captions,
+                intervals,
+                caps_count,
+                _,
+                _,
+            ) = self.dense_captioner(
                 v_feats=video_feats,
                 feats_count=feats_count,
                 prog_len=gt_program.size(1),

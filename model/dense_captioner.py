@@ -531,17 +531,16 @@ class DenseCaptioner(nn.Module):
 
         seq_pos = 0
         while condition(seq_pos):
-            self.__step__(seq_pos, v_feats)
+            # self.__step__(seq_pos, v_feats)
             a_id = gt_program[:, seq_pos]
 
             # updates the p and q positions for each video, and save sub-batch of video clips to be described
-            intervals_to_describe, vidx_to_describe, vidx_to_skip = [], [], []
+            vidx_to_describe = []
             for i, a in enumerate(a_id):
                 if a == 0:
                     # skip
                     self.p[i] += 1
                     self.q[i] = self.p[i] + 1
-                    vidx_to_skip.append(i)
                 elif a == 1:
                     # enqueue
                     self.q[i] += 1
@@ -554,8 +553,7 @@ class DenseCaptioner(nn.Module):
 
             # generate a caption from the current video-clips saved in the sub-batch
             if len(vidx_to_describe) > 0:
-                # print(seq_pos, use_teacher_forcing, teacher_forcing_p, vidx_to_describe, caps_count, self.p.data, self.q.data)
-                # get sub-batch of video features to be described
+                self.__step__(seq_pos, v_feats)
                 clip_feats = [feats[vidx_to_describe, :, :] for feats in self.v_p_q_feats]
                 clip_global = self.v_p_q_pool[vidx_to_describe, :]
 
@@ -637,15 +635,15 @@ class DenseCaptioner(nn.Module):
         #     caps_count = torch.min(caps_count, gt_caps_count)
 
         return (
-            None, # prog_logits,
-            None, # program,
+            None,  # prog_logits,
+            None,  # program,
             caps_logits,
             caps_sem_enc,
             pos_tag_logits,
             captions,
             intervals,
             caps_count,
-            None, # proposals_logits,
-            None, # self.p,
+            None,  # proposals_logits,
+            None,  # self.p,
         )
 
