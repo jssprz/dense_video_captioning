@@ -29,15 +29,19 @@ class VNCLCell(nn.Module):
         self.var_dropout = var_dropout
 
         # for composing v1 and v2
-        self.V_i_1 = get_init_weights((v_size, vh_size))
-        self.V_f_1 = get_init_weights((v_size, vh_size))
-        self.V_o_1 = get_init_weights((v_size, vh_size))
-        self.V_c_1 = get_init_weights((v_size, vh_size))
+        self.V_i = get_init_weights((v_size*2, vh_size))
+        self.V_f = get_init_weights((v_size*2, vh_size))
+        self.V_o = get_init_weights((v_size*2, vh_size))
+        self.V_c = get_init_weights((v_size*2, vh_size))
+        # self.V_i_1 = get_init_weights((v_size, vh_size))
+        # self.V_f_1 = get_init_weights((v_size, vh_size))
+        # self.V_o_1 = get_init_weights((v_size, vh_size))
+        # self.V_c_1 = get_init_weights((v_size, vh_size))
 
-        self.V_i_2 = get_init_weights((v_size, vh_size))
-        self.V_f_2 = get_init_weights((v_size, vh_size))
-        self.V_o_2 = get_init_weights((v_size, vh_size))
-        self.V_c_2 = get_init_weights((v_size, vh_size))
+        # self.V_i_2 = get_init_weights((v_size, vh_size))
+        # self.V_f_2 = get_init_weights((v_size, vh_size))
+        # self.V_o_2 = get_init_weights((v_size, vh_size))
+        # self.V_c_2 = get_init_weights((v_size, vh_size))
 
         # for composing v and m
         self.C_i_1 = get_init_weights((vh_size, h1_size))
@@ -129,16 +133,16 @@ class VNCLCell(nn.Module):
         keep_prob = 1 - var_drop_p
         if self.var_dropout == "per-gate":
             # use a distinct mask for each gate
-            m_i = self.__dropout(m, keep_prob, "s_i")
-            m_f = self.__dropout(m, keep_prob, "s_f")
-            m_o = self.__dropout(m, keep_prob, "s_o")
-            m_c = self.__dropout(m, keep_prob, "s_c")
+            m_i = self.__dropout(m, keep_prob, "m_i")
+            m_f = self.__dropout(m, keep_prob, "m_f")
+            m_o = self.__dropout(m, keep_prob, "m_o")
+            m_c = self.__dropout(m, keep_prob, "m_c")
         else:
             # use the same mask for all gates
-            m_i = self.__dropout(m, keep_prob, "s")
-            m_f = self.__dropout(m, keep_prob, "s")
-            m_o = self.__dropout(m, keep_prob, "s")
-            m_c = self.__dropout(m, keep_prob, "s")
+            m_i = self.__dropout(m, keep_prob, "m")
+            m_f = self.__dropout(m, keep_prob, "m")
+            m_o = self.__dropout(m, keep_prob, "m")
+            m_c = self.__dropout(m, keep_prob, "m")
 
         # (batch_size x h1_size)
         self.temp2_i = m_i @ self.C_i_2
@@ -168,6 +172,9 @@ class VNCLCell(nn.Module):
 
     def forward(self, prev_h, prev_c, x, m, v1, v2, var_drop_p):
         keep_prob = 1 - var_drop_p
+
+        v = torch.cat((v1, v2), dim=-1)
+        
         if self.var_dropout == "per-gate":
             # use a distinct mask for each gate
             h_i = self.__dropout(prev_h, keep_prob, "h_i")
@@ -185,21 +192,26 @@ class VNCLCell(nn.Module):
             m_o = self.__dropout(m, keep_prob, "m_o")
             m_c = self.__dropout(m, keep_prob, "m_c")
 
-            v1_i = self.__dropout(v1, keep_prob, "v1_i")
-            v1_f = self.__dropout(v1, keep_prob, "v1_f")
-            v1_o = self.__dropout(v1, keep_prob, "v1_o")
-            v1_c = self.__dropout(v1, keep_prob, "v1_c")
+            v_i = self.__dropout(v, keep_prob, "v_i")
+            v_f = self.__dropout(v, keep_prob, "v_f")
+            v_o = self.__dropout(v, keep_prob, "v_o")
+            v_c = self.__dropout(v, keep_prob, "v_c")
 
-            v2_i = self.__dropout(v2, keep_prob, "v2_i")
-            v2_f = self.__dropout(v2, keep_prob, "v2_f")
-            v2_o = self.__dropout(v2, keep_prob, "v2_o")
-            v2_c = self.__dropout(v2, keep_prob, "v2_c")
+            # v1_i = self.__dropout(v1, keep_prob, "v1_i")
+            # v1_f = self.__dropout(v1, keep_prob, "v1_f")
+            # v1_o = self.__dropout(v1, keep_prob, "v1_o")
+            # v1_c = self.__dropout(v1, keep_prob, "v1_c")
+
+            # v2_i = self.__dropout(v2, keep_prob, "v2_i")
+            # v2_f = self.__dropout(v2, keep_prob, "v2_f")
+            # v2_o = self.__dropout(v2, keep_prob, "v2_o")
+            # v2_c = self.__dropout(v2, keep_prob, "v2_c")
         else:
             # use the same mask for all gates
-            h_i = self.__dropout(h, keep_prob, "h")
-            h_f = self.__dropout(h, keep_prob, "h")
-            h_o = self.__dropout(h, keep_prob, "h")
-            h_c = self.__dropout(h, keep_prob, "h")
+            h_i = self.__dropout(prev_h, keep_prob, "h")
+            h_f = self.__dropout(prev_h, keep_prob, "h")
+            h_o = self.__dropout(prev_h, keep_prob, "h")
+            h_c = self.__dropout(prev_h, keep_prob, "h")
 
             x_i = self.__dropout(x, keep_prob, "x")
             x_f = self.__dropout(x, keep_prob, "x")
@@ -211,20 +223,30 @@ class VNCLCell(nn.Module):
             m_o = self.__dropout(m, keep_prob, "m")
             m_c = self.__dropout(m, keep_prob, "m")
 
-            v1_i = self.__dropout(v1, keep_prob, "v1")
-            v1_f = self.__dropout(v1, keep_prob, "v1")
-            v1_o = self.__dropout(v1, keep_prob, "v1")
-            v1_c = self.__dropout(v1, keep_prob, "v1")
+            v_i = self.__dropout(v, keep_prob, "v")
+            v_f = self.__dropout(v, keep_prob, "v")
+            v_o = self.__dropout(v, keep_prob, "v")
+            v_c = self.__dropout(v, keep_prob, "v")
 
-            v2_i = self.__dropout(v2, keep_prob, "v2")
-            v2_f = self.__dropout(v2, keep_prob, "v2")
-            v2_o = self.__dropout(v2, keep_prob, "v2")
-            v2_c = self.__dropout(v2, keep_prob, "v2")
+            # v1_i = self.__dropout(v1, keep_prob, "v1")
+            # v1_f = self.__dropout(v1, keep_prob, "v1")
+            # v1_o = self.__dropout(v1, keep_prob, "v1")
+            # v1_c = self.__dropout(v1, keep_prob, "v1")
 
-        temp1_i = ((v1_i @ self.V_i_1) * (v2_i @ self.V_i_2)) @ self.C_i_1
-        temp1_f = ((v1_f @ self.V_f_1) * (v2_f @ self.V_f_2)) @ self.C_f_1
-        temp1_o = ((v1_o @ self.V_o_1) * (v2_o @ self.V_o_2)) @ self.C_o_1
-        temp1_c = ((v1_c @ self.V_c_1) * (v2_c @ self.V_c_2)) @ self.C_c_1
+            # v2_i = self.__dropout(v2, keep_prob, "v2")
+            # v2_f = self.__dropout(v2, keep_prob, "v2")
+            # v2_o = self.__dropout(v2, keep_prob, "v2")
+            # v2_c = self.__dropout(v2, keep_prob, "v2")
+
+        temp1_i = (v_i @ self.V_i) @ self.C_i_1
+        temp1_f = (v_f @ self.V_f) @ self.C_f_1
+        temp1_o = (v_o @ self.V_o) @ self.C_o_1
+        temp1_c = (v_c @ self.V_c) @ self.C_c_1
+
+        # temp1_i = ((v1_i @ self.V_i_1) * (v2_i @ self.V_i_2)) @ self.C_i_1
+        # temp1_f = ((v1_f @ self.V_f_1) * (v2_f @ self.V_f_2)) @ self.C_f_1
+        # temp1_o = ((v1_o @ self.V_o_1) * (v2_o @ self.V_o_2)) @ self.C_o_1
+        # temp1_c = ((v1_c @ self.V_c_1) * (v2_c @ self.V_c_2)) @ self.C_c_1
 
         # (batch_size x rnn_hidden_size)
         temp3_i = x_i @ self.W_i_1

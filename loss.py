@@ -20,8 +20,15 @@ class SentenceLengthLoss(nn.Module):
         if rewards is None:
             log_probs = torch.reciprocal(len_mask ** self.beta) * log_probs
         else:
-            rewards = rewards.clamp(epsilon, 1-epsilon)
-            r_mask = torch.cat([torch.cat((torch.ones(s), r.repeat(l-s)))  for l, r, s in zip(lens, rewards, reinforce_from)], dim=0).unsqueeze(1).to(logits.device)
+            rewards = rewards.clamp(min=epsilon)
+            r_mask = (
+                torch.cat(
+                    [torch.cat((torch.ones(s), r.repeat(l - s))) for l, r, s in zip(lens, rewards, reinforce_from)],
+                    dim=0,
+                )
+                .unsqueeze(1)
+                .to(logits.device)
+            )
             log_probs = torch.reciprocal(len_mask ** self.beta) * (log_probs + torch.log(r_mask))
 
         loss = self.crit(log_probs, targets)
@@ -60,7 +67,7 @@ def get_reinforce_strategy(criterion_config, epoch, gt_prog_len):
         step_k_epochs = criterion_config.mixer_config.step_k_epochs
         samples_delta = criterion_config.mixer_config.samples_delta
         delta = (epoch - step_0_epochs) // step_k_epochs * samples_delta
-        return epoch > step_0_epochs, (gt_prog_len - delta).clamp(0) 
+        return epoch > step_0_epochs, (gt_prog_len - delta).clamp(0)
 
 
 class DenseCaptioningLoss(nn.Module):
