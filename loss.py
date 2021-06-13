@@ -61,7 +61,7 @@ def get_reinforce_strategy(criterion_config, epoch, gt_prog_len):
     rl_strategy = criterion_config.rl_strategy
     if rl_strategy == "reinforce":
         step_0_epochs = criterion_config.reinforce_config.step_0_epochs
-        return epoch > step_0_epochs, torch.zeros_like(gt_prog_len)
+        return (epoch + 1) > step_0_epochs, torch.zeros_like(gt_prog_len)
     elif rl_strategy == "mixer":
         step_0_epochs = criterion_config.mixer_config.step_0_epochs
         step_k_epochs = criterion_config.mixer_config.step_k_epochs
