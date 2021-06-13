@@ -177,13 +177,23 @@ def bow_vectors(caps, vocab_len, norm=False, eos=0):
 def get_trainer_str(config):
     crit_config = config.criterion_config
     return (
-        f"{config.dataset_name} batch-{config.batch_size}.lr-{config.optimizer_config.learning_rate}.{config.optimizer_config.optimizer_name}"
-        f".rl-{crit_config.rl_strategy}-{crit_config.step_0_epochs}"
+        f"{config.dataset_name} B-{config.batch_size}.lr-{config.optimizer_config.learning_rate}.{config.optimizer_config.optimizer_name}"
+        f"{get_rl_strategy_str(crit_config)}"
         f".closs-{crit_config.captioning_loss}-{crit_config.captioning_loss_reduction}"
         f".ploss-{crit_config.programer_loss}-{crit_config.programer_loss_reduction}"
         f".tagloss-{crit_config.tagging_loss}-{crit_config.tagging_loss_reduction}"
         f".iloss-{crit_config.intervals_loss}-{crit_config.intervals_loss_reduction}"
     )
+
+def get_rl_strategy_str(config):
+    result = f".rl-{config.rl_strategy}"
+    if config.rl_strategy == 'mixer':
+        result += f"-{config.mixer_config.step_0_epochs}"
+    elif config.rl_strategy =='reinforce':
+        result += f"-{config.reinforce_config.step_0_epochs}"
+    else:
+        pass
+    return result
 
 
 def get_dense_captioner_str(config):
