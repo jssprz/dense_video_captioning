@@ -60,7 +60,6 @@ def get_reinforce_strategy(criterion_config, epoch, gt_prog_len):
         step_k_epochs = criterion_config.mixer_config.step_k_epochs
         samples_delta = criterion_config.mixer_config.samples_delta
         delta = (epoch - step_0_epochs) // step_k_epochs * samples_delta
-        print(delta)
         return epoch > step_0_epochs, (gt_prog_len - delta).clamp(0) 
 
 
@@ -206,10 +205,8 @@ class DenseCaptioningLoss(nn.Module):
         reinforce, reinforce_from = get_reinforce_strategy(self.config, epoch, gt_prog_len)
         if reinforce and self.config.programer_use_iou_reward:
             # length-weighted + reward (mixer or not)
-            print(reinforce, truncate_prog_at, reinforce_from)
             prog_loss = self.programer_loss(pred_program, gt_program, gt_prog_len, reinforce_from, iou_reward)
         else:
-            print(reinforce, truncate_prog_at, reinforce_from)
             # length-weighted
             prog_loss = self.programer_loss(pred_program, gt_program, gt_prog_len, None)
             # prog_loss = self.programer_loss(pred_program, gt_program)  # CELoss
