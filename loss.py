@@ -13,7 +13,7 @@ class SentenceLengthLoss(nn.Module):
         else:
             self.crit = nn.NLLLoss(reduction="sum")
 
-    def forward(self, logits, targets, lens, rewards=None, epsilon=1e-8):
+    def forward(self, logits, targets, lens, reinforce_from, rewards=None, epsilon=1e-8):
         log_probs = torch.log_softmax(logits, dim=1)
         len_mask = torch.cat([l.repeat(l) for l in lens], dim=0).unsqueeze(1).to(logits.device)
 
@@ -21,7 +21,7 @@ class SentenceLengthLoss(nn.Module):
             log_probs = torch.reciprocal(len_mask ** self.beta) * log_probs
         else:
             rewards = rewards.clamp(epsilon, 1-epsilon)
-            r_mask = torch.cat([r.repeat(l) for l, r in zip(lens, rewards)], dim=0).unsqueeze(1).to(logits.device)
+            r_mask = torch.cat([torch.cat((torch.ones(s), r.repeat(l-s)))  for l, r, s in zip(lens, rewards, reinforce_from)], dim=0).unsqueeze(1).to(logits.device)
             log_probs = torch.reciprocal(len_mask ** self.beta) * (log_probs + torch.log(r_mask))
 
         loss = self.crit(log_probs, targets)
@@ -50,16 +50,18 @@ def temp_iou(pred_intervals, gt_intervals, gt_count):
     )
 
 
-def get_reinforce_strategy(criterion_config, epoch):
+def get_reinforce_strategy(criterion_config, epoch, gt_prog_len):
     rl_strategy = criterion_config.rl_strategy
     if rl_strategy == "reinforce":
         step_0_epochs = criterion_config.reinforce_config.step_0_epochs
-        return epoch > step_0_epochs, 0
+        return epoch > step_0_epochs, torch.zeros_like(gt_prog_len)
     elif rl_strategy == "mixer":
         step_0_epochs = criterion_config.mixer_config.step_0_epochs
         step_k_epochs = criterion_config.mixer_config.step_k_epochs
         samples_delta = criterion_config.mixer_config.samples_delta
-        return epoch > step_0_epochs, (epoch - step_0_epochs) // step_k_epochs * samples_delta
+        delta = (epoch - step_0_epochs) // step_k_epochs * samples_delta
+        print(delta)
+        return epoch > step_0_epochs, (gt_prog_len - delta).clamp(0) 
 
 
 class DenseCaptioningLoss(nn.Module):
@@ -201,13 +203,15 @@ class DenseCaptioningLoss(nn.Module):
 
         iou_reward = temp_iou(pred_intervals, gt_intervals, gt_caps_count)
 
-        reinforce, reinforce_param = get_reinforce_strategy(self.config, epoch)
+        reinforce, reinforce_from = get_reinforce_strategy(self.config, epoch, gt_prog_len)
         if reinforce and self.config.programer_use_iou_reward:
-            # length-weighted + reward
-            prog_loss = self.programer_loss(pred_program, gt_program, gt_prog_len, iou_reward)
+            # length-weighted + reward (mixer or not)
+            print(reinforce, truncate_prog_at, reinforce_from)
+            prog_loss = self.programer_loss(pred_program, gt_program, gt_prog_len, reinforce_from, iou_reward)
         else:
+            print(reinforce, truncate_prog_at, reinforce_from)
             # length-weighted
-            prog_loss = self.programer_loss(pred_program, gt_program, gt_prog_len)
+            prog_loss = self.programer_loss(pred_program, gt_program, gt_prog_len, None)
             # prog_loss = self.programer_loss(pred_program, gt_program)  # CELoss
 
         # event proposals loss
