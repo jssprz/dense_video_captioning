@@ -605,6 +605,7 @@ class DenseVideo2TextTrainer(Trainer):
         self.optimizer.zero_grad()
 
         with torch.set_grad_enabled(phase == "train"):
+            self.logger.info("model computation....")
             (
                 prog_logits,
                 program,
