@@ -31,9 +31,7 @@ def get_sentences(vocab, outputs, gt_idxs, until_eos=True):
         if torch.is_tensor(batch_outs):
             for pred_tokens, gt_idx in zip(batch_outs, batch_gt_idxs):
                 # print('tensor case', pred_tokens.size())
-                pred_sentences[gt_idx.item()] = [
-                    decode_from_tokens(vocab, pred_tokens, until_eos)
-                ]
+                pred_sentences[gt_idx.item()] = [decode_from_tokens(vocab, pred_tokens, until_eos)]
         elif type(batch_outs) is tuple:
             for v_output, v_caps_count, v_gt_caps_count, v_cidxs in zip(
                 batch_outs[0], batch_outs[1], batch_outs[2], batch_gt_idxs
@@ -41,9 +39,7 @@ def get_sentences(vocab, outputs, gt_idxs, until_eos=True):
                 count = min(v_caps_count, v_gt_caps_count)
                 for pred_tokens, cidx in zip(v_output[:count], v_cidxs[:count]):
                     # print('tuple case', pred_tokens.size())
-                    pred_sentences[cidx.item()] = [
-                        decode_from_tokens(vocab, pred_tokens, until_eos)
-                    ]
+                    pred_sentences[cidx.item()] = [decode_from_tokens(vocab, pred_tokens, until_eos)]
         else:
             raise TypeError(f"wrong type {type(batch_outs)} for batch outputs")
     return pred_sentences
@@ -76,19 +72,13 @@ def evaluate_from_tokens(vocab, outputs, gt_idxs, ground_truth, until_eos=True):
     return metrics_results, pred_sentences
 
 
-def densecap_evaluate_from_tokens(
-    vocab, vidxs, tstamps, pred_intervals, pred_caps, ground_truth_dict
-):
+def densecap_evaluate_from_tokens(vocab, vidxs, tstamps, pred_intervals, pred_caps, ground_truth_dict):
     prediction = {}
     for batch_pred_intervals, batch_pred_caps, batch_vidxs, batch_tstamps in zip(
         pred_intervals, pred_caps, vidxs, tstamps
     ):
         for v_intervals, v_caps, v_caps_count, vidx, v_tstamps in zip(
-            batch_pred_intervals,
-            batch_pred_caps[0],
-            batch_pred_caps[1],
-            batch_vidxs,
-            batch_tstamps,
+            batch_pred_intervals, batch_pred_caps[0], batch_pred_caps[1], batch_vidxs, batch_tstamps,
         ):
             # prediction[str(vidx.item())] = [{'sentence': 'hola a todos', 'timestamp': [0., 1.]}, {'sentence': 'hello world', 'timestamp': [1., 2.]}]
 
@@ -98,17 +88,11 @@ def densecap_evaluate_from_tokens(
                         "sentence": decode_from_tokens(vocab, pred_tokens),
                         "timestamp": [v_tstamps[int(i[0])], v_tstamps[int(i[1])]],
                     }
-                    for i, pred_tokens in zip(
-                        v_intervals[:v_caps_count], v_caps[:v_caps_count]
-                    )
+                    for i, pred_tokens in zip(v_intervals[:v_caps_count], v_caps[:v_caps_count])
                 ]
 
     scores = densecap_score(
-        args={
-            "tiou": [0.3, 0.5, 0.7, 0.9],
-            "max_proposals_per_video": 1000,
-            "verbose": True,
-        },
+        args={"tiou": [0.3, 0.5, 0.7, 0.9], "max_proposals_per_video": 1000, "verbose": True,},
         ref=ground_truth_dict,
         hypo=prediction,
     )
@@ -123,9 +107,7 @@ def densecap_evaluate_from_tokens(
         "Recall": 1.0,
         "Precision": 1.0,
     }
-    scores["All_Metrics"] = sum(
-        [scores[k] * weights[k] for k in scores.keys() if k in weights]
-    )
+    scores["All_Metrics"] = sum([scores[k] * weights[k] for k in scores.keys() if k in weights])
     return scores, prediction
 
 
@@ -196,6 +178,7 @@ def get_trainer_str(config):
     crit_config = config.criterion_config
     return (
         f"{config.dataset_name} batch-{config.batch_size}.lr-{config.optimizer_config.learning_rate}.{config.optimizer_config.optimizer_name}"
+        f".rl-{crit_config.rl_strategy}-{crit_config.step_0_epochs}"
         f".closs-{crit_config.captioning_loss}-{crit_config.captioning_loss_reduction}"
         f".ploss-{crit_config.programer_loss}-{crit_config.programer_loss_reduction}"
         f".tagloss-{crit_config.tagging_loss}-{crit_config.tagging_loss_reduction}"
@@ -213,9 +196,7 @@ def get_dense_captioner_str(config):
 def get_sem_tagger_str(config):
     drops = str([config.in_drop_p] + config.drop_ps)
     hs = str(config.h_sizes)
-    return (
-        f"sem hs-{hs}.out-{config.out_size}.drops-{drops}.lastbn-{config.have_last_bn}"
-    )
+    return f"sem hs-{hs}.out-{config.out_size}.drops-{drops}.lastbn-{config.have_last_bn}"
 
 
 def get_syn_embedd_str(config):

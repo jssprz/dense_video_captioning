@@ -66,8 +66,8 @@ def get_reinforce_strategy(criterion_config, epoch, gt_prog_len):
         step_0_epochs = criterion_config.mixer_config.step_0_epochs
         step_k_epochs = criterion_config.mixer_config.step_k_epochs
         samples_delta = criterion_config.mixer_config.samples_delta
-        delta = (epoch - step_0_epochs) // step_k_epochs * samples_delta
-        return epoch > step_0_epochs, (gt_prog_len - delta).clamp(0)
+        delta = (epoch + 1 - step_0_epochs) // step_k_epochs * samples_delta
+        return (epoch + 1) > step_0_epochs, (gt_prog_len - delta).clamp(0)
 
 
 class DenseCaptioningLoss(nn.Module):
