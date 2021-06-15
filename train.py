@@ -44,7 +44,7 @@ from loss import DenseCaptioningLoss
 import resource
 
 rlimit = resource.getrlimit(resource.RLIMIT_NOFILE)
-resource.setrlimit(resource.RLIMIT_NOFILE, (2048, rlimit[1]))
+resource.setrlimit(resource.RLIMIT_NOFILE, (4096, rlimit[1]))
 
 
 class Trainer:
