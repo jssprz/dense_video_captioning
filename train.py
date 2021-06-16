@@ -507,7 +507,7 @@ class DenseVideo2TextTrainer(Trainer):
         gt_prog_len,
         gt_proposals,
         epoch,
-        teacher_forcing_ratio=0.5,
+        tf_ratio=0.5,
         phase="train",
     ):
         bsz = video_feats[0].size(0)
@@ -608,7 +608,7 @@ class DenseVideo2TextTrainer(Trainer):
                 v_feats=video_feats,
                 feats_count=feats_count,
                 prog_len=truncate_prog_at,
-                teacher_forcing_p=teacher_forcing_ratio,
+                teacher_forcing_p=tf_ratio,
                 gt_program=gt_program,
                 gt_captions=gt_captions,
                 gt_caps_count=gt_caps_count,
@@ -838,8 +838,8 @@ class DenseVideo2TextTrainer(Trainer):
             if epoch == self.trainer_config.resume_config.unfreeze_at:
                 self.dense_captioner.unfreeze()
 
-            teacher_forcing_ratio = get_tf_ratio(self.trainer_config, epoch)
-            self.writer.add_scalar("programmer/teacher_forcing_ratio", teacher_forcing_ratio, epoch)
+            tf_ratio = get_tf_ratio(self.trainer_config.tf_config, epoch)
+            self.writer.add_scalar("programmer/teacher_forcing_ratio", tf_ratio, epoch)
             
             loss_phases = {"train": 0, "val_1": 0}
             for phase in ["train", "val_1"]:
@@ -924,7 +924,7 @@ class DenseVideo2TextTrainer(Trainer):
                         gt_prog_len,
                         gt_proposals,
                         epoch,
-                        teacher_forcing_ratio,
+                        tf_ratio,
                         phase,
                     )
                     loss_count += loss.item()
@@ -1075,8 +1075,8 @@ class DenseVideo2TextTrainer(Trainer):
                 log_msg += " {0}-avg-loss:{1:9.4f}".format(k, v)
             for k, v in time_phases.items():
                 log_msg += " {0}-avg-time:{1:9.3f}h".format(k, (v / 3600) / (epoch + 1))
-            log_msg += " teacher_forcing_ratio:{0:.3f} enc-lr:{1:.6f} dec-lr:{1:.6f}".format(
-                teacher_forcing_ratio, lrs[0], lrs[1]
+            log_msg += " tf_ratio:{0:.3f} enc-lr:{1:.6f} dec-lr:{1:.6f}".format(
+                tf_ratio, lrs[0], lrs[1]
             )
             # vid = video_ids[0]
             # log_msg += '\n[vid {}]:\nWE: {}\nGT: {}'.format(vid, predicted_sentences[vid], self.ground_truth['valid'][vid])

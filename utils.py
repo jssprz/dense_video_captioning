@@ -174,26 +174,28 @@ def bow_vectors(caps, vocab_len, norm=False, eos=0):
         return vecs / torch.sum(vecs, dim=1)
 
 
-def get_tf_ratio(trainer_config, epoch):
+def get_tf_ratio(tf_config, epoch):
     # determine teacher_forcing_ratio according to the convergence_speed_factor and current epoch
-    if trainer_config.tf_strategy == "teacher-forcing":
-        tf_config = trainer_config.tf_config
-        k = tf_config.tf_speed_factor
+    if tf_config.tf_strategy == "classic":
+        k = tf_config.classic_config.speed_factor
+        min_ratio = tf_config.classic_config.min_ratio
 
         # inverse sigmoid decay
-        return max(0.6, k / (k + np.exp(epoch / k)))
+        return max(min_ratio, k / (k + np.exp(epoch / k)))
     return 0
 
 
 def get_trainer_str(config):
     crit_config = config.criterion_config
+    tf_config = config.tf_config
     return (
-        f"{config.dataset_name} B-{config.batch_size}.lr-{config.optimizer_config.learning_rate}.{config.optimizer_config.optimizer_name}"
+        f"{config.dataset_name} B{config.batch_size}.lr{config.optimizer_config.learning_rate}.{config.optimizer_config.optimizer_name}"
         f"{get_rl_strategy_str(crit_config)}"
-        f".closs-{crit_config.captioning_loss}-{crit_config.captioning_loss_reduction}"
-        f".ploss-{crit_config.programer_loss}-{crit_config.programer_loss_reduction}"
-        f".tagloss-{crit_config.tagging_loss}-{crit_config.tagging_loss_reduction}"
-        f".iloss-{crit_config.intervals_loss}-{crit_config.intervals_loss_reduction}"
+        f"{get_tf_strategy_str(tf_config)}"
+        f".capL-{crit_config.captioning_loss}-{crit_config.captioning_loss_reduction}"
+        f".posL-{crit_config.programer_loss}-{crit_config.programer_loss_reduction}"
+        f".tagL-{crit_config.tagging_loss}-{crit_config.tagging_loss_reduction}"
+        f".intL-{crit_config.intervals_loss}-{crit_config.intervals_loss_reduction}"
     )
 
 
@@ -203,6 +205,15 @@ def get_rl_strategy_str(config):
         result += f"-{config.mixer_config.step_0_epochs}"
     elif config.rl_strategy == "reinforce":
         result += f"-{config.reinforce_config.step_0_epochs}"
+    else:
+        pass
+    return result
+
+
+def get_tf_strategy_str(config):
+    result = f".tf-{config.tf_strategy}"
+    if config.tf_strategy == "classic":
+        result += f"-{config.classic_config.speed_factor}-{config.classic_config.min_ratio}"
     else:
         pass
     return result
