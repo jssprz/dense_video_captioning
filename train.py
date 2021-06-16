@@ -24,6 +24,7 @@ from utils import (
     load_texts,
     evaluate_from_tokens,
     densecap_evaluate_from_tokens,
+    get_tf_ratio,
     get_trainer_str,
     get_dense_captioner_str,
     get_sem_tagger_str,
@@ -191,7 +192,8 @@ class DenseVideo2TextTrainer(Trainer):
 
         # Optimizer
         print("\nInitializing the Optimizer...")
-        if self.trainer_config.optimizer_config.optimizer_name == "Adagrad":
+        opt_conf = self.trainer_config.optimizer_config
+        if opt_conf.optimizer_name == "Adagrad":
             self.optimizer = optim.Adagrad(
                 [
                     {"params": self.dense_captioner.mm_enc.parameters()},
@@ -205,52 +207,37 @@ class DenseVideo2TextTrainer(Trainer):
         else:
             self.optimizer = optim.Adam(
                 [
-                    {
-                        "params": self.dense_captioner.mm_enc.parameters(),
-                        "lr": self.trainer_config.optimizer_config.programmer_lr,
-                    },
-                    {
-                        "params": self.dense_captioner.proposal_enc.parameters(),
-                        "lr": self.trainer_config.optimizer_config.proposals_lr,
-                    },
-                    {
-                        "params": self.dense_captioner.embedding.parameters(),
-                        "lr": self.trainer_config.optimizer_config.programmer_lr,
-                    },
-                    {
-                        "params": self.dense_captioner.rnn_cell.parameters(),
-                        "lr": self.trainer_config.optimizer_config.programmer_lr,
-                    },
-                    {
-                        "params": self.dense_captioner.fc.parameters(),
-                        "lr": self.trainer_config.optimizer_config.programmer_lr,
-                    },
+                    {"params": self.dense_captioner.mm_enc.parameters(), "lr": opt_conf.programmer_lr,},
+                    {"params": self.dense_captioner.proposal_enc.parameters(), "lr": opt_conf.proposals_lr,},
+                    {"params": self.dense_captioner.embedding.parameters(), "lr": opt_conf.programmer_lr,},
+                    {"params": self.dense_captioner.rnn_cell.parameters(), "lr": opt_conf.programmer_lr,},
+                    {"params": self.dense_captioner.fc.parameters(), "lr": opt_conf.programmer_lr,},
                     # {
                     #     "params": self.dense_captioner.clip_captioner.avscn_dec.parameters(),
-                    #     "lr": self.trainer_config.optimizer_config.captioning_lr,
+                    #     "lr": opt_conf.captioning_lr,
                     # },
                     # {
                     #     "params": self.dense_captioner.clip_captioner.semsynan_dec.parameters(),
-                    #     "lr": self.trainer_config.optimizer_config.captioning_lr,
+                    #     "lr": opt_conf.captioning_lr,
                     # },
                     # {
                     #     "params": self.dense_captioner.clip_captioner.encoder.sem_model.parameters(),
-                    #     "lr": self.trainer_config.optimizer_config.sem_enc_lr,
+                    #     "lr": opt_conf.sem_enc_lr,
                     # },
                     # {
                     #     "params": self.dense_captioner.clip_captioner.encoder.syn_model.parameters(),
-                    #     "lr": self.trainer_config.optimizer_config.syn_enc_lr,
+                    #     "lr": opt_conf.syn_enc_lr,
                     # },
                 ],
-                lr=self.trainer_config.optimizer_config.learning_rate,
+                lr=opt_conf.learning_rate,
             )  # , weight_decay=.0001)
 
         # learning-rate decay scheduler
-        lambda1 = lambda epoch: self.trainer_config.lr_decay_factor ** (epoch // 40)
-        lambda2 = lambda epoch: self.trainer_config.lr_decay_factor ** (epoch // 40)
-        lambda3 = lambda epoch: self.trainer_config.lr_decay_factor ** (epoch // 40)
-        lambda4 = lambda epoch: self.trainer_config.lr_decay_factor ** (epoch // 40)
-        lambda5 = lambda epoch: self.trainer_config.lr_decay_factor ** (epoch // 40)
+        lambda1 = lambda epoch: opt_conf.lr_decay_factor ** (epoch // opt_conf.programmer_lr_decay_epochs)
+        lambda2 = lambda epoch: opt_conf.lr_decay_factor ** (epoch // opt_conf.programmer_lr_decay_epochs)
+        lambda3 = lambda epoch: opt_conf.lr_decay_factor ** (epoch // opt_conf.programmer_lr_decay_epochs)
+        lambda4 = lambda epoch: opt_conf.lr_decay_factor ** (epoch // opt_conf.programmer_lr_decay_epochs)
+        lambda5 = lambda epoch: opt_conf.lr_decay_factor ** (epoch // opt_conf.programmer_lr_decay_epochs)
         # lambda6 = lambda epoch: self.trainer_config.lr_decay_factor ** (epoch // 40)
         # lambda7 = lambda epoch: self.trainer_config.lr_decay_factor ** (epoch // 40)
         # lambda8 = lambda epoch: self.trainer_config.lr_decay_factor ** (epoch // 40)
@@ -634,6 +621,7 @@ class DenseVideo2TextTrainer(Trainer):
                 max_cap=self.max_words,
                 max_chunks=self.avg_truncation,
             )  # the maximum value of start pointers is lower than the max_prog to be generated
+            self.logger.info(f"proposals count: {proposals_count}")
 
             if "val" in phase:
                 gt_caps_count = gt_caps_count.to(self.device)
@@ -641,7 +629,6 @@ class DenseVideo2TextTrainer(Trainer):
 
             # Evaluate the loss function
             self.logger.info("loss computation....")
-            # import ipdb; ipdb.set_trace() # BREAKPOINT
             (loss, prog_loss, _, _, _, proposals_loss, iou_reward,) = self.criterion(
                 gt_captions=None,  # gt_captions,
                 gt_cap_lens=None,  # gt_cap_lens,
@@ -851,12 +838,9 @@ class DenseVideo2TextTrainer(Trainer):
             if epoch == self.trainer_config.resume_config.unfreeze_at:
                 self.dense_captioner.unfreeze()
 
-            # determine teacher_forcing_ratio according to the convergence_speed_factor and current epoch
-            k = self.trainer_config.convergence_speed_factor
-            # inverse sigmoid decay
-            teacher_forcing_ratio = max(0.6, k / (k + np.exp(epoch / k)))
+            teacher_forcing_ratio = get_tf_ratio(self.trainer_config, epoch)
             self.writer.add_scalar("programmer/teacher_forcing_ratio", teacher_forcing_ratio, epoch)
-
+            
             loss_phases = {"train": 0, "val_1": 0}
             for phase in ["train", "val_1"]:
                 # prepare gradients of the model according to the phase to be performed

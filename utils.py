@@ -174,6 +174,17 @@ def bow_vectors(caps, vocab_len, norm=False, eos=0):
         return vecs / torch.sum(vecs, dim=1)
 
 
+def get_tf_ratio(trainer_config, epoch):
+    # determine teacher_forcing_ratio according to the convergence_speed_factor and current epoch
+    if trainer_config.tf_strategy == "teacher-forcing":
+        tf_config = trainer_config.tf_config
+        k = tf_config.tf_speed_factor
+
+        # inverse sigmoid decay
+        return max(0.6, k / (k + np.exp(epoch / k)))
+    return 0
+
+
 def get_trainer_str(config):
     crit_config = config.criterion_config
     return (
@@ -185,11 +196,12 @@ def get_trainer_str(config):
         f".iloss-{crit_config.intervals_loss}-{crit_config.intervals_loss_reduction}"
     )
 
+
 def get_rl_strategy_str(config):
     result = f".rl-{config.rl_strategy}"
-    if config.rl_strategy == 'mixer':
+    if config.rl_strategy == "mixer":
         result += f"-{config.mixer_config.step_0_epochs}"
-    elif config.rl_strategy =='reinforce':
+    elif config.rl_strategy == "reinforce":
         result += f"-{config.reinforce_config.step_0_epochs}"
     else:
         pass
