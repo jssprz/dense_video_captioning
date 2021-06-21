@@ -601,6 +601,7 @@ class DenseVideo2TextTrainer(Trainer):
         # gt_cap_lens = gt_cap_lens.to(self.device)
         # gt_prog_len = gt_prog_len.to(self.device)
         # gt_proposals = gt_proposals.to(self.device)
+        gt_caps_count = gt_caps_count.to(self.device)
 
         self.optimizer.zero_grad()
 
@@ -634,9 +635,9 @@ class DenseVideo2TextTrainer(Trainer):
                 max_chunks=self.avg_truncation,
             )  # the maximum value of start pointers is lower than the max_prog to be generated
 
-            if "val" in phase:
-                gt_caps_count = gt_caps_count.to(self.device)
-                gt_caps_count = torch.min(gt_caps_count, caps_count)
+            # if "val" in phase:
+            #     gt_caps_count = gt_caps_count.to(self.device)
+            #     gt_caps_count = torch.min(gt_caps_count, caps_count)
 
             # Evaluate the loss function
             self.logger.info("loss computation....")

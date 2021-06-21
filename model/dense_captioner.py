@@ -501,7 +501,7 @@ class DenseCaptioner(nn.Module):
         # condition for finishing the process, according if we are training or testing
         # if self.training:
         # iterate at least prog_len steps, generating at least a caption for each video
-        condition = lambda i: i < prog_len  # or torch.any(caps_count < 1)
+        condition = lambda i: i < prog_len and not torch.all(caps_count >= gt_caps_count) # or torch.any(caps_count < 1)
 
         # initialize result tensors according to the sizes of ground truth
         captions = torch.zeros_like(gt_captions)
