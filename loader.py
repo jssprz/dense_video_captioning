@@ -82,7 +82,7 @@ class DenseCaptioningDataset(Dataset):
                 self.vfps[index],
                 self.intervals[index],
                 self.caps_count[index],
-                self.captions[index],
+                # self.captions[index],
                 # self.caps_sem_enc[index],
                 # self.pos[index],
                 # self.upos[index],

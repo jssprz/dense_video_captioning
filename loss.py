@@ -166,7 +166,7 @@ class DenseCaptioningLoss(nn.Module):
     ):
         # bs, _, _, caps_vocab_size = pred_captions.size()
         # pos_vocab_size = pred_pos_seq.size(3)
-        bs, _, progs_vocab_size = pred_program.size()
+        bs, _, _ = pred_proposals.size()
 
         # TODO: compute gt flatten in the Dataset for removing it from here
 
@@ -176,8 +176,8 @@ class DenseCaptioningLoss(nn.Module):
             #     l1.append(pred_captions[n, i, : gt_cap_lens[n, i]].reshape(-1, caps_vocab_size))
             #     l2.append(gt_captions[n, i, : gt_cap_lens[n, i]].flatten())
 
-            l7.append(pred_proposals[n, : gt_proposals_count[n], :])
-            l8.append(gt_proposals[n, : gt_proposals_count[n], :])
+            l7.append(pred_proposals[n, : gt_caps_count[n], :])
+            l8.append(gt_proposals[n, : gt_caps_count[n], :])
 
         # if len(l1):
         #     # captioning loss
@@ -189,34 +189,34 @@ class DenseCaptioningLoss(nn.Module):
         #     cap_loss = torch.tensor(float("inf"))
 
         # programmer loss
-        if truncate_prog_at is not None:
-            # (bs*truncate_prog_at x progs_vocab_size)
-            pred_program = pred_program[:, :truncate_prog_at].reshape(-1, progs_vocab_size)
+        # if truncate_prog_at is not None:
+        #     # (bs*truncate_prog_at x progs_vocab_size)
+        #     pred_program = pred_program[:, :truncate_prog_at].reshape(-1, progs_vocab_size)
 
-            # (bs*truncate_prog_at)
-            gt_program = gt_program[:, :truncate_prog_at].flatten()
+        #     # (bs*truncate_prog_at)
+        #     gt_program = gt_program[:, :truncate_prog_at].flatten()
 
-            # (bs)
-            gt_prog_len = torch.tensor([truncate_prog_at] * bs)
-        else:
-            # straighten the output program (removing the part of the pad) and then flatten it
-            # (total_len_of_programs x progs_vocab_size)
-            pred_program = torch.cat([pred_program[n, : gt_prog_len[n]] for n in range(bs)], dim=0)
+        #     # (bs)
+        #     gt_prog_len = torch.tensor([truncate_prog_at] * bs)
+        # else:
+        #     # straighten the output program (removing the part of the pad) and then flatten it
+        #     # (total_len_of_programs x progs_vocab_size)
+        #     pred_program = torch.cat([pred_program[n, : gt_prog_len[n]] for n in range(bs)], dim=0)
 
-            # straighten the target captions (remove the part of the pad) and then flatten it
-            # (total_len_of_programs)
-            gt_program = torch.cat([gt_program[n, : gt_prog_len[n]] for n in range(bs)], dim=0)
+        #     # straighten the target captions (remove the part of the pad) and then flatten it
+        #     # (total_len_of_programs)
+        #     gt_program = torch.cat([gt_program[n, : gt_prog_len[n]] for n in range(bs)], dim=0)
 
-        iou_reward = temp_iou(pred_intervals, gt_intervals, gt_caps_count)
+        # iou_reward = temp_iou(pred_intervals, gt_intervals, gt_caps_count)
 
-        reinforce, reinforce_from = get_reinforce_strategy(self.config, epoch, gt_prog_len)
-        if reinforce and self.config.programer_use_iou_reward:
-            # length-weighted + reward (mixer or not)
-            prog_loss = self.programer_loss(pred_program, gt_program, gt_prog_len, reinforce_from, iou_reward)
-        else:
-            # length-weighted
-            prog_loss = self.programer_loss(pred_program, gt_program, gt_prog_len, None)
-            # prog_loss = self.programer_loss(pred_program, gt_program)  # CELoss
+        # reinforce, reinforce_from = get_reinforce_strategy(self.config, epoch, gt_prog_len)
+        # if reinforce and self.config.programer_use_iou_reward:
+        #     # length-weighted + reward (mixer or not)
+        #     prog_loss = self.programer_loss(pred_program, gt_program, gt_prog_len, reinforce_from, iou_reward)
+        # else:
+        #     # length-weighted
+        #     prog_loss = self.programer_loss(pred_program, gt_program, gt_prog_len, None)
+        #     # prog_loss = self.programer_loss(pred_program, gt_program)  # CELoss
 
         # event proposals loss
         pred_proposals = torch.cat(l7)
@@ -232,14 +232,14 @@ class DenseCaptioningLoss(nn.Module):
         # print(cap_loss.requires_grad, prog_loss.requires_grad, iou_loss.requires_grad)
         # losses = torch.tensor([cap_loss, prog_loss])
         # loss = torch.sum(self.comb_weights * losses)
-        loss = prog_loss + proposals_loss
+        loss = proposals_loss
 
         return (
             loss,
-            prog_loss,
+            None,  # prog_loss,
             None,  # cap_loss,
             None,  # sem_enc_loss,
             None,  # pos_loss,
             proposals_loss,
-            iou_reward.mean(),
+            None,  # iou_reward.mean(),
         )
