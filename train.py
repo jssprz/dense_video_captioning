@@ -252,6 +252,7 @@ class DenseVideo2TextTrainer(Trainer):
             config=trainer_config.criterion_config,
             c_max_len=self.max_words,
             p_max_len=self.max_prog,
+            proposal_pos_weights=self.proposal_pos_weights,
             device=self.device,
         )
 
@@ -362,8 +363,14 @@ class DenseVideo2TextTrainer(Trainer):
         for i in range(intervals.size(0)):
             for j in range(caps_count[i]):
                 mask[i, int(intervals[i, j, 0]) : int(intervals[i, j, 1]), result[i, j]] = 1
+        pos_samples = mask.sum(dim=0).sum(dim=0)
+        neg_samples = (1-mask).sum(dim=0).sum(dim=0)
+        print("count of positive examples per cluster: ", pos_samples)
+        print("count of negative examples per cluster: ", neg_samples)
 
-        return mask, proposals
+        proposal_pos_weights = neg_samples/pos_samples
+
+        return mask, proposals, proposal_pos_weights
 
     def __init_dense_loader(self):
         print("Initializing data loaders...")
@@ -394,7 +401,7 @@ class DenseVideo2TextTrainer(Trainer):
         # caps_sem_enc_t = self.__get_sem_enc(freq_words, caps, upos)
 
         # determine the ground truth for event masking
-        event_mask_t, event_proposals = self.__get_interval_mask(
+        event_mask_t, event_proposals, self.proposal_pos_weights = self.__get_interval_mask(
             intervals_t, caps_count_t, max_num_chunks=self.trainer_config.max_num_chunks, num_estimates=16384,
         )
         self.num_proposals = len(event_proposals) + 1
@@ -450,7 +457,7 @@ class DenseVideo2TextTrainer(Trainer):
         # caps_sem_enc_t = self.__get_sem_enc(freq_words, caps, upos)
 
         # determine the ground truth for event masking
-        event_mask_t, _ = self.__get_interval_mask(
+        event_mask_t, _, _ = self.__get_interval_mask(
             intervals_t, caps_count_t, max_num_chunks=self.trainer_config.max_num_chunks, proposals=event_proposals,
         )
 

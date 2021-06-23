@@ -71,7 +71,7 @@ def get_reinforce_strategy(criterion_config, epoch, gt_prog_len):
 
 
 class DenseCaptioningLoss(nn.Module):
-    def __init__(self, config, c_max_len, p_max_len, device):
+    def __init__(self, config, c_max_len, p_max_len, proposal_pos_weights, device):
         super(DenseCaptioningLoss, self).__init__()
 
         self.config = config
@@ -125,7 +125,7 @@ class DenseCaptioningLoss(nn.Module):
         # proposals_loss function
         if config.proposals_loss == "BXE":
             # self.proposals_loss = nn.BCELoss(reduction=config.proposals_loss_reduction)
-            self.proposals_loss = nn.BCEWithLogitsLoss(reduction=config.proposals_loss_reduction)
+            self.proposals_loss = nn.BCEWithLogitsLoss(pos_weight=proposal_pos_weights, reduction=config.proposals_loss_reduction)
         else:
             raise ValueError(
                 f"wrong value '{config.proposals_loss}' for the proposals_loss option in Loss configuration"
