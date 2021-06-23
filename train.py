@@ -401,9 +401,10 @@ class DenseVideo2TextTrainer(Trainer):
         # caps_sem_enc_t = self.__get_sem_enc(freq_words, caps, upos)
 
         # determine the ground truth for event masking
-        event_mask_t, event_proposals, self.proposal_pos_weights = self.__get_interval_mask(
+        event_mask_t, event_proposals, proposal_pos_weights = self.__get_interval_mask(
             intervals_t, caps_count_t, max_num_chunks=self.trainer_config.max_num_chunks, num_estimates=16384,
         )
+        self.proposal_pos_weights = proposal_pos_weights.to(self.device)
         self.num_proposals = len(event_proposals) + 1
 
         train_loader = get_dense_loader(
