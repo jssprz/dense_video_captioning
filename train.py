@@ -551,7 +551,7 @@ class DenseVideo2TextTrainer(Trainer):
             # self.logger.info(f"tuncated gt caps count: {gt_caps_count}")
 
             # truncate gt batch tensors before move them to the device
-            max_caps = torch.max(gt_caps_count)
+            # max_caps = torch.max(gt_caps_count)
             # gt_program = gt_program[:, :truncate_prog_at].to(self.device)
             # gt_captions = gt_captions[:, :max_caps].to(self.device)
             # gt_caps_sem_enc = gt_caps_sem_enc[:, :max_caps].to(self.device)
@@ -559,11 +559,6 @@ class DenseVideo2TextTrainer(Trainer):
             # gt_intervals = gt_intervals[:, :max_caps].to(self.device)
             # gt_upos = gt_upos[:, :max_caps].to(self.device)
             # gt_proposals = gt_proposals[:, :int(torch.max(gt_intervals[:,gt_caps_count-1,0]))].to(self.device)
-
-            # filter proposals
-            gt_proposals = torch.cat(
-                [gt_proposals[:, gt_intervals[:, i, 0].long()] for i in range(max_caps)], dim=1
-            ).to(self.device)
 
             # self.avg_truncation += truncate_prog_at
             self.avg_caps += int(torch.mean(gt_caps_count.float()))
@@ -575,14 +570,9 @@ class DenseVideo2TextTrainer(Trainer):
             # gt_captions = gt_captions[:, : self.avg_caps].to(self.device)
             # gt_caps_sem_enc = gt_caps_sem_enc[:, : self.avg_caps].to(self.device)
             # gt_pos = gt_pos[:, : self.avg_caps].to(self.device)
-            gt_intervals = gt_intervals[:, : self.avg_caps].to(self.device)
+            # gt_intervals = gt_intervals[:, : self.avg_caps].to(self.device)
             # gt_upos = gt_upos[:, :self.avg_caps].to(self.device)
             # gt_proposals = gt_proposals[:, :int(torch.max(gt_intervals[:,self.avg_caps,0]))].to(self.device)
-
-            # filter proposals
-            gt_proposals = torch.cat(
-                [gt_proposals[:, gt_intervals[:, i, 0].long()] for i in range(self.avg_caps)], dim=1
-            ).to(self.device)
 
             # move the gt batch tensors to device for computing the generalization loss
             gt_program = gt_program.to(self.device)
@@ -594,6 +584,12 @@ class DenseVideo2TextTrainer(Trainer):
             # gt_proposals = gt_proposals.to(self.device)
         else:
             pass
+
+        # filter proposals
+        max_caps = torch.max(gt_caps_count)
+        gt_proposals = torch.cat(
+            [gt_proposals[:, gt_intervals[:, i, 0].long()] for i in range(max_caps)], dim=1
+        ).to(self.device)
 
         # gt_cap_lens = gt_cap_lens.to(self.device)
         # gt_prog_len = gt_prog_len.to(self.device)
@@ -946,7 +942,7 @@ class DenseVideo2TextTrainer(Trainer):
                     self.writer.add_scalar(f"proposals/{phase}-iters-proposals_loss", proposals_loss, iteration)
                     # self.writer.add_scalar(f"proposals/{phase}-iters-iou_reward", iou_reward, iteration)
 
-                    total_time_iters += time.perf_counter() - time_start_iter
+                    total_time_iters += (time.perf_counter() - time_start_iter)
                     lrs = self.lr_scheduler.get_last_lr()
                     log_msg = (
                         "\rEpoch:{0:03d} Phase:{1:6s} Iter:{2:04d}/{3:04d} avg-Time:{4:.1f}s lr:{5:.6f} Loss:{6:9.4f}"
