@@ -598,6 +598,7 @@ class DenseVideo2TextTrainer(Trainer):
         # gt_cap_lens = gt_cap_lens.to(self.device)
         # gt_prog_len = gt_prog_len.to(self.device)
         # gt_proposals = gt_proposals.to(self.device)
+        gt_caps_count = gt_caps_count.to(self.device)
 
         self.optimizer.zero_grad()
 
