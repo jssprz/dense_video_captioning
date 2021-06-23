@@ -565,10 +565,10 @@ class DenseCaptioner(nn.Module):
         while condition(seq_pos):
             #    if seq_pos > prog_len - 5:
             #        import ipdb; ipdb.set_trace() # BREAKPOINT
-            use_teacher_forcing = (random.random() < teacher_forcing_p) or seq_pos == 0
             self.__step__(seq_pos, v_feats)
 
             if self.training:
+                use_teacher_forcing = (random.random() < teacher_forcing_p) or seq_pos == 0
                 if use_teacher_forcing:
                     # use the correct instructions,
                     # (batch_size)
