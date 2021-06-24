@@ -1,3 +1,4 @@
+from operator import neg
 import os
 import sys
 import argparse
@@ -24,6 +25,7 @@ from utils import (
     load_texts,
     evaluate_from_tokens,
     densecap_evaluate_from_tokens,
+    get_tf_ratio,
     get_trainer_str,
     get_dense_captioner_str,
     get_sem_tagger_str,
@@ -41,10 +43,11 @@ from loader import extract_split_data_from_corpus, data2tensors, get_dense_loade
 from model.dense_captioner import DenseCaptioner
 from loss import DenseCaptioningLoss
 
-import resource
+if os.name == "posix":
+    import resource
 
-rlimit = resource.getrlimit(resource.RLIMIT_NOFILE)
-resource.setrlimit(resource.RLIMIT_NOFILE, (4096, rlimit[1]))
+    rlimit = resource.getrlimit(resource.RLIMIT_NOFILE)
+    resource.setrlimit(resource.RLIMIT_NOFILE, (4096, rlimit[1]))
 
 
 class Trainer:
@@ -196,7 +199,8 @@ class DenseVideo2TextTrainer(Trainer):
 
         # Optimizer
         print("\nInitializing the Optimizer...")
-        if self.trainer_config.optimizer_config.optimizer_name == "Adagrad":
+        opt_conf = self.trainer_config.optimizer_config
+        if opt_conf.optimizer_name == "Adagrad":
             self.optimizer = optim.Adagrad(
                 [
                     {"params": self.dense_captioner.mm_enc.parameters()},
@@ -228,33 +232,33 @@ class DenseVideo2TextTrainer(Trainer):
                     # },
                     {
                         "params": self.dense_captioner.clip_captioner.avscn_dec.parameters(),
-                        "lr": self.trainer_config.optimizer_config.captioning_lr,
+                        "lr": opt_conf.captioning_lr,
                     },
                     {
                         "params": self.dense_captioner.clip_captioner.semsynan_dec.parameters(),
-                        "lr": self.trainer_config.optimizer_config.captioning_lr,
+                        "lr": opt_conf.captioning_lr,
                     },
                     {
                         "params": self.dense_captioner.clip_captioner.encoder.sem_model.parameters(),
-                        "lr": self.trainer_config.optimizer_config.sem_enc_lr,
+                        "lr": opt_conf.sem_enc_lr,
                     },
                     {
                         "params": self.dense_captioner.clip_captioner.encoder.syn_model.parameters(),
-                        "lr": self.trainer_config.optimizer_config.syn_enc_lr,
+                        "lr": opt_conf.syn_enc_lr,
                     },
                 ],
-                lr=self.trainer_config.optimizer_config.learning_rate,
+                lr=opt_conf.learning_rate,
             )  # , weight_decay=.0001)
 
         # learning-rate decay scheduler
-        # lambda1 = lambda epoch: self.trainer_config.lr_decay_factor ** (epoch // 40)
-        # lambda2 = lambda epoch: self.trainer_config.lr_decay_factor ** (epoch // 40)
-        # lambda3 = lambda epoch: self.trainer_config.lr_decay_factor ** (epoch // 40)
-        # lambda4 = lambda epoch: self.trainer_config.lr_decay_factor ** (epoch // 40)
-        lambda5 = lambda epoch: self.trainer_config.lr_decay_factor ** (epoch // 40)
-        lambda6 = lambda epoch: self.trainer_config.lr_decay_factor ** (epoch // 40)
-        lambda7 = lambda epoch: self.trainer_config.lr_decay_factor ** (epoch // 40)
-        lambda8 = lambda epoch: self.trainer_config.lr_decay_factor ** (epoch // 40)
+        # lambda1 = lambda epoch: opt_conf.lr_decay_factor ** (epoch // 40)
+        # lambda2 = lambda epoch: opt_conf.lr_decay_factor ** (epoch // 40)
+        # lambda3 = lambda epoch: opt_conf.lr_decay_factor ** (epoch // 40)
+        # lambda4 = lambda epoch: opt_conf.lr_decay_factor ** (epoch // 40)
+        lambda5 = lambda epoch: opt_conf.lr_decay_factor ** (epoch // 40)
+        lambda6 = lambda epoch: opt_conf.lr_decay_factor ** (epoch // 40)
+        lambda7 = lambda epoch: opt_conf.lr_decay_factor ** (epoch // 40)
+        lambda8 = lambda epoch: opt_conf.lr_decay_factor ** (epoch // 40)
 
         self.lr_scheduler = optim.lr_scheduler.LambdaLR(
             optimizer=self.optimizer, lr_lambda=[lambda5, lambda6, lambda7, lambda8,],
@@ -265,6 +269,7 @@ class DenseVideo2TextTrainer(Trainer):
             config=trainer_config.criterion_config,
             c_max_len=self.max_words,
             p_max_len=self.max_prog,
+            sem_enc_pos_weights=self.sem_enc_pos_weights,
             device=self.device,
         )
 
@@ -336,7 +341,14 @@ class DenseVideo2TextTrainer(Trainer):
                     if uidx in uidxs_to_use and widx in freq_words:
                         X[i, j, freq_words.index(widx)] = 1
 
-        return X
+        pos_samples = X.sum(dim=0).sum(dim=0)
+        neg_samples = (1 - X).sum(dim=1)
+        neg_samples[neg_samples == self.max_caps] = 0
+        neg_samples = neg_samples.sum(dim=0)
+
+        pos_weights = neg_samples / pos_samples
+
+        return X, pos_weights
 
     def __get_interval_mask(self, intervals, caps_count, max_num_chunks, proposals=None, num_estimates=128):
         aux = intervals[:, :, 1] - intervals[:, :, 0]
@@ -404,7 +416,8 @@ class DenseVideo2TextTrainer(Trainer):
         )
 
         # determine the ground truth for semantic enconding
-        caps_sem_enc_t = self.__get_sem_enc(freq_words, caps, upos)
+        caps_sem_enc_t, sem_enc_pos_weights = self.__get_sem_enc(freq_words, caps, upos)
+        self.sem_enc_pos_weights = sem_enc_pos_weights.to(self.device)
 
         # determine the ground truth for event masking
         # event_mask_t, event_proposals = self.__get_interval_mask(
@@ -460,7 +473,7 @@ class DenseVideo2TextTrainer(Trainer):
         # self.last_interval_end = max(self.last_interval_end, torch.max(intervals_t.view(-1, 2)[:,1]))
 
         # determine the ground truth for semantic enconding
-        caps_sem_enc_t = self.__get_sem_enc(freq_words, caps, upos)
+        caps_sem_enc_t, _ = self.__get_sem_enc(freq_words, caps, upos)
 
         # determine the ground truth for event masking
         # event_mask_t, _ = self.__get_interval_mask(
@@ -850,11 +863,8 @@ class DenseVideo2TextTrainer(Trainer):
             if epoch == self.trainer_config.resume_config.unfreeze_at:
                 self.dense_captioner.unfreeze()
 
-            # determine teacher_forcing_ratio according to the convergence_speed_factor and current epoch
-            k = self.trainer_config.convergence_speed_factor
-            # inverse sigmoid decay
-            teacher_forcing_ratio = max(0.6, k / (k + np.exp(epoch / k)))
-            self.writer.add_scalar("captioning/teacher_forcing_ratio", teacher_forcing_ratio, epoch)
+            tf_ratio = get_tf_ratio(self.trainer_config.tf_config, epoch)
+            self.writer.add_scalar("captioning/teacher_forcing_ratio", tf_ratio, epoch)
 
             loss_phases = {"train": 0, "val_1": 0}
             for phase in ["train", "val_1"]:
@@ -936,7 +946,7 @@ class DenseVideo2TextTrainer(Trainer):
                         gt_prog,
                         gt_prog_len,
                         # gt_proposals,
-                        teacher_forcing_ratio,
+                        tf_ratio,
                         phase,
                         use_rl=use_rl,
                     )
@@ -971,8 +981,21 @@ class DenseVideo2TextTrainer(Trainer):
                     if iteration % self.trainer_config.step_to_print == 0:
                         self.logger.info(f"PRED INTERV: {intervals[0, :gt_caps_count[0]]}")
                         self.logger.info(f"GT INTERV: {gt_intervals[0, :gt_caps_count[0]]}")
+                        self.logger.info(
+                            "TSTAMP INERV: {}".format(
+                                [
+                                    (
+                                        (tstamps[0, interval[0]] / (fps[0] ** 2)).item(),
+                                        (tstamps[0, interval[1]] / (fps[0] ** 2)).item(),
+                                    )
+                                    for interval in gt_intervals[0, : gt_caps_count[0]].long()
+                                ]
+                            )
+                        )
 
                     if phase != "train":
+                        self.logger.info(f"REF INTERV: {self.ref_densecaps[phase][str(vidx[0].item())]['timestamps']}")
+
                         # save programs and the videos' idx for computing evaluation metrics
                         # all_programs.append(program.to("cpu"))
                         all_prog_ids.append(vidx)
@@ -1068,9 +1091,7 @@ class DenseVideo2TextTrainer(Trainer):
                 log_msg += " {0}-avg-loss:{1:9.4f}".format(k, v)
             for k, v in time_phases.items():
                 log_msg += " {0}-avg-time:{1:9.3f}h".format(k, (v / 3600) / (epoch + 1))
-            log_msg += " teacher_forcing_ratio:{0:.3f} enc-lr:{1:.6f} dec-lr:{1:.6f}".format(
-                teacher_forcing_ratio, lrs[0], lrs[1]
-            )
+            log_msg += " teacher_forcing_ratio:{0:.3f} enc-lr:{1:.6f} dec-lr:{1:.6f}".format(tf_ratio, lrs[0], lrs[1])
             # vid = video_ids[0]
             # log_msg += '\n[vid {}]:\nWE: {}\nGT: {}'.format(vid, predicted_sentences[vid], self.ground_truth['valid'][vid])
 

@@ -60,7 +60,7 @@ def temp_iou(pred_intervals, gt_intervals, gt_count):
 
 
 class DenseCaptioningLoss(nn.Module):
-    def __init__(self, config, c_max_len, p_max_len, device):
+    def __init__(self, config, c_max_len, p_max_len, sem_enc_pos_weights, device):
         super(DenseCaptioningLoss, self).__init__()
 
         self.config = config
@@ -70,7 +70,7 @@ class DenseCaptioningLoss(nn.Module):
             self.captioning_loss = nn.MSELoss(reduction=config.captioning_loss_reduction)
         elif config.captioning_loss == "NLL":
             self.captioning_loss = nn.NLLLoss(reduction=config.captioning_loss_reduction)
-        elif config.captioning_loss == "SentLen":
+        elif config.captioning_loss == "LenW":
             self.captioning_loss = SentenceLengthLoss(
                 c_max_len,
                 class_weights=None,
@@ -89,7 +89,7 @@ class DenseCaptioningLoss(nn.Module):
             self.programer_loss = nn.MSELoss(reduction=config.programer_loss_reduction)
         elif config.programer_loss == "NLL":
             self.programer_loss = nn.NLLLoss(reduction=config.programer_loss_reduction)
-        elif config.programer_loss == "SentLen":
+        elif config.programer_loss == "LenW":
             class_weights = torch.tensor(config.programer_loss_weights).to(device)
             self.programer_loss = SentenceLengthLoss(
                 p_max_len,
@@ -106,13 +106,13 @@ class DenseCaptioningLoss(nn.Module):
             )
 
         # semantic_tagging_loss function
-        if config.tagging_loss == "BXEnt":
-            self.tagging_loss = nn.BCELoss(reduction=config.tagging_loss_reduction)
+        if config.tagging_loss == "BXE":
+            self.tagging_loss = nn.BCEWithLogitsLoss(pos_weight=sem_enc_pos_weights, reduction=config.tagging_loss_reduction)
         else:
             raise ValueError(f"wrong value '{config.tagging_loss}' for the tagging_loss option in Loss configuration")
 
         # proposals_loss function
-        if config.proposals_loss == "BXEnt":
+        if config.proposals_loss == "BXE":
             # self.proposals_loss = nn.BCELoss(reduction=config.proposals_loss_reduction)
             self.proposals_loss = nn.BCEWithLogitsLoss(reduction=config.proposals_loss_reduction)
         else:

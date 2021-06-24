@@ -27,6 +27,5 @@ class TaggerMLP(nn.Module):
 
     def forward(self, v_globals):
         logits = self.mlp(v_globals)
-        probs = torch.sigmoid(logits)
-        return logits, probs
+        return logits
 

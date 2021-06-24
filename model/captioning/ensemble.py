@@ -37,7 +37,7 @@ class ClipEncoder(nn.Module):
         self, v_feats, v_global, teacher_forcing_p, gt_pos=None, max_words=None
     ):
         v_feats_cat = torch.cat(v_feats, dim=2)
-        sem_enc = self.sem_model(v_global)[1]
+        sem_enc = self.sem_model(v_global)
         syn_enc = self.syn_model(
             encoding=[v_feats_cat, v_global, sem_enc],
             v_feats=v_feats,
