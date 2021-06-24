@@ -243,9 +243,7 @@ class DenseVideo2TextTrainer(Trainer):
         # lambda8 = lambda epoch: self.trainer_config.lr_decay_factor ** (epoch // 40)
         # lambda9 = lambda epoch: self.trainer_config.lr_decay_factor ** (epoch // 40)
 
-        self.lr_scheduler = optim.lr_scheduler.LambdaLR(
-            optimizer=self.optimizer, lr_lambda=[lambda1],
-        )
+        self.lr_scheduler = optim.lr_scheduler.LambdaLR(optimizer=self.optimizer, lr_lambda=[lambda1],)
 
         # Loss function
         self.criterion = DenseCaptioningLoss(
@@ -358,11 +356,13 @@ class DenseVideo2TextTrainer(Trainer):
         print("count of intervals per cluster: ", clusters_sizes)
         print("total intervals grouped: ", sum(clusters_sizes))
 
-        # compute mask
+        # compute mask for complete intervals
         # mask = torch.zeros(intervals.size(0), max_num_chunks, len(proposals) + 1)
         # for i in range(intervals.size(0)):
         #     for j in range(caps_count[i]):
         #         mask[i, int(intervals[i, j, 0]) : int(intervals[i, j, 1]), result[i, j]] = 1
+
+        # compute mask for the positions where an interval starts only
         mask = torch.zeros(intervals.size(0), max_num_chunks, len(proposals) + 1)
         for i in range(intervals.size(0)):
             for j in range(caps_count[i]):
@@ -370,14 +370,18 @@ class DenseVideo2TextTrainer(Trainer):
                 for k in range(j):
                     if int(intervals[i, k, 1]) >= int(intervals[i, j, 0]):
                         mask[i, int(intervals[i, j, 0]), result[i, k]] = 1
+
+        # determine the number of positive examples per cluster
         pos_samples = mask.sum(dim=1).sum(dim=0)
-        neg_samples = (1-mask).sum(dim=1)
-        neg_samples[neg_samples==max_num_chunks]=0
-        neg_samples = neg_samples.sum(dim=0)
         print("count of positive examples per cluster: ", pos_samples)
+
+        # determine the number of negative examples per cluster
+        neg_samples = (1 - mask).sum(dim=1)
+        neg_samples[neg_samples == max_num_chunks] = 0  # descarting frames where any interval starts
+        neg_samples = neg_samples.sum(dim=0)
         print("count of negative examples per cluster: ", neg_samples)
 
-        proposal_pos_weights = neg_samples/pos_samples
+        proposal_pos_weights = neg_samples / pos_samples
 
         return mask, proposals, proposal_pos_weights
 
@@ -604,9 +608,9 @@ class DenseVideo2TextTrainer(Trainer):
 
         # filter proposals
         max_caps = torch.max(gt_caps_count)
-        gt_proposals = torch.cat(
-            [gt_proposals[:, gt_intervals[:, i, 0].long()] for i in range(max_caps)], dim=1
-        ).to(self.device)
+        gt_proposals = torch.cat([gt_proposals[:, gt_intervals[:, i, 0].long()] for i in range(max_caps)], dim=1).to(
+            self.device
+        )
 
         # gt_cap_lens = gt_cap_lens.to(self.device)
         # gt_prog_len = gt_prog_len.to(self.device)
@@ -617,18 +621,7 @@ class DenseVideo2TextTrainer(Trainer):
 
         with torch.set_grad_enabled(phase == "train"):
             self.logger.info("model computation....")
-            (
-                prog_logits,
-                _,
-                _,
-                _,
-                _,
-                _,
-                _,
-                caps_count,
-                proposals_logits,
-                _,
-            ) = self.dense_captioner(
+            (prog_logits, _, _, _, _, _, _, caps_count, proposals_logits, _,) = self.dense_captioner(
                 v_feats=video_feats,
                 feats_count=None,  # feats_count,
                 prog_len=int(gt_prog_len.max()),  # truncate_prog_at,
@@ -959,7 +952,7 @@ class DenseVideo2TextTrainer(Trainer):
                     self.writer.add_scalar(f"proposals/{phase}-iters-proposals_loss", proposals_loss, iteration)
                     # self.writer.add_scalar(f"proposals/{phase}-iters-iou_reward", iou_reward, iteration)
 
-                    total_time_iters += (time.perf_counter() - time_start_iter)
+                    total_time_iters += time.perf_counter() - time_start_iter
                     lrs = self.lr_scheduler.get_last_lr()
                     log_msg = (
                         "\rEpoch:{0:03d} Phase:{1:6s} Iter:{2:04d}/{3:04d} avg-Time:{4:.1f}s lr:{5:.6f} Loss:{6:9.4f}"
@@ -1146,7 +1139,7 @@ class DenseVideo2TextTrainer(Trainer):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train tha model for dense video captioning")
     parser.add_argument(
-        "-comp"
+        "-comp",
         "--component",
         type=str,
         default="",
