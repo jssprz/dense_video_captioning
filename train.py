@@ -895,6 +895,7 @@ class DenseVideo2TextTrainer(Trainer):
                 all_caps_ids = []
                 all_intervals = []
                 all_tstamps = []
+                all_f_counts = []
                 for (
                     i,
                     (
@@ -999,6 +1000,7 @@ class DenseVideo2TextTrainer(Trainer):
                         # save programs and the videos' idx for computing evaluation metrics
                         # all_programs.append(program.to("cpu"))
                         all_prog_ids.append(vidx)
+                        all_f_counts.append(feats_count)
 
                         # save captions and the captions' idx for computing evaluation metrics (only the first caps_count captions are evaluated)
                         all_captions.append((captions.to("cpu"), caps_count.to("cpu"), gt_caps_count.to("cpu"),))
@@ -1046,6 +1048,7 @@ class DenseVideo2TextTrainer(Trainer):
                         self.caps_vocab,
                         all_prog_ids,
                         all_tstamps,
+                        all_f_counts,
                         all_intervals,
                         all_captions,
                         self.ref_densecaps[phase],

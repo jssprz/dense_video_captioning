@@ -72,13 +72,13 @@ def evaluate_from_tokens(vocab, outputs, gt_idxs, ground_truth, until_eos=True):
     return metrics_results, pred_sentences
 
 
-def densecap_evaluate_from_tokens(vocab, vidxs, tstamps, pred_intervals, pred_caps, ground_truth_dict):
+def densecap_evaluate_from_tokens(vocab, vidxs, tstamps, f_counts, pred_intervals, pred_caps, ground_truth_dict):
     prediction = {}
-    for batch_pred_intervals, batch_pred_caps, batch_vidxs, batch_tstamps in zip(
-        pred_intervals, pred_caps, vidxs, tstamps
+    for batch_pred_intervals, batch_pred_caps, batch_vidxs, batch_tstamps, batch_f_counts in zip(
+        pred_intervals, pred_caps, vidxs, tstamps, f_counts
     ):
-        for v_intervals, v_caps, v_caps_count, vidx, v_tstamps in zip(
-            batch_pred_intervals, batch_pred_caps[0], batch_pred_caps[1], batch_vidxs, batch_tstamps,
+        for v_intervals, v_caps, v_caps_count, vidx, v_tstamps, v_f_count in zip(
+            batch_pred_intervals, batch_pred_caps[0], batch_pred_caps[1], batch_vidxs, batch_tstamps, batch_f_counts
         ):
             # prediction[str(vidx.item())] = [{'sentence': 'hola a todos', 'timestamp': [0., 1.]}, {'sentence': 'hello world', 'timestamp': [1., 2.]}]
 
@@ -86,7 +86,7 @@ def densecap_evaluate_from_tokens(vocab, vidxs, tstamps, pred_intervals, pred_ca
                 prediction[str(vidx.item())] = [
                     {
                         "sentence": decode_from_tokens(vocab, pred_tokens),
-                        "timestamp": [v_tstamps[int(i[0])], v_tstamps[int(i[1])]],
+                        "timestamp": [v_tstamps[int(i[0])], v_tstamps[int(min(i[1], v_f_count))]],
                     }
                     for i, pred_tokens in zip(v_intervals[:v_caps_count], v_caps[:v_caps_count])
                 ]
