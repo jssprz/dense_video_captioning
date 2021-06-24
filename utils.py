@@ -86,7 +86,7 @@ def densecap_evaluate_from_tokens(vocab, vidxs, tstamps, f_counts, pred_interval
                 prediction[str(vidx.item())] = [
                     {
                         "sentence": decode_from_tokens(vocab, pred_tokens),
-                        "timestamp": [v_tstamps[int(i[0])], v_tstamps[int(min(i[1], v_f_count))]],
+                        "timestamp": [v_tstamps[int(i[0])], v_tstamps[int(min(i[1], v_f_count-1))]],
                     }
                     for i, pred_tokens in zip(v_intervals[:v_caps_count], v_caps[:v_caps_count])
                 ]

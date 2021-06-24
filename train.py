@@ -987,7 +987,7 @@ class DenseVideo2TextTrainer(Trainer):
                                 [
                                     (
                                         (tstamps[0, interval[0]] / (fps[0] ** 2)).item(),
-                                        (tstamps[0, min(interval[1], feats_count[0])] / (fps[0] ** 2)).item(),
+                                        (tstamps[0, min(interval[1], feats_count[0]-1)] / (fps[0] ** 2)).item(),
                                     )
                                     for interval in gt_intervals[0, : gt_caps_count[0]].long()
                                 ]
