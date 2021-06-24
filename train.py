@@ -359,12 +359,21 @@ class DenseVideo2TextTrainer(Trainer):
         print("total intervals grouped: ", sum(clusters_sizes))
 
         # compute mask
+        # mask = torch.zeros(intervals.size(0), max_num_chunks, len(proposals) + 1)
+        # for i in range(intervals.size(0)):
+        #     for j in range(caps_count[i]):
+        #         mask[i, int(intervals[i, j, 0]) : int(intervals[i, j, 1]), result[i, j]] = 1
         mask = torch.zeros(intervals.size(0), max_num_chunks, len(proposals) + 1)
         for i in range(intervals.size(0)):
             for j in range(caps_count[i]):
-                mask[i, int(intervals[i, j, 0]) : int(intervals[i, j, 1]), result[i, j]] = 1
-        pos_samples = mask.sum(dim=0).sum(dim=0)
-        neg_samples = (1-mask).sum(dim=0).sum(dim=0)
+                mask[i, int(intervals[i, j, 0]), result[i, j]] = 1
+                for k in range(j):
+                    if int(intervals[i, k, 1]) >= int(intervals[i, j, 0]):
+                        mask[i, int(intervals[i, j, 0]), result[i, k]] = 1
+        pos_samples = mask.sum(dim=1).sum(dim=0)
+        neg_samples = (1-mask).sum(dim=1)
+        neg_samples[neg_samples==max_num_chunks]=0
+        neg_samples = neg_samples.sum(dim=0)
         print("count of positive examples per cluster: ", pos_samples)
         print("count of negative examples per cluster: ", neg_samples)
 
