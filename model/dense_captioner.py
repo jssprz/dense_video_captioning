@@ -527,6 +527,7 @@ class DenseCaptioner(nn.Module):
         # self.c = torch.zeros(bs, self.h_size).to(device)
         # self.prev_match = torch.zeros(bs, self.mm_size).to(device)
         self.proposal_h = torch.zeros(bs, self.proposal_rnn_h_size).to(device)
+        self.proposal_c = torch.zeros(bs, self.proposal_rnn_h_size).to(device)
 
         # precomputing weights related to the prev_match only
         # self.rnn_cell.precompute_dots_4_m(self.prev_match, var_drop_p=0.1)
@@ -594,7 +595,9 @@ class DenseCaptioner(nn.Module):
 
             if len(vidx_to_skip) > 0:
                 v_p = torch.cat([f[vidx_to_skip, self.p[vidx_to_skip], :] for f in v_feats], dim=1)
-                self.proposal_h[vidx_to_skip, :] = self.proposal_rnn(v_p)
+                self.proposal_h[vidx_to_skip, :], self.proposal_c[vidx_to_skip, :] = self.proposal_rnn(
+                    v_p, (self.proposal_h[vidx_to_skip, :], self.proposal_c[vidx_to_skip, :])
+                )
                 # with torch.no_grad():
                 #     v_p = torch.cat([f[vidx_to_skip, self.p[vidx_to_skip], :] for f in v_feats], dim=1)
                 #     proposals = self.proposal_enc(v_p)[0]
@@ -609,7 +612,9 @@ class DenseCaptioner(nn.Module):
                 # clip_feats = [feats[vidx_to_describe, :, :] for feats in self.v_p_q_feats]
                 # clip_global = self.v_p_q_pool[vidx_to_describe, :]
 
-                proposals_logits[vidx_to_describe, caps_count[vidx_to_describe], :] = self.proposal_enc(self.proposal_h[vidx_to_describe])[0]
+                proposals_logits[vidx_to_describe, caps_count[vidx_to_describe], :] = self.proposal_enc(
+                    self.proposal_h[vidx_to_describe]
+                )[0]
 
                 # TODO: get ground-truth captions according to the position of p and q and the interval associated to each gt caption
 
