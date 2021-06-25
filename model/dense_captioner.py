@@ -29,10 +29,10 @@ class VNCLCell(nn.Module):
         self.var_dropout = var_dropout
 
         # for composing v1 and v2
-        self.V_i = get_init_weights((v_size*2, vh_size))
-        self.V_f = get_init_weights((v_size*2, vh_size))
-        self.V_o = get_init_weights((v_size*2, vh_size))
-        self.V_c = get_init_weights((v_size*2, vh_size))
+        self.V_i = get_init_weights((v_size * 2, vh_size))
+        self.V_f = get_init_weights((v_size * 2, vh_size))
+        self.V_o = get_init_weights((v_size * 2, vh_size))
+        self.V_c = get_init_weights((v_size * 2, vh_size))
         # self.V_i_1 = get_init_weights((v_size, vh_size))
         # self.V_f_1 = get_init_weights((v_size, vh_size))
         # self.V_o_1 = get_init_weights((v_size, vh_size))
@@ -174,7 +174,7 @@ class VNCLCell(nn.Module):
         keep_prob = 1 - var_drop_p
 
         v = torch.cat((v1, v2), dim=-1)
-        
+
         if self.var_dropout == "per-gate":
             # use a distinct mask for each gate
             h_i = self.__dropout(prev_h, keep_prob, "h_i")
@@ -358,6 +358,7 @@ class DenseCaptioner(nn.Module):
         self.embedding_size = config.embedding_size
         self.h_size = config.h_size
         self.mm_size = mm_config.out_size
+        self.proposal_rnn_h_size = proposals_tagger_config.rnn_h_size
         self.num_proposals = num_proposals
 
         self.progs_vocab_size = len(progs_vocab)
@@ -389,8 +390,13 @@ class DenseCaptioner(nn.Module):
         # )
 
         # self.proposal_fc = nn.Linear(in_features=config.cnn_feats_size+config.c3d_feats_size, out_features=num_proposals)
+
+        self.proposal_rnn = nn.LSTMCell(
+            input_size=config.cnn_feats_size + config.c3d_feats_size, hidden_size=proposals_tagger_config.rnn_h_size,
+        )
+
         self.proposal_enc = TaggerMLP(
-            v_size=config.cnn_feats_size + config.c3d_feats_size,
+            v_size=proposals_tagger_config.rnn_h_size,
             out_size=num_proposals,
             h_sizes=proposals_tagger_config.h_sizes,
             in_drop_p=proposals_tagger_config.in_drop_p,
@@ -520,15 +526,17 @@ class DenseCaptioner(nn.Module):
         # self.h = torch.zeros(bs, self.h_size).to(device)
         # self.c = torch.zeros(bs, self.h_size).to(device)
         # self.prev_match = torch.zeros(bs, self.mm_size).to(device)
-        # self.current_proposals = torch.zeros(bs, self.num_proposals).to(device)
+        self.proposal_h = torch.zeros(bs, self.proposal_rnn_h_size).to(device)
 
         # precomputing weights related to the prev_match only
         # self.rnn_cell.precompute_dots_4_m(self.prev_match, var_drop_p=0.1)
 
         # condition for finishing the process, according if we are training or testing
         # if self.training:
-            # iterate at least prog_len steps, generating at least a caption for each video
-        condition = lambda i: i < prog_len and not torch.all(caps_count >= gt_caps_count) # or torch.any(caps_count < 1)
+        # iterate at least prog_len steps, generating at least a caption for each video
+        condition = lambda i: i < prog_len and not torch.all(
+            caps_count >= gt_caps_count
+        )  # or torch.any(caps_count < 1)
 
         # initialize result tensors according to the sizes of ground truth
         # captions = torch.zeros_like(gt_captions)
@@ -568,6 +576,7 @@ class DenseCaptioner(nn.Module):
 
             # updates the p and q positions for each video, and save sub-batch of video clips to be described
             vidx_to_describe = []
+            vidx_to_skip = []
             for i, a in enumerate(a_id):
                 if a == 0:
                     # skip
@@ -583,13 +592,15 @@ class DenseCaptioner(nn.Module):
                     # intervals[i, caps_count[i], 0] = self.p[i]
                     # intervals[i, caps_count[i], 1] = self.q[i]
 
-            # if len(vidx_to_skip) > 0:
-            #     with torch.no_grad():
-            #         v_p = torch.cat([f[vidx_to_skip, self.p[vidx_to_skip], :] for f in v_feats], dim=1)
-            #         proposals = self.proposal_enc(v_p)[0]
-            #         self.current_proposals = torch.clone(self.current_proposals)
-            #         self.current_proposals[vidx_to_skip, :] = proposals
-            #     # proposals_logits[vidx_to_skip, self.p[vidx_to_skip], :] = proposals
+            if len(vidx_to_skip) > 0:
+                v_p = torch.cat([f[vidx_to_skip, self.p[vidx_to_skip], :] for f in v_feats], dim=1)
+                self.proposal_h[vidx_to_skip, :] = self.proposal_rnn(v_p)
+                # with torch.no_grad():
+                #     v_p = torch.cat([f[vidx_to_skip, self.p[vidx_to_skip], :] for f in v_feats], dim=1)
+                #     proposals = self.proposal_enc(v_p)[0]
+                #     self.current_proposals = torch.clone(self.current_proposals)
+                #     self.current_proposals[vidx_to_skip, :] = proposals
+                # # proposals_logits[vidx_to_skip, self.p[vidx_to_skip], :] = proposals
 
             # generate a caption from the current video-clips saved in the sub-batch
             if len(vidx_to_describe) > 0:
@@ -598,8 +609,7 @@ class DenseCaptioner(nn.Module):
                 # clip_feats = [feats[vidx_to_describe, :, :] for feats in self.v_p_q_feats]
                 # clip_global = self.v_p_q_pool[vidx_to_describe, :]
 
-                v_p = torch.cat([f[vidx_to_describe, self.p[vidx_to_describe], :] for f in v_feats], dim=1)
-                proposals_logits[vidx_to_describe, caps_count[vidx_to_describe], :] = self.proposal_enc(v_p)[0]
+                proposals_logits[vidx_to_describe, caps_count[vidx_to_describe], :] = self.proposal_enc(self.proposal_h[vidx_to_describe])[0]
 
                 # TODO: get ground-truth captions according to the position of p and q and the interval associated to each gt caption
 
