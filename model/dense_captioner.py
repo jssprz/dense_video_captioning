@@ -593,11 +593,7 @@ class DenseCaptioner(nn.Module):
                     # intervals[i, caps_count[i], 0] = self.p[i]
                     # intervals[i, caps_count[i], 1] = self.q[i]
 
-            if len(vidx_to_skip) > 0:
-                v_p = torch.cat([f[vidx_to_skip, self.p[vidx_to_skip], :] for f in v_feats], dim=1)
-                self.proposal_h[vidx_to_skip, :], self.proposal_c[vidx_to_skip, :] = self.proposal_rnn(
-                    v_p, (self.proposal_h[vidx_to_skip, :], self.proposal_c[vidx_to_skip, :])
-                )
+            # if len(vidx_to_skip) > 0:
                 # with torch.no_grad():
                 #     v_p = torch.cat([f[vidx_to_skip, self.p[vidx_to_skip], :] for f in v_feats], dim=1)
                 #     proposals = self.proposal_enc(v_p)[0]
@@ -612,6 +608,10 @@ class DenseCaptioner(nn.Module):
                 # clip_feats = [feats[vidx_to_describe, :, :] for feats in self.v_p_q_feats]
                 # clip_global = self.v_p_q_pool[vidx_to_describe, :]
 
+                v_p = torch.cat([f[vidx_to_describe, self.p[vidx_to_describe], :] for f in v_feats], dim=1)
+                self.proposal_h[vidx_to_describe, :], self.proposal_c[vidx_to_describe, :] = self.proposal_rnn(
+                    v_p, (self.proposal_h[vidx_to_describe, :], self.proposal_c[vidx_to_describe, :])
+                )
                 proposals_logits[vidx_to_describe, caps_count[vidx_to_describe], :] = self.proposal_enc(
                     self.proposal_h[vidx_to_describe]
                 )[0]
