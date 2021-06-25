@@ -208,11 +208,7 @@ class DenseVideo2TextTrainer(Trainer):
             self.optimizer = optim.Adam(
                 [
                     # {"params": self.dense_captioner.mm_enc.parameters(), "lr": opt_conf.programmer_lr,},
-                    {
-                        "params": list(self.dense_captioner.proposal_enc.parameters())
-                        + list(self.dense_captioner.proposal_rnn.parameters()),
-                        "lr": opt_conf.proposals_lr,
-                    },
+                    {"params": self.dense_captioner.parameters(), "lr": opt_conf.proposals_lr,},
                     # {"params": self.dense_captioner.embedding.parameters(), "lr": opt_conf.programmer_lr,},
                     # {"params": self.dense_captioner.rnn_cell.parameters(), "lr": opt_conf.programmer_lr,},
                     # {"params": self.dense_captioner.fc.parameters(), "lr": opt_conf.programmer_lr,},
