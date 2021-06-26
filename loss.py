@@ -161,7 +161,8 @@ class DenseCaptioningLoss(nn.Module):
         pred_intervals,
         gt_proposals_s,
         gt_proposals_e,
-        pred_proposals,
+        pred_proposals_s,
+        pred_proposals_e,
         gt_caps_count,
         pred_caps_count,
         gt_proposals_count,
@@ -172,18 +173,21 @@ class DenseCaptioningLoss(nn.Module):
     ):
         # bs, _, _, caps_vocab_size = pred_captions.size()
         # pos_vocab_size = pred_pos_seq.size(3)
-        bs, _, _ = pred_proposals.size()
+        bs, _, _ = pred_proposals_s.size()
 
         # TODO: compute gt flatten in the Dataset for removing it from here
 
-        l7, l8 = [], []
+        l5, l6, l7, l8 = [], [], [], []
         for n in range(bs):
             # for i in range(gt_caps_count[n]):
             #     l1.append(pred_captions[n, i, : gt_cap_lens[n, i]].reshape(-1, caps_vocab_size))
             #     l2.append(gt_captions[n, i, : gt_cap_lens[n, i]].flatten())
 
-            l7.append(pred_proposals[n, : gt_caps_count[n], :])
-            l8.append(gt_proposals_s[n, : gt_caps_count[n], :])
+            l5.append(pred_proposals_s[n, : gt_caps_count[n], :])
+            l6.append(gt_proposals_s[n, : gt_caps_count[n], :])
+
+            l7.append(pred_proposals_e[n, : gt_caps_count[n], :])
+            l8.append(gt_proposals_e[n, : gt_caps_count[n], :])
 
         # if len(l1):
         #     # captioning loss
@@ -225,9 +229,13 @@ class DenseCaptioningLoss(nn.Module):
         #     # prog_loss = self.programer_loss(pred_program, gt_program)  # CELoss
 
         # event proposals loss
-        pred_proposals = torch.cat(l7)
-        gt_proposals = torch.cat(l8)
-        proposals_loss = self.s_proposals_loss(pred_proposals, gt_proposals)
+        s_pred_proposals = torch.cat(l5)
+        s_gt_proposals = torch.cat(l6)
+        s_proposals_loss = self.s_proposals_loss(s_pred_proposals, s_gt_proposals)
+
+        e_pred_proposals = torch.cat(l7)
+        e_gt_proposals = torch.cat(l8)
+        e_proposals_loss = self.e_proposals_loss(e_pred_proposals, e_gt_proposals)
 
         # tIoU loss of intervals
         # iou_loss = self.intervals_loss(pred_intervals, gt_intervals)
@@ -238,7 +246,7 @@ class DenseCaptioningLoss(nn.Module):
         # print(cap_loss.requires_grad, prog_loss.requires_grad, iou_loss.requires_grad)
         # losses = torch.tensor([cap_loss, prog_loss])
         # loss = torch.sum(self.comb_weights * losses)
-        loss = proposals_loss
+        loss = s_proposals_loss + e_proposals_loss
 
         return (
             loss,
@@ -246,6 +254,7 @@ class DenseCaptioningLoss(nn.Module):
             None,  # cap_loss,
             None,  # sem_enc_loss,
             None,  # pos_loss,
-            proposals_loss,
+            s_proposals_loss,
+            e_proposals_loss,
             None,  # iou_reward.mean(),
         )

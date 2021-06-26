@@ -92,7 +92,7 @@ class Trainer:
         print("Process id {}".format(os.getpid()), "\n")
 
         if trainer_config.device == "gpu" and torch.cuda.is_available():
-            freer_gpu_id = 0#get_freer_gpu()
+            freer_gpu_id = 0  # get_freer_gpu()
             self.device = torch.device("cuda:{}".format(freer_gpu_id))
             torch.cuda.empty_cache()
             self.logger.info("Running on cuda:{} device".format(freer_gpu_id))
@@ -435,7 +435,7 @@ class DenseVideo2TextTrainer(Trainer):
             s_proposal_pos_weights,
             e_proposal_pos_weights,
         ) = self.__get_interval_mask(
-            intervals_t, caps_count_t, max_num_chunks=self.trainer_config.max_num_chunks, num_estimates=16384,
+            intervals_t, caps_count_t, max_num_chunks=self.trainer_config.max_num_chunks, num_estimates=10#16384,
         )
         self.s_proposal_pos_weights = s_proposal_pos_weights.to(self.device)
         self.e_proposal_pos_weights = e_proposal_pos_weights.to(self.device)
@@ -636,7 +636,11 @@ class DenseVideo2TextTrainer(Trainer):
             [gt_proposals_s[:, gt_intervals[:, i, 0].long()] for i in range(max_caps)], dim=1
         ).to(self.device)
         gt_proposals_e = torch.cat(
-            [gt_proposals_e[:, gt_intervals[:, i, 1].clamp(max=gt_proposals_e.size(1)-1).long()] for i in range(max_caps)], dim=1
+            [
+                gt_proposals_e[:, gt_intervals[:, i, 1].clamp(max=gt_proposals_e.size(1) - 1).long()]
+                for i in range(max_caps)
+            ],
+            dim=1,
         ).to(self.device)
         # gt_cap_lens = gt_cap_lens.to(self.device)
         # gt_prog_len = gt_prog_len.to(self.device)
@@ -647,7 +651,19 @@ class DenseVideo2TextTrainer(Trainer):
 
         with torch.set_grad_enabled(phase == "train"):
             self.logger.info("model computation....")
-            (prog_logits, _, _, _, _, _, _, caps_count, proposals_logits, _,) = self.dense_captioner(
+            (
+                prog_logits,
+                _,
+                _,
+                _,
+                _,
+                _,
+                _,
+                caps_count,
+                s_proposals_logits,
+                e_proposals_logits,
+                _,
+            ) = self.dense_captioner(
                 v_feats=video_feats,
                 feats_count=feats_count,
                 prog_len=int(gt_prog_len.max()),  # truncate_prog_at,
@@ -673,7 +689,7 @@ class DenseVideo2TextTrainer(Trainer):
 
             # Evaluate the loss function
             self.logger.info("loss computation....")
-            (loss, prog_loss, _, _, _, proposals_loss, iou_reward,) = self.criterion(
+            (loss, prog_loss, _, _, _, s_proposals_loss, e_proposals_loss, _,) = self.criterion(
                 gt_captions=None,  # gt_captions,
                 gt_cap_lens=None,  # gt_cap_lens,
                 pred_captions=None,
@@ -688,7 +704,8 @@ class DenseVideo2TextTrainer(Trainer):
                 pred_intervals=None,  # intervals,
                 gt_proposals_s=gt_proposals_s,
                 gt_proposals_e=gt_proposals_e,
-                pred_proposals=proposals_logits,
+                pred_proposals_s=s_proposals_logits,
+                pred_proposals_e=e_proposals_logits,
                 gt_caps_count=gt_caps_count,
                 pred_caps_count=None,
                 gt_proposals_count=None,  # proposals_count,
@@ -714,7 +731,8 @@ class DenseVideo2TextTrainer(Trainer):
             None,  # cap_loss,
             None,  # sem_enc_loss,
             None,  # pos_loss,
-            proposals_loss,
+            s_proposals_loss,
+            e_proposals_loss,
             None,  # iou_reward,
             None,  # program,
             None,  # captions,
@@ -949,7 +967,8 @@ class DenseVideo2TextTrainer(Trainer):
                         _,
                         _,
                         _,
-                        proposals_loss,
+                        s_proposals_loss,
+                        e_proposals_loss,
                         _,
                         program,
                         _,
@@ -979,14 +998,15 @@ class DenseVideo2TextTrainer(Trainer):
                     rl_strategy = self.trainer_config.criterion_config.rl_strategy
                     self.writer.add_scalar(f"proposals/{phase}-iters-{rl_strategy}-loss", loss, iteration)
                     # self.writer.add_scalar(f"proposals/{phase}-iters-{rl_strategy}-prog_loss", prog_loss, iteration)
-                    self.writer.add_scalar(f"proposals/{phase}-iters-proposals_loss", proposals_loss, iteration)
+                    self.writer.add_scalar(f"proposals/{phase}-iters-s_proposals_loss", s_proposals_loss, iteration)
+                    self.writer.add_scalar(f"proposals/{phase}-iters-e_proposals_loss", e_proposals_loss, iteration)
                     # self.writer.add_scalar(f"proposals/{phase}-iters-iou_reward", iou_reward, iteration)
 
                     total_time_iters += time.perf_counter() - time_start_iter
                     lrs = self.lr_scheduler.get_last_lr()
                     log_msg = (
                         "\rEpoch:{0:03d} Phase:{1:6s} Iter:{2:04d}/{3:04d} avg-Time:{4:.1f}s lr:{5:.6f} Loss:{6:9.4f}"
-                        "\t[proposals-loss:{7:9.4f}]"
+                        "\t[s-proposals-loss:{7:9.4f} e-proposals-loss:{8:9.4f}]"
                     ).format(
                         epoch,
                         phase,
@@ -997,7 +1017,8 @@ class DenseVideo2TextTrainer(Trainer):
                         # rl_strategy,
                         loss.item(),
                         # prog_loss.item(),
-                        proposals_loss.item(),
+                        s_proposals_loss.item(),
+                        e_proposals_loss.item(),
                         # iou_reward.item(),
                     )
                     self.logger.info(log_msg)
