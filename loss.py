@@ -71,7 +71,7 @@ def get_reinforce_strategy(criterion_config, epoch, gt_prog_len):
 
 
 class DenseCaptioningLoss(nn.Module):
-    def __init__(self, config, c_max_len, p_max_len, proposal_pos_weights, device):
+    def __init__(self, config, c_max_len, p_max_len, s_proposal_pos_weights, e_proposal_pos_weights, device):
         super(DenseCaptioningLoss, self).__init__()
 
         self.config = config
@@ -125,7 +125,12 @@ class DenseCaptioningLoss(nn.Module):
         # proposals_loss function
         if config.proposals_loss == "BXE":
             # self.proposals_loss = nn.BCELoss(reduction=config.proposals_loss_reduction)
-            self.proposals_loss = nn.BCEWithLogitsLoss(pos_weight=proposal_pos_weights, reduction=config.proposals_loss_reduction)
+            self.s_proposals_loss = nn.BCEWithLogitsLoss(
+                pos_weight=s_proposal_pos_weights, reduction=config.proposals_loss_reduction
+            )
+            self.e_proposals_loss = nn.BCEWithLogitsLoss(
+                pos_weight=e_proposal_pos_weights, reduction=config.proposals_loss_reduction
+            )
         else:
             raise ValueError(
                 f"wrong value '{config.proposals_loss}' for the proposals_loss option in Loss configuration"
@@ -154,7 +159,8 @@ class DenseCaptioningLoss(nn.Module):
         pred_program,
         gt_intervals,
         pred_intervals,
-        gt_proposals,
+        gt_proposals_s,
+        gt_proposals_e,
         pred_proposals,
         gt_caps_count,
         pred_caps_count,
@@ -177,7 +183,7 @@ class DenseCaptioningLoss(nn.Module):
             #     l2.append(gt_captions[n, i, : gt_cap_lens[n, i]].flatten())
 
             l7.append(pred_proposals[n, : gt_caps_count[n], :])
-            l8.append(gt_proposals[n, : gt_caps_count[n], :])
+            l8.append(gt_proposals_s[n, : gt_caps_count[n], :])
 
         # if len(l1):
         #     # captioning loss

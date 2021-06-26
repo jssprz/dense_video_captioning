@@ -250,7 +250,8 @@ class DenseVideo2TextTrainer(Trainer):
             config=trainer_config.criterion_config,
             c_max_len=self.max_words,
             p_max_len=self.max_prog,
-            proposal_pos_weights=self.proposal_pos_weights,
+            s_proposal_pos_weights=self.s_proposal_pos_weights,
+            e_proposal_pos_weights=self.e_proposal_pos_weights,
             device=self.device,
         )
 
@@ -362,28 +363,41 @@ class DenseVideo2TextTrainer(Trainer):
         #     for j in range(caps_count[i]):
         #         mask[i, int(intervals[i, j, 0]) : int(intervals[i, j, 1]), result[i, j]] = 1
 
-        # compute mask for the positions where an interval starts only
-        mask = torch.zeros(intervals.size(0), max_num_chunks, len(proposals) + 1)
+        # compute masks for the positions where an interval starts or ends only
+        s_mask = torch.zeros(intervals.size(0), max_num_chunks, len(proposals) + 1)
+        e_mask = torch.zeros(intervals.size(0), max_num_chunks, len(proposals) + 1)
         for i in range(intervals.size(0)):
             for j in range(caps_count[i]):
-                mask[i, int(intervals[i, j, 0]), result[i, j]] = 1
+                s_mask[i, int(intervals[i, j, 0]), result[i, j]] = 1
+                e_mask[i, int(min(intervals[i, j, 1], max_num_chunks - 1)), result[i, j]] = 1
                 for k in range(j):
                     if int(intervals[i, k, 1]) >= int(intervals[i, j, 0]):
-                        mask[i, int(intervals[i, j, 0]), result[i, k]] = 1
+                        s_mask[i, int(intervals[i, j, 0]), result[i, k]] = 1
+                    if int(intervals[i, k, 1]) >= int(intervals[i, j, 1]):
+                        e_mask[i, int(min(intervals[i, j, 1], max_num_chunks - 1)), result[i, k]] = 1
 
         # determine the number of positive examples per cluster
-        pos_samples = mask.sum(dim=1).sum(dim=0)
-        print("count of positive examples per cluster: ", pos_samples)
+        s_pos_samples = s_mask.sum(dim=1).sum(dim=0)
+        e_pos_samples = e_mask.sum(dim=1).sum(dim=0)
+        print("count of positive examples per cluster (start positions): ", s_pos_samples)
+        print("count of positive examples per cluster (end positions): ", e_pos_samples)
 
         # determine the number of negative examples per cluster
-        neg_samples = (1 - mask).sum(dim=1)
-        neg_samples[neg_samples == max_num_chunks] = 0  # descarting frames where any interval starts
-        neg_samples = neg_samples.sum(dim=0)
-        print("count of negative examples per cluster: ", neg_samples)
+        s_neg_samples = (1 - s_mask).sum(dim=1)
+        s_neg_samples[s_neg_samples == max_num_chunks] = 0  # descarting frames where any interval starts
+        s_neg_samples = s_neg_samples.sum(dim=0)
 
-        proposal_pos_weights = neg_samples / pos_samples
+        e_neg_samples = (1 - e_mask).sum(dim=1)
+        e_neg_samples[e_neg_samples == max_num_chunks] = 0  # descarting frames where any interval starts
+        e_neg_samples = e_neg_samples.sum(dim=0)
 
-        return mask, proposals, proposal_pos_weights
+        print("count of negative examples per cluster (start positions): ", s_neg_samples)
+        print("count of negative examples per cluster (end positions): ", e_neg_samples)
+
+        s_proposal_pos_weights = s_neg_samples / s_pos_samples
+        e_proposal_pos_weights = e_neg_samples / e_pos_samples
+
+        return s_mask, e_mask, proposals, s_proposal_pos_weights, e_proposal_pos_weights
 
     def __init_dense_loader(self):
         print("Initializing data loaders...")
@@ -414,10 +428,17 @@ class DenseVideo2TextTrainer(Trainer):
         # caps_sem_enc_t = self.__get_sem_enc(freq_words, caps, upos)
 
         # determine the ground truth for event masking
-        event_mask_t, event_proposals, proposal_pos_weights = self.__get_interval_mask(
+        (
+            event_s_mask_t,
+            event_e_mask_t,
+            event_proposals,
+            s_proposal_pos_weights,
+            e_proposal_pos_weights,
+        ) = self.__get_interval_mask(
             intervals_t, caps_count_t, max_num_chunks=self.trainer_config.max_num_chunks, num_estimates=16384,
         )
-        self.proposal_pos_weights = proposal_pos_weights.to(self.device)
+        self.s_proposal_pos_weights = s_proposal_pos_weights.to(self.device)
+        self.e_proposal_pos_weights = e_proposal_pos_weights.to(self.device)
         self.num_proposals = len(event_proposals) + 1
 
         train_loader = get_dense_loader(
@@ -436,7 +457,8 @@ class DenseVideo2TextTrainer(Trainer):
             # cap_lens=cap_lens_t,
             progs=progs_t,
             prog_lens=prog_lens,
-            event_proposals=event_mask_t,
+            event_proposals_s=event_s_mask_t,
+            event_proposals_e=event_e_mask_t,
             batch_size=self.trainer_config.batch_size,
             train=True,
             num_workers=trainer_config.loader_num_workers,
@@ -471,7 +493,7 @@ class DenseVideo2TextTrainer(Trainer):
         # caps_sem_enc_t = self.__get_sem_enc(freq_words, caps, upos)
 
         # determine the ground truth for event masking
-        event_mask_t, _, _ = self.__get_interval_mask(
+        event_s_mask_t, event_e_mask_t, _, _, _ = self.__get_interval_mask(
             intervals_t, caps_count_t, max_num_chunks=self.trainer_config.max_num_chunks, proposals=event_proposals,
         )
 
@@ -491,7 +513,8 @@ class DenseVideo2TextTrainer(Trainer):
             # cap_lens=cap_lens_t,
             progs=progs_t,
             prog_lens=prog_lens,
-            event_proposals=event_mask_t,
+            event_proposals_s=event_s_mask_t,
+            event_proposals_e=event_e_mask_t,
             batch_size=self.trainer_config.batch_size * 3,
             train=False,
             num_workers=trainer_config.loader_num_workers,
@@ -526,7 +549,8 @@ class DenseVideo2TextTrainer(Trainer):
         # gt_cap_lens,
         gt_program,
         gt_prog_len,
-        gt_proposals,
+        gt_proposals_s,
+        gt_proposals_e,
         epoch,
         tf_ratio=0.5,
         phase="train",
@@ -608,10 +632,12 @@ class DenseVideo2TextTrainer(Trainer):
 
         # filter proposals
         max_caps = torch.max(gt_caps_count)
-        gt_proposals = torch.cat([gt_proposals[:, gt_intervals[:, i, 0].long()] for i in range(max_caps)], dim=1).to(
-            self.device
-        )
-
+        gt_proposals_s = torch.cat(
+            [gt_proposals_s[:, gt_intervals[:, i, 0].long()] for i in range(max_caps)], dim=1
+        ).to(self.device)
+        gt_proposals_e = torch.cat(
+            [gt_proposals_e[:, gt_intervals[:, i, 1].long()] for i in range(max_caps)], dim=1
+        ).to(self.device)
         # gt_cap_lens = gt_cap_lens.to(self.device)
         # gt_prog_len = gt_prog_len.to(self.device)
         # gt_proposals = gt_proposals.to(self.device)
@@ -632,7 +658,8 @@ class DenseVideo2TextTrainer(Trainer):
                 gt_sem_enc=None,  # gt_caps_sem_enc,
                 gt_pos=None,  # gt_pos,
                 gt_intervals=gt_intervals,
-                gt_proposals=gt_proposals,
+                gt_proposals_s=gt_proposals_s,
+                gt_proposals_e=gt_proposals_e,
                 max_prog=self.avg_truncation,  # max_prog=self.max_prog,
                 max_caps=self.avg_caps,  # max_caps=self.max_caps,
                 max_cap=self.max_words,
@@ -659,7 +686,8 @@ class DenseVideo2TextTrainer(Trainer):
                 pred_program=prog_logits,
                 gt_intervals=gt_intervals,
                 pred_intervals=None,  # intervals,
-                gt_proposals=gt_proposals,
+                gt_proposals_s=gt_proposals_s,
+                gt_proposals_e=gt_proposals_e,
                 pred_proposals=proposals_logits,
                 gt_caps_count=gt_caps_count,
                 pred_caps_count=None,
@@ -906,7 +934,8 @@ class DenseVideo2TextTrainer(Trainer):
                         # gt_cap_lens,
                         gt_prog,
                         gt_prog_len,
-                        gt_proposals,
+                        gt_proposals_s,
+                        gt_proposals_e,
                     ),
                 ) in enumerate(self.loaders[phase], start=1):
                     time_start_iter = time.perf_counter()
@@ -939,7 +968,8 @@ class DenseVideo2TextTrainer(Trainer):
                         # gt_cap_lens,
                         gt_prog,
                         gt_prog_len,
-                        gt_proposals,
+                        gt_proposals_s,
+                        gt_proposals_e,
                         epoch,
                         tf_ratio,
                         phase,

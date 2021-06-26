@@ -513,7 +513,8 @@ class DenseCaptioner(nn.Module):
         gt_sem_enc=None,
         gt_pos=None,
         gt_intervals=None,
-        gt_proposals=None,
+        gt_proposals_s=None,
+        gt_proposals_e=None,
         max_prog=None,
         max_caps=None,
         max_cap=None,
@@ -550,7 +551,7 @@ class DenseCaptioner(nn.Module):
         # caps_sem_enc = torch.zeros_like(gt_sem_enc)
         # pos_tags = torch.zeros_like(gt_pos)
         # intervals = torch.zeros_like(gt_intervals, dtype=torch.float)
-        proposals_logits = torch.zeros_like(gt_proposals)
+        proposals_logits = torch.zeros_like(gt_proposals_s)
         # proposals_logits = torch.zeros(bs, captions.size(1), gt_proposals.size(2))
         # else:
         #     # iterate until all pointers reach the end
@@ -601,7 +602,7 @@ class DenseCaptioner(nn.Module):
                     # intervals[i, caps_count[i], 1] = self.q[i]
 
             if len(vidx_to_skip) > 0:
-                v_p = torch.cat([f[vidx_to_skip, self.p[vidx_to_skip], :] for f in v_feats], dim=1)
+                v_p = torch.cat([f[vidx_to_skip, min(self.p[vidx_to_skip], feats_count[vidx_to_skip]), :] for f in v_feats], dim=1)
                 self.proposal_h_0[vidx_to_skip, :], self.proposal_c_0[vidx_to_skip, :] = self.proposal_rnn_0(
                     v_p, (self.proposal_h_0[vidx_to_skip, :], self.proposal_c_0[vidx_to_skip, :])
                 )
