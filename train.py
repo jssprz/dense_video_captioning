@@ -92,7 +92,7 @@ class Trainer:
         print("Process id {}".format(os.getpid()), "\n")
 
         if trainer_config.device == "gpu" and torch.cuda.is_available():
-            freer_gpu_id = get_freer_gpu()
+            freer_gpu_id = 0#get_freer_gpu()
             self.device = torch.device("cuda:{}".format(freer_gpu_id))
             torch.cuda.empty_cache()
             self.logger.info("Running on cuda:{} device".format(freer_gpu_id))
@@ -539,7 +539,7 @@ class DenseVideo2TextTrainer(Trainer):
     def __process_batch(
         self,
         video_feats,
-        # feats_count,
+        feats_count,
         gt_intervals,
         gt_caps_count,
         # gt_captions,
@@ -649,7 +649,7 @@ class DenseVideo2TextTrainer(Trainer):
             self.logger.info("model computation....")
             (prog_logits, _, _, _, _, _, _, caps_count, proposals_logits, _,) = self.dense_captioner(
                 v_feats=video_feats,
-                feats_count=None,  # feats_count,
+                feats_count=feats_count,
                 prog_len=int(gt_prog_len.max()),  # truncate_prog_at,
                 teacher_forcing_p=tf_ratio,
                 gt_program=gt_program,
@@ -958,7 +958,7 @@ class DenseVideo2TextTrainer(Trainer):
                         truncated_pos,
                     ) = self.__process_batch(
                         video_feats,
-                        # feats_count,
+                        feats_count,
                         gt_intervals,
                         gt_caps_count,
                         # gt_caps,
