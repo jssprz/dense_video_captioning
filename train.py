@@ -92,7 +92,7 @@ class Trainer:
         print("Process id {}".format(os.getpid()), "\n")
 
         if trainer_config.device == "gpu" and torch.cuda.is_available():
-            freer_gpu_id = 0  # get_freer_gpu()
+            freer_gpu_id = get_freer_gpu()
             self.device = torch.device("cuda:{}".format(freer_gpu_id))
             torch.cuda.empty_cache()
             self.logger.info("Running on cuda:{} device".format(freer_gpu_id))
@@ -435,7 +435,7 @@ class DenseVideo2TextTrainer(Trainer):
             s_proposal_pos_weights,
             e_proposal_pos_weights,
         ) = self.__get_interval_mask(
-            intervals_t, caps_count_t, max_num_chunks=self.trainer_config.max_num_chunks, num_estimates=10#16384,
+            intervals_t, caps_count_t, max_num_chunks=self.trainer_config.max_num_chunks, num_estimates=16384,
         )
         self.s_proposal_pos_weights = s_proposal_pos_weights.to(self.device)
         self.e_proposal_pos_weights = e_proposal_pos_weights.to(self.device)
