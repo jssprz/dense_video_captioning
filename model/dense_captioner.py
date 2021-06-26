@@ -570,7 +570,7 @@ class DenseCaptioner(nn.Module):
         # pos_tags = torch.zeros_like(gt_pos)
         # intervals = torch.zeros_like(gt_intervals, dtype=torch.float)
         s_proposals_logits = torch.zeros_like(gt_proposals_s)
-        e_proposals_logits = torch.zeros_like(gt_proposals_s)
+        e_proposals_logits = torch.zeros_like(gt_proposals_e)
         # proposals_logits = torch.zeros(bs, captions.size(1), gt_proposals.size(2))
         # else:
         #     # iterate until all pointers reach the end

@@ -375,6 +375,9 @@ class DenseVideo2TextTrainer(Trainer):
                         s_mask[i, int(intervals[i, j, 0]), result[i, k]] = 1
                     if int(intervals[i, k, 1]) >= int(intervals[i, j, 1]):
                         e_mask[i, int(min(intervals[i, j, 1], max_num_chunks - 1)), result[i, k]] = 1
+                for k in range(j+1, caps_count[i]):
+                    if int(intervals[i, k, 1]) >= int(intervals[i, j, 1]):
+                        e_mask[i, int(min(intervals[i, j, 1], max_num_chunks - 1)), result[i, k]] = 1
 
         # determine the number of positive examples per cluster
         s_pos_samples = s_mask.sum(dim=1).sum(dim=0)
