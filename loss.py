@@ -227,7 +227,7 @@ class DenseCaptioningLoss(nn.Module):
         # event proposals loss
         pred_proposals = torch.cat(l7)
         gt_proposals = torch.cat(l8)
-        proposals_loss = self.proposals_loss(pred_proposals, gt_proposals)
+        proposals_loss = self.s_proposals_loss(pred_proposals, gt_proposals)
 
         # tIoU loss of intervals
         # iou_loss = self.intervals_loss(pred_intervals, gt_intervals)

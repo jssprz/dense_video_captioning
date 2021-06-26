@@ -602,7 +602,7 @@ class DenseCaptioner(nn.Module):
                     # intervals[i, caps_count[i], 1] = self.q[i]
 
             if len(vidx_to_skip) > 0:
-                v_p = torch.cat([f[vidx_to_skip, min(self.p[vidx_to_skip], feats_count[vidx_to_skip]), :] for f in v_feats], dim=1)
+                v_p = torch.cat([f[vidx_to_skip, torch.min(self.p[vidx_to_skip], feats_count[vidx_to_skip]), :] for f in v_feats], dim=1)
                 self.proposal_h_0[vidx_to_skip, :], self.proposal_c_0[vidx_to_skip, :] = self.proposal_rnn_0(
                     v_p, (self.proposal_h_0[vidx_to_skip, :], self.proposal_c_0[vidx_to_skip, :])
                 )

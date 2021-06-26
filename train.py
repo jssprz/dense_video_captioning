@@ -636,7 +636,7 @@ class DenseVideo2TextTrainer(Trainer):
             [gt_proposals_s[:, gt_intervals[:, i, 0].long()] for i in range(max_caps)], dim=1
         ).to(self.device)
         gt_proposals_e = torch.cat(
-            [gt_proposals_e[:, gt_intervals[:, i, 1].long()] for i in range(max_caps)], dim=1
+            [gt_proposals_e[:, gt_intervals[:, i, 1].clamp(max=gt_proposals_e.size(1)-1).long()] for i in range(max_caps)], dim=1
         ).to(self.device)
         # gt_cap_lens = gt_cap_lens.to(self.device)
         # gt_prog_len = gt_prog_len.to(self.device)
