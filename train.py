@@ -839,14 +839,8 @@ class DenseVideo2TextTrainer(Trainer):
             self.avg_caps = checkpoint["avg_caps"]
 
             # TEMPORAL
-            self.best_metrics["s_prop"]["val_1"] = {
-                "Recall": (0, 0),
-                "Precision": (0, 0),
-            }
-            self.best_metrics["e_prop"]["val_1"] = {
-                "Recall": (0, 0),
-                "Precision": (0, 0),
-            }
+            self.best_metrics["s_prop"] = {"val_1": {"Recall": (0, 0), "Precision": (0, 0),}}
+            self.best_metrics["e_prop"] = {"val_1": {"Recall": (0, 0), "Precision": (0, 0),}}
 
             log_msg = f" (epoch {begin_epoch})"
             for phase in ["val_1"]:
