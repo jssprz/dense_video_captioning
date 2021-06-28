@@ -838,6 +838,16 @@ class DenseVideo2TextTrainer(Trainer):
             self.best_metrics = checkpoint["best_metrics"]
             self.avg_caps = checkpoint["avg_caps"]
 
+            # TEMPORAL
+            self.best_metrics["s_prop"]["val_1"] = {
+                "Recall": (0, 0),
+                "Precision": (0, 0),
+            }
+            self.best_metrics["e_prop"]["val_1"] = {
+                "Recall": (0, 0),
+                "Precision": (0, 0),
+            }
+
             log_msg = f" (epoch {begin_epoch})"
             for phase in ["val_1"]:
                 log_msg += f"\n  Captioning metrics {phase}: \n   "
@@ -847,6 +857,14 @@ class DenseVideo2TextTrainer(Trainer):
                 log_msg += f"\n  DenseCaptioning metrics {phase}: \n   "
                 log_msg += "\t".join(
                     [f"{k}:({e:03d}, {v:.3f})" for k, (e, v) in self.best_metrics["densecap"][phase].items()]
+                )
+                log_msg += f"\n  S-Proposals metrics {phase}: \n   "
+                log_msg += "\t".join(
+                    [f"{k}:({e:03d}, {v:.3f})" for k, (e, v) in self.best_metrics["s_prop"][phase].items()]
+                )
+                log_msg += f"\n  E-Proposals metrics {phase}: \n   "
+                log_msg += "\t".join(
+                    [f"{k}:({e:03d}, {v:.3f})" for k, (e, v) in self.best_metrics["e_prop"][phase].items()]
                 )
             print(log_msg, "\n")
             self.logger.info(log_msg)
