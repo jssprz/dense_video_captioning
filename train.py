@@ -562,6 +562,7 @@ class DenseVideo2TextTrainer(Trainer):
 
         # Move all tensors to device
         video_feats = [f.to(self.device) for f in video_feats]
+        feats_count = feats_count.to(self.device)
         # gt_intervals = gt_intervals.to(self.device)
         # gt_captions = gt_captions.to(self.device)
         # gt_pos = gt_pos.to(self.device)
