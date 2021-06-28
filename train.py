@@ -334,17 +334,20 @@ class DenseVideo2TextTrainer(Trainer):
     def __get_sem_enc(self, freq_words, caps, caps_upos, postags=["NOUN", "ADJ", "VERB"]):
         uidxs_to_use = [self.upos_vocab(tag) for tag in postags]
 
-        X = torch.zeros(len(caps), self.max_caps, self.modules_config["sem_tagger_config"].out_size)
+        total_num_caps = 0
+        X = torch.zeros(len(caps), self.max_caps, len(freq_words))
         for i, (v_caps, v_caps_upos) in enumerate(zip(caps, caps_upos)):
+            total_num_caps += len(v_caps)
             for j, (cap, upos) in enumerate(zip(v_caps, v_caps_upos)):
                 for widx, uidx in zip(cap, upos):
                     if uidx in uidxs_to_use and widx in freq_words:
                         X[i, j, freq_words.index(widx)] = 1
 
-        pos_samples = X.sum(dim=0).sum(dim=0)
-        neg_samples = (1 - X).sum(dim=1)
-        neg_samples[neg_samples == self.max_caps] = 0
-        neg_samples = neg_samples.sum(dim=0)
+        # total of activations for each tag
+        pos_samples = X.sum(dim=0).sum(dim=0)  # (len(freq_words), )
+
+        # total number of deactivations for each tag
+        neg_samples = torch.tensor(total_num_caps).repeat(len(freq_words)) - pos_samples
 
         pos_weights = neg_samples / pos_samples
 
@@ -987,7 +990,7 @@ class DenseVideo2TextTrainer(Trainer):
                                 [
                                     (
                                         (tstamps[0, interval[0]] / (fps[0] ** 2)).item(),
-                                        (tstamps[0, min(interval[1], feats_count[0]-1)] / (fps[0] ** 2)).item(),
+                                        (tstamps[0, min(interval[1], feats_count[0] - 1)] / (fps[0] ** 2)).item(),
                                     )
                                     for interval in gt_intervals[0, : gt_caps_count[0]].long()
                                 ]
