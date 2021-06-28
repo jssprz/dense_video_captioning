@@ -326,11 +326,14 @@ class DenseVideo2TextTrainer(Trainer):
         return X
 
     def __get_interval_mask(self, intervals, caps_count, max_num_chunks, proposals=None, num_estimates=128):
+        # compute the length of all intervals, including padding region
         aux = intervals[:, :, 1] - intervals[:, :, 0]
+
+        # filter the length of real intervals only, discarding the padding region that can affect clustering
         data = torch.cat([aux[i, :c] for i, c in enumerate(caps_count)])
         # data = (aux[aux>0]).view(-1)
-        print(aux.size(), data.size())
 
+        # for determining the masks of validation split we use the proposals determined from training split
         if proposals is None:
             # determine clusters according to intervals length
             kde = KernelDensity(kernel="gaussian", bandwidth=1.0).fit(data.unsqueeze(1).numpy())
@@ -341,17 +344,16 @@ class DenseVideo2TextTrainer(Trainer):
             self.logger.info(f"PROPOSALS: Number of event-proposals: {len(proposals)}")
             self.logger.info(f"PROPOSALS: Event-proposals: {proposals}")
 
-        # determine cluster of each interval
-        result = torch.zeros_like(aux, dtype=torch.int).fill_(-1)
-
-        # padding using -1
+        # padding legths using -1
         for i, c in enumerate(caps_count):
             aux[i, c:] = -1
 
+        # determine cluster of each interval
+        result = torch.full_like(aux, -1, dtype=torch.int)
         result[(aux >= 0) * (aux < proposals[0])] = 0
         for i in range(1, len(proposals)):
-            result[(aux >= proposals[i - 1]) * (aux <= proposals[i])] = i
-        result[aux > proposals[-1]] = len(proposals)
+            result[(aux >= proposals[i - 1]) * (aux < proposals[i])] = i
+        result[aux >= proposals[-1]] = len(proposals)
 
         clusters_sizes = [(result == i).sum().item() for i in range(len(proposals))]
         print("count of intervals per cluster: ", clusters_sizes)
@@ -368,31 +370,42 @@ class DenseVideo2TextTrainer(Trainer):
         e_mask = torch.zeros(intervals.size(0), max_num_chunks, len(proposals) + 1)
         for i in range(intervals.size(0)):
             for j in range(caps_count[i]):
-                s_mask[i, int(intervals[i, j, 0]), result[i, j]] = 1
-                e_mask[i, int(min(intervals[i, j, 1], max_num_chunks - 1)), result[i, j]] = 1
+                s = int(intervals[i, j, 0])
+                e = int(min(intervals[i, j, 1], max_num_chunks - 1))
+
+                # set start and end proposals for intervals that start before the current interval too
                 for k in range(j):
-                    if int(intervals[i, k, 1]) >= int(intervals[i, j, 0]):
-                        s_mask[i, int(intervals[i, j, 0]), result[i, k]] = 1
-                    if int(intervals[i, k, 1]) >= int(intervals[i, j, 1]):
-                        e_mask[i, int(min(intervals[i, j, 1], max_num_chunks - 1)), result[i, k]] = 1
-                for k in range(j+1, caps_count[i]):
-                    if int(intervals[i, k, 1]) >= int(intervals[i, j, 1]):
-                        e_mask[i, int(min(intervals[i, j, 1], max_num_chunks - 1)), result[i, k]] = 1
+                    if intervals[i, k, 1] >= s:
+                        # interval that starts before and ends after the current interval starts
+                        s_mask[i, s, result[i, k]] = 1
+                    if intervals[i, k, 1] >= intervals[i, j, 1]:
+                        # interval that starts before and ends after the current interval ends
+                        e_mask[i, e, result[i, k]] = 1
+
+                # set start and end proposals for current interval
+                s_mask[i, s, result[i, j]] = 1
+                e_mask[i, e, result[i, j]] = 1
+
+                # set end proposal for intervals tat start after the current interval too
+                for k in range(j + 1, caps_count[i]):
+                    if intervals[i, k, 1] >= intervals[i, j, 1]:
+                        # interval that starts after and ends after the current interval ends
+                        e_mask[i, e, result[i, k]] = 1
 
         # determine the number of positive examples per cluster
-        s_pos_samples = s_mask.sum(dim=1).sum(dim=0)
-        e_pos_samples = e_mask.sum(dim=1).sum(dim=0)
+        s_pos_samples = s_mask.sum(dim=1).sum(dim=0)  # (N, len(proposals) + 1)
+        e_pos_samples = e_mask.sum(dim=1).sum(dim=0)  # (N, len(proposals) + 1)
         print("count of positive examples per cluster (start positions): ", s_pos_samples)
         print("count of positive examples per cluster (end positions): ", e_pos_samples)
 
-        # determine the number of negative examples per cluster
-        s_neg_samples = (1 - s_mask).sum(dim=1)
-        s_neg_samples[s_neg_samples == max_num_chunks] = 0  # descarting frames where any interval starts
-        s_neg_samples = s_neg_samples.sum(dim=0)
+        # determine the number of negative examples per cluster, descarding the frames where we will not classify
+        s_neg_mask = 1 - s_mask
+        s_frame_mask = s_neg_mask.sum(dim=-1, keepdim=True) != (len(proposals) + 1)
+        s_neg_samples = s_neg_mask[s_frame_mask].sum(dim=1).sum(dim=0)  # (N, len(proposals) + 1)
 
-        e_neg_samples = (1 - e_mask).sum(dim=1)
-        e_neg_samples[e_neg_samples == max_num_chunks] = 0  # descarting frames where any interval starts
-        e_neg_samples = e_neg_samples.sum(dim=0)
+        e_neg_mask = 1 - e_mask
+        e_frame_mask = e_neg_mask.sum(dim=-1, keepdim=True) != (len(proposals) + 1)
+        e_neg_samples = e_neg_mask[e_frame_mask].sum(dim=1).sum(dim=0)  # (N, len(proposals) + 1)
 
         print("count of negative examples per cluster (start positions): ", s_neg_samples)
         print("count of negative examples per cluster (end positions): ", e_neg_samples)
