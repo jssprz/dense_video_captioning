@@ -9,8 +9,6 @@ from model.captioning.ensemble import Ensemble
 from model.embeddings.visual_semantic import MultiModal
 from model.tagging.semantic import TaggerMLP
 
-import sys
-
 
 class VNCLCell(nn.Module):
     def __init__(
@@ -358,7 +356,7 @@ class DenseCaptioner(nn.Module):
         self.embedding_size = config.embedding_size
         self.h_size = config.h_size
         self.mm_size = mm_config.out_size
-        self.proposal_rnn_h_size = proposals_tagger_config.rnn_h_size
+        self.prop_rnn_h_size = proposals_tagger_config.rnn_h_size
         self.num_proposals = num_proposals
 
         self.progs_vocab_size = len(progs_vocab)
@@ -389,23 +387,31 @@ class DenseCaptioner(nn.Module):
         #     drop_p=config.drop_p,
         # )
 
-        # self.proposal_fc = nn.Linear(in_features=config.cnn_feats_size+config.c3d_feats_size, out_features=num_proposals)
+        # self.prop_fc = nn.Linear(in_features=config.cnn_feats_size+config.c3d_feats_size, out_features=num_proposals)
 
-        self.proposal_rnn_0 = nn.LSTMCell(
+        self.prop_s_rnn_0 = nn.LSTMCell(
             input_size=config.cnn_feats_size + config.c3d_feats_size, hidden_size=proposals_tagger_config.rnn_h_size,
         )
 
-        self.s_proposal_rnn = nn.LSTMCell(
+        self.prop_s_rnn_1 = nn.LSTMCell(
             input_size=proposals_tagger_config.rnn_h_size, hidden_size=proposals_tagger_config.rnn_h_size,
         )
 
-        self.e_proposal_rnn = nn.LSTM(
-            input_size=config.cnn_feats_size + config.c3d_feats_size,
-            hidden_size=proposals_tagger_config.rnn_h_size,
-            batch_first=True,
+        self.prop_e_rnn_0 = nn.LSTMCell(
+            input_size=config.cnn_feats_size + config.c3d_feats_size, hidden_size=proposals_tagger_config.rnn_h_size,
         )
 
-        self.s_proposal_enc = TaggerMLP(
+        self.prop_e_rnn_1 = nn.LSTMCell(
+            input_size=proposals_tagger_config.rnn_h_size, hidden_size=proposals_tagger_config.rnn_h_size,
+        )
+
+        # self.e_prop_rnn = nn.LSTM(
+        #     input_size=config.cnn_feats_size + config.c3d_feats_size,
+        #     hidden_size=proposals_tagger_config.rnn_h_size,
+        #     batch_first=True,
+        # )
+
+        self.prop_enc_s = TaggerMLP(
             v_size=proposals_tagger_config.rnn_h_size,
             out_size=num_proposals,
             h_sizes=proposals_tagger_config.h_sizes,
@@ -414,7 +420,7 @@ class DenseCaptioner(nn.Module):
             have_last_bn=proposals_tagger_config.have_last_bn,
         )
 
-        self.e_proposal_enc = TaggerMLP(
+        self.prop_enc_e = TaggerMLP(
             v_size=proposals_tagger_config.rnn_h_size,
             out_size=num_proposals,
             h_sizes=proposals_tagger_config.h_sizes,
@@ -451,13 +457,13 @@ class DenseCaptioner(nn.Module):
             self.embedding.requires_grad = False
             self.mm_enc.requires_grad = False
             self.rnn_cell.requires_grad = False
-            self.proposal_enc.requires_grad = False
+            self.prop_enc.requires_grad = False
             self.fc.requires_grad = False
         elif resume_config.random_programmer:
             self.embedding.reset_parameters()
             self.mm_enc.reset_parameters()
             self.rnn_cell.reset_parameters()
-            self.proposal_enc.reset_parameters()
+            self.prop_enc.reset_parameters()
             self.fc.reset_parameters()
 
     def unfreeze(self):
@@ -546,13 +552,19 @@ class DenseCaptioner(nn.Module):
         # self.h = torch.zeros(bs, self.h_size).to(device)
         # self.c = torch.zeros(bs, self.h_size).to(device)
         # self.prev_match = torch.zeros(bs, self.mm_size).to(device)
-        self.proposal_c_0 = torch.zeros(bs, self.proposal_rnn_h_size).to(device)
-        self.proposal_h_0 = torch.zeros(bs, self.proposal_rnn_h_size).to(device)
+        self.prop_s_c_0 = torch.zeros(bs, self.prop_rnn_h_size).to(device)
+        self.prop_s_h_0 = torch.zeros(bs, self.prop_rnn_h_size).to(device)
 
-        self.proposal_h_s = torch.zeros(bs, self.proposal_rnn_h_size).to(device)
-        self.proposal_c_s = torch.zeros(bs, self.proposal_rnn_h_size).to(device)
+        self.prop_s_c_1 = torch.zeros(bs, self.prop_rnn_h_size).to(device)
+        self.prop_s_h_1 = torch.zeros(bs, self.prop_rnn_h_size).to(device)
 
-        self.proposal_h_e = torch.zeros(bs, self.proposal_rnn_h_size).to(device)
+        self.prop_e_c_0 = torch.zeros(bs, self.prop_rnn_h_size).to(device)
+        self.prop_e_h_0 = torch.zeros(bs, self.prop_rnn_h_size).to(device)
+
+        self.prop_e_c_1 = torch.zeros(bs, self.prop_rnn_h_size).to(device)
+        self.prop_e_h_1 = torch.zeros(bs, self.prop_rnn_h_size).to(device)
+
+        self.prop_e_rnn_0_pos = torch.zeros(bs, dtype=torch.long).to(device)
 
         # precomputing weights related to the prev_match only
         # self.rnn_cell.precompute_dots_4_m(self.prev_match, var_drop_p=0.1)
@@ -569,8 +581,8 @@ class DenseCaptioner(nn.Module):
         # caps_sem_enc = torch.zeros_like(gt_sem_enc)
         # pos_tags = torch.zeros_like(gt_pos)
         # intervals = torch.zeros_like(gt_intervals, dtype=torch.float)
-        s_proposals_logits = torch.zeros_like(gt_proposals_s)
-        e_proposals_logits = torch.zeros_like(gt_proposals_e)
+        prop_logits_s = torch.zeros_like(gt_proposals_s)
+        prop_logits_e = torch.zeros_like(gt_proposals_e)
         # proposals_logits = torch.zeros(bs, captions.size(1), gt_proposals.size(2))
         # else:
         #     # iterate until all pointers reach the end
@@ -602,17 +614,23 @@ class DenseCaptioner(nn.Module):
             a_id = gt_program[:, seq_pos]
 
             # updates the p and q positions for each video, and save sub-batch of video clips to be described
-            vidx_to_describe = []
             vidx_to_skip = []
+            vidx_to_advance = []
+            vidx_to_describe = []
+
             for i, a in enumerate(a_id):
                 if a == 0:
                     # skip
                     self.p[i] += 1
                     self.q[i] = self.p[i] + 1
                     vidx_to_skip.append(i)
+                    if self.q[i] > self.prop_e_rnn_0_pos[i]:
+                        vidx_to_advance.append(i)
                 elif a == 1:
                     # enqueue
                     self.q[i] += 1
+                    if self.q[i] > self.prop_e_rnn_0_pos[i]:
+                        vidx_to_advance.append(i)
                 elif a == 2:
                     # generate, save interval to be described. It going to be used for constructiong a captioning sub-batch
                     vidx_to_describe.append(i)
@@ -625,15 +643,29 @@ class DenseCaptioner(nn.Module):
                     [f[vidx_to_skip, torch.min(self.p[vidx_to_skip], feats_count[vidx_to_skip]), :] for f in v_feats],
                     dim=1,
                 )
-                self.proposal_h_0[vidx_to_skip, :], self.proposal_c_0[vidx_to_skip, :] = self.proposal_rnn_0(
-                    v_p, (self.proposal_h_0[vidx_to_skip, :], self.proposal_c_0[vidx_to_skip, :])
+                self.prop_s_h_0[vidx_to_skip, :], self.prop_s_c_0[vidx_to_skip, :] = self.prop_s_rnn_0(
+                    v_p, (self.prop_s_h_0[vidx_to_skip, :], self.prop_s_c_0[vidx_to_skip, :])
                 )
                 # with torch.no_grad():
                 #     v_p = torch.cat([f[vidx_to_skip, self.p[vidx_to_skip], :] for f in v_feats], dim=1)
-                #     proposals = self.proposal_enc(v_p)[0]
+                #     proposals = self.prop_enc(v_p)[0]
                 #     self.current_proposals = torch.clone(self.current_proposals)
                 #     self.current_proposals[vidx_to_skip, :] = proposals
                 # # proposals_logits[vidx_to_skip, self.p[vidx_to_skip], :] = proposals
+
+            if len(vidx_to_advance) > 0:
+                self.prop_e_rnn_0_pos[vidx_to_advance] = self.q[vidx_to_advance]
+
+                v_q = torch.cat(
+                    [
+                        f[vidx_to_advance, torch.min(self.q[vidx_to_advance], feats_count[vidx_to_advance]), :]
+                        for f in v_feats
+                    ],
+                    dim=1,
+                )
+                (self.prop_e_h_0[vidx_to_advance, :], self.prop_e_c_0[vidx_to_advance, :],) = self.prop_e_rnn_0(
+                    v_q, (self.prop_e_h_0[vidx_to_advance, :], self.prop_e_c_0[vidx_to_advance, :])
+                )
 
             # generate a caption from the current video-clips saved in the sub-batch
             if len(vidx_to_describe) > 0:
@@ -642,26 +674,34 @@ class DenseCaptioner(nn.Module):
                 # clip_feats = [feats[vidx_to_describe, :, :] for feats in self.v_p_q_feats]
                 # clip_global = self.v_p_q_pool[vidx_to_describe, :]
 
-                self.proposal_h_s[vidx_to_describe, :], self.proposal_c_s[vidx_to_describe, :] = self.s_proposal_rnn(
-                    self.proposal_h_0[vidx_to_describe, :],
-                    (self.proposal_h_s[vidx_to_describe, :], self.proposal_c_s[vidx_to_describe, :],),
+                (self.prop_s_h_1[vidx_to_describe, :], self.prop_s_c_1[vidx_to_describe, :],) = self.prop_s_rnn_1(
+                    self.prop_s_h_0[vidx_to_describe, :],
+                    (self.prop_s_h_1[vidx_to_describe, :], self.prop_s_c_1[vidx_to_describe, :],),
                 )
-                s_proposals_logits[vidx_to_describe, caps_count[vidx_to_describe], :] = self.s_proposal_enc(
-                    self.proposal_h_s[vidx_to_describe]
+                prop_logits_s[vidx_to_describe, caps_count[vidx_to_describe], :] = self.prop_enc_s(
+                    self.prop_s_h_1[vidx_to_describe]
                 )[0]
 
-                _, v_p_q_feats = self.get_clip_feats(v_feats, self.p, self.q)
-                clip_feats = torch.cat([feats[vidx_to_describe, :, :] for feats in v_p_q_feats], dim=-1)
-                _, (self.proposal_h_e[vidx_to_describe], _) = self.e_proposal_rnn(
-                    clip_feats,
-                    (
-                        self.proposal_h_s[vidx_to_describe, :].unsqueeze(0),
-                        self.proposal_c_s[vidx_to_describe, :].unsqueeze(0),
-                    ),
+                (self.prop_e_h_1[vidx_to_describe, :], self.prop_e_c_1[vidx_to_describe, :],) = self.prop_e_rnn_1(
+                    self.prop_e_h_0[vidx_to_describe, :],
+                    (self.prop_e_h_1[vidx_to_describe, :], self.prop_e_c_1[vidx_to_describe, :],),
                 )
-                e_proposals_logits[vidx_to_describe, caps_count[vidx_to_describe], :] = self.e_proposal_enc(
-                    self.proposal_h_e[vidx_to_describe]
+                prop_logits_s[vidx_to_describe, caps_count[vidx_to_describe], :] = self.prop_enc_e(
+                    self.prop_e_h_1[vidx_to_describe]
                 )[0]
+
+                # _, v_p_q_feats = self.get_clip_feats(v_feats, self.p, self.q)
+                # clip_feats = torch.cat([feats[vidx_to_describe, :, :] for feats in v_p_q_feats], dim=-1)
+                # _, (self.prop_h_e[vidx_to_describe], _) = self.e_prop_rnn(
+                #     clip_feats,
+                #     (
+                #         self.prop_h_s[vidx_to_describe, :].unsqueeze(0),
+                #         self.prop_c_s[vidx_to_describe, :].unsqueeze(0),
+                #     ),
+                # )
+                # prop_logits_e[vidx_to_describe, caps_count[vidx_to_describe], :] = self.prop_enc_e(
+                #     self.prop_h_e[vidx_to_describe]
+                # )[0]
 
                 # TODO: get ground-truth captions according to the position of p and q and the interval associated to each gt caption
 
@@ -750,8 +790,7 @@ class DenseCaptioner(nn.Module):
             None,  # captions,
             None,  # intervals,
             caps_count,
-            s_proposals_logits,
-            e_proposals_logits,
+            prop_logits_s,
+            prop_logits_e,
             None,  # self.p,
         )
-
