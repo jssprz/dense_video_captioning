@@ -4,6 +4,7 @@ import os
 import torch
 import torch.nn as nn
 import numpy as np
+from sklearn.metrics import recall_score, precision_score
 
 sys.path.append("video_description_eval/coco-caption")
 from video_description_eval.evaluate import score
@@ -114,6 +115,27 @@ def densecap_evaluate_from_tokens(vocab, vidxs, tstamps, pred_intervals, pred_ca
 def evaluate_from_sentences(pred_sentences, ground_truth):
     metrics_results = get_scores(pred_sentences, ground_truth)
     return metrics_results
+
+
+def multilabel_evaluate_from_logits(gt_multihots, pred_logits, cap_counts):
+    y_true = []
+    y_pred = []
+    for batch_gt, batch_pred, batch_count in zip(gt_multihots, pred_logits, cap_counts):
+        for v_gt, v_pred, v_count in zip(batch_gt, batch_pred, batch_count):
+            # mask = (v_gt[:v_count] == 1).nonzero(as_tuple=True)
+            y_true.append(v_gt[:v_count])
+            y_pred.append(torch.sigmoid(v_pred)[:v_count] > 0.5)
+
+    y_true = torch.cat(y_true, dim=0).numpy()
+    y_pred = torch.cat(y_pred, dim=0).numpy()
+
+    # reacall
+    recall = recall_score(y_true, y_pred, average="weighted")
+
+    # precision
+    precision = precision_score(y_true, y_pred, average="weighted")
+
+    return {"Recall": recall, "Precision": precision}
 
 
 def load_ground_truth_captions(reference_txt_path):

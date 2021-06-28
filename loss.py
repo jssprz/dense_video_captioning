@@ -71,7 +71,7 @@ def get_reinforce_strategy(criterion_config, epoch, gt_prog_len):
 
 
 class DenseCaptioningLoss(nn.Module):
-    def __init__(self, config, c_max_len, p_max_len, s_proposal_pos_weights, e_proposal_pos_weights, device):
+    def __init__(self, config, c_max_len, p_max_len, s_prop_pos_weights, e_prop_pos_weights, device):
         super(DenseCaptioningLoss, self).__init__()
 
         self.config = config
@@ -125,11 +125,11 @@ class DenseCaptioningLoss(nn.Module):
         # proposals_loss function
         if config.proposals_loss == "BXE":
             # self.proposals_loss = nn.BCELoss(reduction=config.proposals_loss_reduction)
-            self.s_proposals_loss = nn.BCEWithLogitsLoss(
-                pos_weight=s_proposal_pos_weights, reduction=config.proposals_loss_reduction
+            self.s_prop_loss = nn.BCEWithLogitsLoss(
+                pos_weight=s_prop_pos_weights, reduction=config.proposals_loss_reduction
             )
-            self.e_proposals_loss = nn.BCEWithLogitsLoss(
-                pos_weight=e_proposal_pos_weights, reduction=config.proposals_loss_reduction
+            self.e_prop_loss = nn.BCEWithLogitsLoss(
+                pos_weight=e_prop_pos_weights, reduction=config.proposals_loss_reduction
             )
         else:
             raise ValueError(
@@ -159,13 +159,13 @@ class DenseCaptioningLoss(nn.Module):
         pred_program,
         gt_intervals,
         pred_intervals,
-        gt_proposals_s,
-        gt_proposals_e,
-        pred_proposals_s,
-        pred_proposals_e,
+        gt_prop_s,
+        gt_prop_e,
+        pred_prop_s,
+        pred_prop_e,
         gt_caps_count,
         pred_caps_count,
-        gt_proposals_count,
+        gt_prop_count,
         epoch,
         truncate_prog_at=None,
         mm_v_encs=None,
@@ -173,7 +173,7 @@ class DenseCaptioningLoss(nn.Module):
     ):
         # bs, _, _, caps_vocab_size = pred_captions.size()
         # pos_vocab_size = pred_pos_seq.size(3)
-        bs, _, _ = pred_proposals_s.size()
+        bs, _, _ = pred_prop_s.size()
 
         # TODO: compute gt flatten in the Dataset for removing it from here
 
@@ -183,11 +183,11 @@ class DenseCaptioningLoss(nn.Module):
             #     l1.append(pred_captions[n, i, : gt_cap_lens[n, i]].reshape(-1, caps_vocab_size))
             #     l2.append(gt_captions[n, i, : gt_cap_lens[n, i]].flatten())
 
-            l5.append(pred_proposals_s[n, : gt_caps_count[n], :])
-            l6.append(gt_proposals_s[n, : gt_caps_count[n], :])
+            l5.append(pred_prop_s[n, : gt_caps_count[n], :])
+            l6.append(gt_prop_s[n, : gt_caps_count[n], :])
 
-            l7.append(pred_proposals_e[n, : gt_caps_count[n], :])
-            l8.append(gt_proposals_e[n, : gt_caps_count[n], :])
+            l7.append(pred_prop_e[n, : gt_caps_count[n], :])
+            l8.append(gt_prop_e[n, : gt_caps_count[n], :])
 
         # if len(l1):
         #     # captioning loss
@@ -231,11 +231,11 @@ class DenseCaptioningLoss(nn.Module):
         # event proposals loss
         s_pred_proposals = torch.cat(l5)
         s_gt_proposals = torch.cat(l6)
-        s_proposals_loss = self.s_proposals_loss(s_pred_proposals, s_gt_proposals)
+        s_prop_loss = self.s_prop_loss(s_pred_proposals, s_gt_proposals)
 
         e_pred_proposals = torch.cat(l7)
         e_gt_proposals = torch.cat(l8)
-        e_proposals_loss = self.e_proposals_loss(e_pred_proposals, e_gt_proposals)
+        e_prop_loss = self.e_prop_loss(e_pred_proposals, e_gt_proposals)
 
         # tIoU loss of intervals
         # iou_loss = self.intervals_loss(pred_intervals, gt_intervals)
@@ -246,7 +246,7 @@ class DenseCaptioningLoss(nn.Module):
         # print(cap_loss.requires_grad, prog_loss.requires_grad, iou_loss.requires_grad)
         # losses = torch.tensor([cap_loss, prog_loss])
         # loss = torch.sum(self.comb_weights * losses)
-        loss = s_proposals_loss + e_proposals_loss
+        loss = s_prop_loss + e_prop_loss
 
         return (
             loss,
@@ -254,7 +254,7 @@ class DenseCaptioningLoss(nn.Module):
             None,  # cap_loss,
             None,  # sem_enc_loss,
             None,  # pos_loss,
-            s_proposals_loss,
-            e_proposals_loss,
+            s_prop_loss,
+            e_prop_loss,
             None,  # iou_reward.mean(),
         )

@@ -534,8 +534,8 @@ class DenseCaptioner(nn.Module):
         gt_sem_enc=None,
         gt_pos=None,
         gt_intervals=None,
-        gt_proposals_s=None,
-        gt_proposals_e=None,
+        gt_prop_s=None,
+        gt_prop_e=None,
         max_prog=None,
         max_caps=None,
         max_cap=None,
@@ -581,8 +581,8 @@ class DenseCaptioner(nn.Module):
         # caps_sem_enc = torch.zeros_like(gt_sem_enc)
         # pos_tags = torch.zeros_like(gt_pos)
         # intervals = torch.zeros_like(gt_intervals, dtype=torch.float)
-        prop_logits_s = torch.zeros_like(gt_proposals_s)
-        prop_logits_e = torch.zeros_like(gt_proposals_e)
+        prop_logits_s = torch.zeros_like(gt_prop_s)
+        prop_logits_e = torch.zeros_like(gt_prop_e)
         # proposals_logits = torch.zeros(bs, captions.size(1), gt_proposals.size(2))
         # else:
         #     # iterate until all pointers reach the end
