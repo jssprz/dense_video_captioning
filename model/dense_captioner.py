@@ -545,8 +545,8 @@ class DenseCaptioner(nn.Module):
         bs, device = v_feats[0].size(0), v_feats[0].device
 
         caps_count = torch.zeros(bs, dtype=torch.long).to(device)
-        self.p = torch.zeros(bs, dtype=torch.long)
-        self.q = torch.ones(bs, dtype=torch.long)
+        self.p = torch.zeros(bs, dtype=torch.long).to(device)
+        self.q = torch.ones(bs, dtype=torch.long).to(device)
         # self.x = torch.zeros(bs, self.embedding_size).to(device)
 
         # self.h = torch.zeros(bs, self.h_size).to(device)
