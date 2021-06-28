@@ -1180,9 +1180,9 @@ class DenseVideo2TextTrainer(Trainer):
                 #         densecap_metrics_results, pred_intervals, phase, epoch, save_checkpoints_dir, "densecap",
                 #     )
 
-                #     # report results if any improvement occurs
-                #     if self.early_stop == 0:
-                #         log_msg = f"\n IMPROVEMENT ON {phase} at epoch {epoch} !"
+                    # report results if any improvement occurs
+                    if self.early_stop == 0:
+                        log_msg = f"\n IMPROVEMENT ON {phase} at epoch {epoch} !"
 
                 #         # log_msg += '\n Programmer metrics: \n   '
                 #         # log_msg += '\t'.join([f'{k}:({e:03d}, {v:.3f})' for k, (e, v) in self.best_metrics['programmer'][phase].items()])
@@ -1197,8 +1197,17 @@ class DenseVideo2TextTrainer(Trainer):
                 #             [f"{k}:({e:03d}, {v:.3f})" for k, (e, v) in self.best_metrics["densecap"][phase].items()]
                 #         )
 
-                #         print(log_msg, "\n")
-                #         self.logger.info(log_msg)
+                        log_msg += f"\n  S-Proposals metrics {phase}: \n   "
+                        log_msg += "\t".join(
+                            [f"{k}:({e:03d}, {v:.3f})" for k, (e, v) in self.best_metrics["s_prop"][phase].items()]
+                        )
+                        log_msg += f"\n  E-Proposals metrics {phase}: \n   "
+                        log_msg += "\t".join(
+                            [f"{k}:({e:03d}, {v:.3f})" for k, (e, v) in self.best_metrics["e_prop"][phase].items()]
+                        )
+
+                        print(log_msg, "\n")
+                        self.logger.info(log_msg)
 
                 #     # prog_metrics_results = parallel_pool.apply_async(evaluate_from_tokens, [self.programs_vocab, all_programs, all_prog_ids, self.ref_programs[phase], False])
                 #     # cap_metrics_results = parallel_pool.apply_async(evaluate_from_tokens, [self.caps_vocab, all_captions, all_caps_ids, self.ref_captions[phase]])
