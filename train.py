@@ -393,19 +393,21 @@ class DenseVideo2TextTrainer(Trainer):
                         e_mask[i, e, result[i, k]] = 1
 
         # determine the number of positive examples per cluster
-        s_pos_samples = s_mask.sum(dim=1).sum(dim=0)  # (N, len(proposals) + 1)
-        e_pos_samples = e_mask.sum(dim=1).sum(dim=0)  # (N, len(proposals) + 1)
+        s_pos_samples = s_mask.sum(dim=1).sum(dim=0)  # (len(proposals) + 1, )
+        e_pos_samples = e_mask.sum(dim=1).sum(dim=0)  # (len(proposals) + 1, )
         print("count of positive examples per cluster (start positions): ", s_pos_samples)
         print("count of positive examples per cluster (end positions): ", e_pos_samples)
 
         # determine the number of negative examples per cluster, descarding the frames where we will not classify
         s_neg_mask = 1 - s_mask
-        s_frame_mask = s_neg_mask.sum(dim=-1, keepdim=True) != (len(proposals) + 1)
-        s_neg_samples = s_neg_mask[s_frame_mask].sum(dim=1).sum(dim=0)  # (N, len(proposals) + 1)
+        print(s_neg_mask.size())
+        s_frame_mask = (s_neg_mask.sum(dim=-1, keepdim=True) != (len(proposals) + 1)).repeat(1, 1, len(proposals) + 1)
+        print(s_frame_mask.size())
+        s_neg_samples = (s_neg_mask * s_frame_mask).sum(dim=1).sum(dim=0)  # (N, len(proposals) + 1)
 
         e_neg_mask = 1 - e_mask
-        e_frame_mask = e_neg_mask.sum(dim=-1, keepdim=True) != (len(proposals) + 1)
-        e_neg_samples = e_neg_mask[e_frame_mask].sum(dim=1).sum(dim=0)  # (N, len(proposals) + 1)
+        e_frame_mask = (e_neg_mask.sum(dim=-1, keepdim=True) != (len(proposals) + 1)).repeat(1, 1, len(proposals) + 1)
+        e_neg_samples = (e_neg_mask * e_frame_mask).sum(dim=1).sum(dim=0)  # (N, len(proposals) + 1)
 
         print("count of negative examples per cluster (start positions): ", s_neg_samples)
         print("count of negative examples per cluster (end positions): ", e_neg_samples)
