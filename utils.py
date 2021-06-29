@@ -4,7 +4,7 @@ import os
 import torch
 import torch.nn as nn
 import numpy as np
-from sklearn.metrics import recall_score, precision_score
+from sklearn.metrics import recall_score, precision_score, roc_auc_score
 
 sys.path.append("video_description_eval/coco-caption")
 from video_description_eval.evaluate import score
@@ -129,13 +129,19 @@ def multilabel_evaluate_from_logits(gt_multihots, pred_logits, cap_counts):
     y_true = torch.cat(y_true, dim=0).numpy()
     y_pred = torch.cat(y_pred, dim=0).numpy()
 
-    # reacall
+    # recall
     recall = recall_score(y_true, y_pred, average="weighted")
 
     # precision
     precision = precision_score(y_true, y_pred, average="weighted")
 
-    return {"Recall": recall, "Precision": precision}
+    # roc_auc
+    try:
+        roc_auc = roc_auc_score(y_true, y_pred)
+    except ValueError:
+        roc_auc = np.NaN
+
+    return {"Recall": recall, "Precision": precision, "ROC-AUC": roc_auc}
 
 
 def load_ground_truth_captions(reference_txt_path):
