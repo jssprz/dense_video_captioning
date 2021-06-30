@@ -686,7 +686,7 @@ class DenseCaptioner(nn.Module):
                     self.prop_e_h_0[vidx_to_describe, :],
                     (self.prop_e_h_1[vidx_to_describe, :], self.prop_e_c_1[vidx_to_describe, :],),
                 )
-                prop_logits_s[vidx_to_describe, caps_count[vidx_to_describe], :] = self.prop_enc_e(
+                prop_logits_e[vidx_to_describe, caps_count[vidx_to_describe], :] = self.prop_enc_e(
                     self.prop_e_h_1[vidx_to_describe]
                 )[0]
 

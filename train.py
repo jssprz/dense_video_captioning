@@ -338,6 +338,7 @@ class DenseVideo2TextTrainer(Trainer):
         # for determining the masks of validation split we use the proposals determined from training split
         if proposals is None:
             # determine clusters according to intervals length
+            print("computing event-proposals by the KernelDensity algorithm ")
             kde = KernelDensity(kernel="gaussian", bandwidth=1.0).fit(data.unsqueeze(1).numpy())
             s = linspace(0, self.max_interval, num=num_estimates)
             e = kde.score_samples(s.reshape(-1, 1))
@@ -357,7 +358,7 @@ class DenseVideo2TextTrainer(Trainer):
             result[(aux >= proposals[i - 1]) * (aux < proposals[i])] = i
         result[aux >= proposals[-1]] = len(proposals)
 
-        clusters_sizes = [(result == i).sum().item() for i in range(len(proposals))]
+        clusters_sizes = [(result == i).sum().item() for i in range(len(proposals) + 1)]
         print("count of intervals per cluster: ", clusters_sizes)
         print("total intervals grouped: ", sum(clusters_sizes))
 
@@ -380,7 +381,7 @@ class DenseVideo2TextTrainer(Trainer):
                     if intervals[i, k, 1] >= s:
                         # interval that starts before and ends after the current interval starts
                         s_mask[i, s, result[i, k]] = 1
-                    if intervals[i, k, 1] >= intervals[i, j, 1]:
+                    if intervals[i, k, 1] >= e:
                         # interval that starts before and ends after the current interval ends
                         e_mask[i, e, result[i, k]] = 1
 
@@ -390,7 +391,7 @@ class DenseVideo2TextTrainer(Trainer):
 
                 # set end proposal for intervals tat start after the current interval too
                 for k in range(j + 1, caps_count[i]):
-                    if intervals[i, k, 1] >= intervals[i, j, 1]:
+                    if intervals[i, k, 1] >= e:
                         # interval that starts after and ends after the current interval ends
                         e_mask[i, e, result[i, k]] = 1
 
