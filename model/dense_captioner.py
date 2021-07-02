@@ -548,21 +548,27 @@ class DenseCaptioner(nn.Module):
         self.p = torch.zeros(bs, dtype=torch.long).to(device)
         self.q = torch.ones(bs, dtype=torch.long).to(device)
         # self.x = torch.zeros(bs, self.embedding_size).to(device)
+        
+        v_p = torch.cat([f[:, 0, :] for f in v_feats], dim=1)
+        v_q = torch.cat([f[:, 1, :] for f in v_feats], dim=1)
 
         # self.h = torch.zeros(bs, self.h_size).to(device)
         # self.c = torch.zeros(bs, self.h_size).to(device)
         # self.prev_match = torch.zeros(bs, self.mm_size).to(device)
-        self.prop_s_c_0 = torch.zeros(bs, self.prop_rnn_h_size).to(device)
         self.prop_s_h_0 = torch.zeros(bs, self.prop_rnn_h_size).to(device)
+        self.prop_s_c_0 = torch.zeros(bs, self.prop_rnn_h_size).to(device)
+        self.prop_s_h_0, self.prop_s_c_0 = self.prop_s_rnn_0(v_p, (self.prop_s_h_0, self.prop_s_c_0))
 
-        self.prop_s_c_1 = torch.zeros(bs, self.prop_rnn_h_size).to(device)
         self.prop_s_h_1 = torch.zeros(bs, self.prop_rnn_h_size).to(device)
+        self.prop_s_c_1 = torch.zeros(bs, self.prop_rnn_h_size).to(device)
 
-        self.prop_e_c_0 = torch.zeros(bs, self.prop_rnn_h_size).to(device)
         self.prop_e_h_0 = torch.zeros(bs, self.prop_rnn_h_size).to(device)
+        self.prop_e_c_0 = torch.zeros(bs, self.prop_rnn_h_size).to(device)
+        self.prop_e_h_0, self.prop_e_c_0 = self.prop_e_rnn_0(v_p, (self.prop_e_h_0, self.prop_e_c_0))
+        self.prop_e_h_0, self.prop_e_c_0 = self.prop_e_rnn_0(v_q, (self.prop_e_h_0, self.prop_e_c_0))
 
-        self.prop_e_c_1 = torch.zeros(bs, self.prop_rnn_h_size).to(device)
         self.prop_e_h_1 = torch.zeros(bs, self.prop_rnn_h_size).to(device)
+        self.prop_e_c_1 = torch.zeros(bs, self.prop_rnn_h_size).to(device)
 
         self.prop_e_rnn_0_pos = torch.zeros(bs, dtype=torch.long).to(device)
 
