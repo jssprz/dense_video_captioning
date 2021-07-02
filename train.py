@@ -406,11 +406,11 @@ class DenseVideo2TextTrainer(Trainer):
         print(s_neg_mask.size())
         s_frame_mask = (s_neg_mask.sum(dim=-1, keepdim=True) != (len(proposals) + 1)).repeat(1, 1, len(proposals) + 1)
         print(s_frame_mask.size())
-        s_neg_samples = (s_neg_mask * s_frame_mask).sum(dim=1).sum(dim=0)  # (N, len(proposals) + 1)
+        s_neg_samples = (s_neg_mask * s_frame_mask).sum(dim=1).sum(dim=0)  # (len(proposals) + 1, )
 
         e_neg_mask = 1 - e_mask
         e_frame_mask = (e_neg_mask.sum(dim=-1, keepdim=True) != (len(proposals) + 1)).repeat(1, 1, len(proposals) + 1)
-        e_neg_samples = (e_neg_mask * e_frame_mask).sum(dim=1).sum(dim=0)  # (N, len(proposals) + 1)
+        e_neg_samples = (e_neg_mask * e_frame_mask).sum(dim=1).sum(dim=0)  # (len(proposals) + 1, )
 
         print("count of negative examples per cluster (start positions): ", s_neg_samples)
         print("count of negative examples per cluster (end positions): ", e_neg_samples)
@@ -817,7 +817,7 @@ class DenseVideo2TextTrainer(Trainer):
                 if component == "densecap" and name == "METEOR" and phase == "val_1":
                     print("saving best checkpoint...")
                     self.__save_checkpoint(epoch, save_checkpoints_dir, True)
-                if component in ["s_prop", "e_prop"] and name == "Recall":
+                if component in ["s_prop", "e_prop"] and name in ["Recall/weighted", "F1/weighted", "ROC-AUC/weighted"]:
                     print(f"saving best checkpoint due to improvement on {component}-{name}...")
                     self.__save_checkpoint(epoch, save_checkpoints_dir, True)
 

@@ -4,7 +4,7 @@ import os
 import torch
 import torch.nn as nn
 import numpy as np
-from sklearn.metrics import recall_score, precision_score, roc_auc_score
+from sklearn.metrics import recall_score, precision_score, roc_auc_score, f1_score
 
 sys.path.append("video_description_eval/coco-caption")
 from video_description_eval.evaluate import score
@@ -128,12 +128,25 @@ def multilabel_evaluate_from_logits(gt_multihots, pred_logits, cap_counts):
 
     y_true = torch.cat(y_true, dim=0).numpy()
     y_pred = torch.cat(y_pred, dim=0).numpy()
+    y_pred_sparse = y_pred > 0.5
 
     # recall
-    recall = recall_score(y_true, y_pred>0.5, average="weighted")
+    recall_micro = recall_score(y_true, y_pred_sparse, average="micro")
+    recall_macro = recall_score(y_true, y_pred_sparse, average="macro")
+    recall_weighted = recall_score(y_true, y_pred_sparse, average="weighted")
+    recall_samples = recall_score(y_true, y_pred_sparse, average="samples")
 
     # precision
-    precision = precision_score(y_true, y_pred>0.5, average="weighted")
+    precision_micro = precision_score(y_true, y_pred_sparse, average="micro")
+    precision_macro = precision_score(y_true, y_pred_sparse, average="macro")
+    precision_weighted = precision_score(y_true, y_pred_sparse, average="weighted")
+    precision_samples = precision_score(y_true, y_pred_sparse, average="samples")
+
+    # f1
+    f1_micro = f1_score(y_true, y_pred_sparse, average="micro")
+    f1_macro = f1_score(y_true, y_pred_sparse, average="macro")
+    f1_weighted = f1_score(y_true, y_pred_sparse, average="weighted")
+    f1_samples = f1_score(y_true, y_pred_sparse, average="samples")
 
     # remove not represented labels for ROC-AUC computation
     not_represented_labels = np.argwhere(np.all(y_true[..., :] == 0, axis=0))
@@ -144,11 +157,34 @@ def multilabel_evaluate_from_logits(gt_multihots, pred_logits, cap_counts):
 
     # roc_auc
     try:
-        roc_auc = roc_auc_score(y_true, y_pred)
+        roc_auc_micro = roc_auc_score(y_true, y_pred, average="micro")
+        roc_auc_macro = roc_auc_score(y_true, y_pred, average="macro")
+        roc_auc_weighted = roc_auc_score(y_true, y_pred, average="weighted")
+        roc_auc_samples = roc_auc_score(y_true, y_pred, average="samples")
     except ValueError:
-        roc_auc = np.NaN
+        roc_auc_micro = np.NaN
+        roc_auc_macro = np.NaN
+        roc_auc_weighted = np.NaN
+        roc_auc_samples = np.NaN
 
-    return {"Recall": recall, "Precision": precision, "ROC-AUC": roc_auc}
+    return {
+        "Recall/micro": recall_micro,
+        "Recall/macro": recall_macro,
+        "Recall/weighted": recall_weighted,
+        "Recall/samples": recall_samples,
+        "Precision/micro": precision_micro,
+        "Precision/macro": precision_macro,
+        "Precision/weighted": precision_weighted,
+        "Precision/samples": precision_samples,
+        "F1/micro": f1_micro,
+        "F1/macro": f1_macro,
+        "F1/weighted": f1_weighted,
+        "F1/samples": f1_samples,
+        "ROC-AUC/micro": roc_auc_micro,
+        "ROC-AUC/macro": roc_auc_macro,
+        "ROC-AUC/weighted": roc_auc_weighted,
+        "ROC-AUC/samples": roc_auc_samples,
+    }
 
 
 def load_ground_truth_captions(reference_txt_path):
