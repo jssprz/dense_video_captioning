@@ -124,7 +124,7 @@ def multilabel_evaluate_from_logits(gt_multihots, pred_logits, cap_counts):
         for v_gt, v_pred, v_count in zip(batch_gt, batch_pred, batch_count):
             # mask = (v_gt[:v_count] == 1).nonzero(as_tuple=True)
             y_true.append(v_gt[:v_count])
-            y_pred.append(torch.sigmoid(v_pred)[:v_count] > 0.5)
+            y_pred.append(torch.sigmoid(v_pred[:v_count]) > 0.5)
 
     y_true = torch.cat(y_true, dim=0).numpy()
     y_pred = torch.cat(y_pred, dim=0).numpy()
@@ -134,6 +134,11 @@ def multilabel_evaluate_from_logits(gt_multihots, pred_logits, cap_counts):
 
     # precision
     precision = precision_score(y_true, y_pred, average="weighted")
+
+    # remove not represented labels for ROC-AUC computation
+    not_represented_labels = np.argwhere(np.all(y_true[..., :] == 0, axis=0))
+    y_true = np.delete(y_true, not_represented_labels, axis=1)
+    y_pred = np.delete(y_pred, not_represented_labels, axis=1)
 
     # roc_auc
     try:
