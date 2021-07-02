@@ -548,7 +548,7 @@ class DenseCaptioner(nn.Module):
         self.p = torch.zeros(bs, dtype=torch.long).to(device)
         self.q = torch.ones(bs, dtype=torch.long).to(device)
         # self.x = torch.zeros(bs, self.embedding_size).to(device)
-        
+
         v_p = torch.cat([f[:, 0, :] for f in v_feats], dim=1)
         v_q = torch.cat([f[:, 1, :] for f in v_feats], dim=1)
 
@@ -557,20 +557,26 @@ class DenseCaptioner(nn.Module):
         # self.prev_match = torch.zeros(bs, self.mm_size).to(device)
         self.prop_s_h_0 = torch.zeros(bs, self.prop_rnn_h_size).to(device)
         self.prop_s_c_0 = torch.zeros(bs, self.prop_rnn_h_size).to(device)
-        self.prop_s_h_0, self.prop_s_c_0 = self.prop_s_rnn_0(v_p, (self.prop_s_h_0, self.prop_s_c_0))
+        idxs = list(range(bs))
+        self.prop_s_h_0[idxs, :], self.prop_s_c_0[idxs, :] = self.prop_s_rnn_0(
+            v_p, (self.prop_s_h_0[idxs, :], self.prop_s_c_0[idxs, :])
+        )
 
         self.prop_s_h_1 = torch.zeros(bs, self.prop_rnn_h_size).to(device)
         self.prop_s_c_1 = torch.zeros(bs, self.prop_rnn_h_size).to(device)
 
         self.prop_e_h_0 = torch.zeros(bs, self.prop_rnn_h_size).to(device)
         self.prop_e_c_0 = torch.zeros(bs, self.prop_rnn_h_size).to(device)
-        self.prop_e_h_0, self.prop_e_c_0 = self.prop_e_rnn_0(v_p, (self.prop_e_h_0, self.prop_e_c_0))
-        self.prop_e_h_0, self.prop_e_c_0 = self.prop_e_rnn_0(v_q, (self.prop_e_h_0, self.prop_e_c_0))
+        self.prop_e_h_0[idxs, :], self.prop_e_c_0[idxs, :] = self.prop_e_rnn_0(
+            v_p, (self.prop_e_h_0[idxs, :], self.prop_e_c_0[idxs, :])
+        )
+        self.prop_e_h_0[idxs, :], self.prop_e_c_0[idxs, :] = self.prop_e_rnn_0(
+            v_q, (self.prop_e_h_0[idxs, :], self.prop_e_c_0[idxs, :])
+        )
+        self.prop_e_rnn_0_pos = torch.ones(bs, dtype=torch.long).to(device)
 
         self.prop_e_h_1 = torch.zeros(bs, self.prop_rnn_h_size).to(device)
         self.prop_e_c_1 = torch.zeros(bs, self.prop_rnn_h_size).to(device)
-
-        self.prop_e_rnn_0_pos = torch.zeros(bs, dtype=torch.long).to(device)
 
         # precomputing weights related to the prev_match only
         # self.rnn_cell.precompute_dots_4_m(self.prev_match, var_drop_p=0.1)
