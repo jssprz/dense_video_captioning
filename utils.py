@@ -148,30 +148,23 @@ def multilabel_evaluate_from_logits(gt_multihots, pred_logits, cap_counts):
     f1_weighted = f1_score(y_true, y_pred_sparse, average="weighted")
     f1_samples = f1_score(y_true, y_pred_sparse, average="samples")
 
-    # remove not represented labels for ROC-AUC computation
-    not_represented_labels = np.argwhere(np.all(y_true[..., :] == 0, axis=0))
-    y_true = np.delete(y_true, not_represented_labels, axis=1)
-    y_pred = np.delete(y_pred, not_represented_labels, axis=1)
-
-    print(f"labels without positive samples: {not_represented_labels}")
+    # remove not represented labels
+    bad_labels = np.argwhere(np.all(y_true[..., :] == 0, axis=0))
+    y_true_filtered = np.delete(y_true, bad_labels, axis=1)
+    y_pred_filtered = np.delete(y_pred, bad_labels, axis=1)
+    print(f"labels without positive samples: {bad_labels}")
 
     # roc_auc
-    try:
-        roc_auc_micro = roc_auc_score(y_true, y_pred, average="micro")
-    except ValueError:
-        roc_auc_micro = np.NaN
-    try:
-        roc_auc_macro = roc_auc_score(y_true, y_pred, average="macro")
-    except ValueError:
-        roc_auc_macro = np.NaN
-    try:
-        roc_auc_weighted = roc_auc_score(y_true, y_pred, average="weighted")
-    except ValueError:
-        roc_auc_weighted = np.NaN
-    try:
-        roc_auc_samples = roc_auc_score(y_true, y_pred, average="samples")
-    except ValueError:
-        roc_auc_samples = np.NaN
+    roc_auc_micro = roc_auc_score(y_true_filtered, y_pred_filtered, average="micro")
+    roc_auc_macro = roc_auc_score(y_true_filtered, y_pred_filtered, average="macro")
+    roc_auc_weighted = roc_auc_score(y_true_filtered, y_pred_filtered, average="weighted")
+
+    # remove samples with only one class (without positive samples)
+    bad_samples = np.argwhere(np.all(y_true[:, ...] == 0, axis=1))
+    print(f"samples without positive labels: {bad_samples}")
+    y_true_filtered = np.delete(y_true, bad_samples, axis=0)
+    y_pred_filtered = np.delete(y_pred, bad_samples, axis=0)
+    roc_auc_samples = roc_auc_score(y_true_filtered, y_pred_filtered, average="samples")
 
     return {
         "Recall/micro": recall_micro,

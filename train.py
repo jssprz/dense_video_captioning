@@ -657,13 +657,18 @@ class DenseVideo2TextTrainer(Trainer):
 
         # filter proposals
         max_caps = torch.max(gt_caps_count)
-        gt_prop_s = torch.cat([gt_prop_s[:, gt_intervals[:, i, 0].long()] for i in range(max_caps)], dim=1).to(
-            self.device
-        )
+        last_chunk = gt_prop_e.size(1) - 1
+        gt_prop_s = torch.cat(
+            [gt_prop_s[torch.arange(bsz), gt_intervals[:, i, 0].long()].unsqueeze(1) for i in range(max_caps)], dim=1
+        ).to(self.device)
         gt_prop_e = torch.cat(
-            [gt_prop_e[:, gt_intervals[:, i, 1].clamp(max=gt_prop_e.size(1) - 1).long()] for i in range(max_caps)],
+            [
+                gt_prop_e[torch.arange(bsz), gt_intervals[:, i, 1].clamp(max=last_chunk).long()].unsqueeze(1)
+                for i in range(max_caps)
+            ],
             dim=1,
         ).to(self.device)
+
         # gt_cap_lens = gt_cap_lens.to(self.device)
         # gt_prog_len = gt_prog_len.to(self.device)
         # gt_proposals = gt_proposals.to(self.device)
@@ -817,7 +822,11 @@ class DenseVideo2TextTrainer(Trainer):
                 if component == "densecap" and name == "METEOR" and phase == "val_1":
                     print("saving best checkpoint...")
                     self.__save_checkpoint(epoch, save_checkpoints_dir, True)
-                if component in ["s_prop", "e_prop"] and name in ["Recall/weighted", "F1/weighted", "ROC-AUC/weighted"]:
+                if component in ["s_prop", "e_prop"] and name in [
+                    "Recall/weighted",
+                    "F1/weighted",
+                    "ROC-AUC/weighted",
+                ]:
                     print(f"saving best checkpoint due to improvement on {component}-{name}...")
                     self.__save_checkpoint(epoch, save_checkpoints_dir, True)
 
@@ -1148,55 +1157,55 @@ class DenseVideo2TextTrainer(Trainer):
                     self.__process_results(
                         e_prop_metrics_results, None, phase, epoch, save_checkpoints_dir, "e_prop",
                     )
-                #     # predicted_sentences = pool.apply_async(self.__get_sentences, [all_outputs, all_video_ids])
+                    #     # predicted_sentences = pool.apply_async(self.__get_sentences, [all_outputs, all_video_ids])
 
-                #     # if cap_metrics_results is not None:
-                #     # get async results
-                #     # cap_metrics_results, pred_caps = cap_metrics_results.get()
-                #     # prog_metrics_results, pred_progs = prog_metrics_results.get()
-                #     # densecap_metrics_results, pred_intervals = densecap_metrics_results.get()
+                    #     # if cap_metrics_results is not None:
+                    #     # get async results
+                    #     # cap_metrics_results, pred_caps = cap_metrics_results.get()
+                    #     # prog_metrics_results, pred_progs = prog_metrics_results.get()
+                    #     # densecap_metrics_results, pred_intervals = densecap_metrics_results.get()
 
-                #     # print('evaluating progs...')
-                #     # prog_metrics_results, pred_progs = evaluate_from_tokens(self.programs_vocab, all_programs, all_prog_ids, self.ref_programs[phase], False)
-                #     print("evaluating captions (basic)...")
-                #     cap_metrics_results, pred_caps = evaluate_from_tokens(
-                #         self.caps_vocab, all_captions, all_caps_ids, self.ref_captions[phase],
-                #     )
-                #     print("evaluating captions (dense)...")
-                #     (densecap_metrics_results, pred_intervals,) = densecap_evaluate_from_tokens(
-                #         self.caps_vocab,
-                #         all_prog_ids,
-                #         all_tstamps,
-                #         all_intervals,
-                #         all_captions,
-                #         self.ref_densecaps[phase],
-                #     )
+                    #     # print('evaluating progs...')
+                    #     # prog_metrics_results, pred_progs = evaluate_from_tokens(self.programs_vocab, all_programs, all_prog_ids, self.ref_programs[phase], False)
+                    #     print("evaluating captions (basic)...")
+                    #     cap_metrics_results, pred_caps = evaluate_from_tokens(
+                    #         self.caps_vocab, all_captions, all_caps_ids, self.ref_captions[phase],
+                    #     )
+                    #     print("evaluating captions (dense)...")
+                    #     (densecap_metrics_results, pred_intervals,) = densecap_evaluate_from_tokens(
+                    #         self.caps_vocab,
+                    #         all_prog_ids,
+                    #         all_tstamps,
+                    #         all_intervals,
+                    #         all_captions,
+                    #         self.ref_densecaps[phase],
+                    #     )
 
-                #     # process results, saving the checkpoint if any improvement occurs
-                #     # self.__process_results(prog_metrics_results, pred_progs, phase, epoch-1, save_checkpoints_dir, 'programmer')
-                #     self.__process_results(
-                #         cap_metrics_results, pred_caps, phase, epoch, save_checkpoints_dir, "captioning",
-                #     )
-                #     self.__process_results(
-                #         densecap_metrics_results, pred_intervals, phase, epoch, save_checkpoints_dir, "densecap",
-                #     )
+                    #     # process results, saving the checkpoint if any improvement occurs
+                    #     # self.__process_results(prog_metrics_results, pred_progs, phase, epoch-1, save_checkpoints_dir, 'programmer')
+                    #     self.__process_results(
+                    #         cap_metrics_results, pred_caps, phase, epoch, save_checkpoints_dir, "captioning",
+                    #     )
+                    #     self.__process_results(
+                    #         densecap_metrics_results, pred_intervals, phase, epoch, save_checkpoints_dir, "densecap",
+                    #     )
 
                     # report results if any improvement occurs
                     if self.early_stop == 0:
                         log_msg = f"\n IMPROVEMENT ON {phase} at epoch {epoch} !"
 
-                #         # log_msg += '\n Programmer metrics: \n   '
-                #         # log_msg += '\t'.join([f'{k}:({e:03d}, {v:.3f})' for k, (e, v) in self.best_metrics['programmer'][phase].items()])
+                        #         # log_msg += '\n Programmer metrics: \n   '
+                        #         # log_msg += '\t'.join([f'{k}:({e:03d}, {v:.3f})' for k, (e, v) in self.best_metrics['programmer'][phase].items()])
 
-                #         log_msg += "\n  Captioning metrics: \n   "
-                #         log_msg += "\t".join(
-                #             [f"{k}:({e:03d}, {v:.3f})" for k, (e, v) in self.best_metrics["captioning"][phase].items()]
-                #         )
+                        #         log_msg += "\n  Captioning metrics: \n   "
+                        #         log_msg += "\t".join(
+                        #             [f"{k}:({e:03d}, {v:.3f})" for k, (e, v) in self.best_metrics["captioning"][phase].items()]
+                        #         )
 
-                #         log_msg += "\n  DenseCaptioning metrics: \n   "
-                #         log_msg += "\t".join(
-                #             [f"{k}:({e:03d}, {v:.3f})" for k, (e, v) in self.best_metrics["densecap"][phase].items()]
-                #         )
+                        #         log_msg += "\n  DenseCaptioning metrics: \n   "
+                        #         log_msg += "\t".join(
+                        #             [f"{k}:({e:03d}, {v:.3f})" for k, (e, v) in self.best_metrics["densecap"][phase].items()]
+                        #         )
 
                         log_msg += f"\n  S-Proposals metrics {phase}: \n   "
                         log_msg += "\t".join(
