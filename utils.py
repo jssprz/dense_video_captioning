@@ -158,13 +158,19 @@ def multilabel_evaluate_from_logits(gt_multihots, pred_logits, cap_counts):
     # roc_auc
     try:
         roc_auc_micro = roc_auc_score(y_true, y_pred, average="micro")
-        roc_auc_macro = roc_auc_score(y_true, y_pred, average="macro")
-        roc_auc_weighted = roc_auc_score(y_true, y_pred, average="weighted")
-        roc_auc_samples = roc_auc_score(y_true, y_pred, average="samples")
     except ValueError:
         roc_auc_micro = np.NaN
+    try:
+        roc_auc_macro = roc_auc_score(y_true, y_pred, average="macro")
+    except ValueError:
         roc_auc_macro = np.NaN
+    try:
+        roc_auc_weighted = roc_auc_score(y_true, y_pred, average="weighted")
+    except ValueError:
         roc_auc_weighted = np.NaN
+    try:
+        roc_auc_samples = roc_auc_score(y_true, y_pred, average="samples")
+    except ValueError:
         roc_auc_samples = np.NaN
 
     return {
