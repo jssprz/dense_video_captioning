@@ -469,7 +469,7 @@ class DenseVideo2TextTrainer(Trainer):
             h5_file_path=self.trainer_config.train_h5_file_path,
             h5_file_group_name=self.trainer_config.h5_file_group_name,
             vidxs=vidxs,
-            vidxs_blcklist=self.trainer_config.valid_blacklist,
+            vidxs_blcklist=self.trainer_config.train_blacklist,
             vfps=fps,
             cidxs=cidxs_t,
             intervals=intervals_t,
@@ -1133,7 +1133,7 @@ class DenseVideo2TextTrainer(Trainer):
                     #     # self.logger.info('\nWE: {}\nGT: {}'.format(predicted_sentences[video_ids[0]],
                     #     #                                            self.__decode_from_tokens(captions[0].squeeze())))
 
-                # for sanity, replace the last checkpoint when epoch is power of 2
+                # (Sanity) replace the last checkpoint when epoch is power of 2
                 if phase == "train" and (self.last_saved_epoch == -1 or not (epoch & (epoch - 1))):
                     print("saving checkpoint...")
                     self.__save_checkpoint(epoch, save_checkpoints_dir, False)
