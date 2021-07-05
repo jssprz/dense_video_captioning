@@ -70,6 +70,12 @@ class DenseCaptioningDataset(Dataset):
             self.feat_count = self.h5_dataset["count_features"]
             self.frame_tstamps = self.h5_dataset["frames_tstamp"]
 
+            # (Sanity) include in blacklist the videos with feat_count=0
+            for i, c in enumerate(self.feat_count):
+                if c == 0 and i not in self.vidxs_blcklist:
+                    self.vidxs_blcklist.append(i)
+                    print(f"the {i}-th video was included in blacklist")
+
         # get the vidx for accessing to the h5_dataset arrays
         vidx = self.vidxs[index]
 
@@ -97,7 +103,7 @@ class DenseCaptioningDataset(Dataset):
         return None
 
     def __len__(self):
-        return len(self.vidxs)
+        return len(self.vidxs) - len(self.vidxs_blcklist)
 
 
 def filter_blacklist_collate(batch):

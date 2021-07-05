@@ -695,7 +695,7 @@ class DenseCaptioner(nn.Module):
                 # clip_global = self.v_p_q_pool[vidx_to_describe, :]
 
                 # compute prop_s_back_rnn_0 from features in back direction
-                lens = torch.min(self.p[vidx_to_describe]+1, feats_count[vidx_to_describe])
+                lens = torch.min(self.p[vidx_to_describe]+1, feats_count[vidx_to_describe]).to('cpu')
                 sub_v_feats_padded = pad_sequence(
                     [
                         torch.cat([f[vidx, :l, :].flip((0,)) for f in v_feats], dim=1)
