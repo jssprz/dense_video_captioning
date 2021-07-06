@@ -415,7 +415,7 @@ class DenseCaptioner(nn.Module):
             input_size=config.cnn_feats_size + config.c3d_feats_size,
             hidden_size=proposals_tagger_config.rnn_h_size,
             batch_first=True,
-        )        
+        )
 
         self.prop_e_rnn_1 = nn.LSTMCell(
             input_size=proposals_tagger_config.rnn_h_size, hidden_size=proposals_tagger_config.rnn_h_size,
@@ -703,9 +703,8 @@ class DenseCaptioner(nn.Module):
                 # clip_global = self.v_p_q_pool[vidx_to_describe, :]
 
                 # START MODULE
-
                 # compute prop_s_back_rnn_0 from features in back direction
-                lens = torch.min(self.p[vidx_to_describe]+1, feats_count[vidx_to_describe]).to('cpu')
+                lens = torch.min(self.p[vidx_to_describe] + 1, feats_count[vidx_to_describe]).to("cpu")
                 sub_v_feats_padded = pad_sequence(
                     [
                         torch.cat([f[vidx, :l, :].flip((0,)) for f in v_feats], dim=1)
@@ -730,19 +729,31 @@ class DenseCaptioner(nn.Module):
                 )[0]
 
                 # END MODULE
-
                 # compute prop_e_back_rnn_0 from features in back direction
-                lens = torch.min(self.q[vidx_to_describe]+1, feats_count[vidx_to_describe]).to('cpu')
+                lens = (
+                    torch.min(self.q[vidx_to_describe] + 1, feats_count[vidx_to_describe])
+                    - torch.min(self.p[vidx_to_describe], feats_count[vidx_to_describe] - 1)
+                ).to("cpu")
+                print(lens)
                 sub_v_feats_padded = pad_sequence(
                     [
-                        torch.cat([f[vidx, :l, :].flip((0,)) for f in v_feats], dim=1)
-                        for vidx, l in zip(vidx_to_describe, lens)
+                        torch.cat(
+                            [
+                                f[v, min(self.p[v], feats_count[v] - 1) : min(self.q[v] + 1, feats_count[v]), :,].flip(
+                                    (0,)
+                                )
+                                for f in v_feats
+                            ],
+                            dim=1,
+                        )
+                        for v in vidx_to_describe
                     ],
                     batch_first=True,
                 )
                 sub_v_feats_packed = pack_padded_sequence(
                     input=sub_v_feats_padded, lengths=lens, batch_first=True, enforce_sorted=False
                 )
+                print(sub_v_feats_packed.data.size())
                 _, (prop_e_back_h_0, _) = self.prop_e_back_rnn_0(sub_v_feats_packed)
 
                 # compute another step of prop_e_rnn_1, considering the prop_e_h_0 as input
