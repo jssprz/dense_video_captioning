@@ -548,7 +548,7 @@ class DenseVideo2TextTrainer(Trainer):
         gt_pos = gt_pos.to(self.device)
         # gt_upos = gt_upos.to(self.device)
         gt_cap_lens = gt_cap_lens.to(self.device)
-        # gt_program = gt_program.to(self.device)
+        gt_program = gt_program.to(self.device)
         # gt_prog_len = gt_prog_len.to(self.device)
         gt_caps_sem_enc = gt_caps_sem_enc.to(self.device)
 
