@@ -391,6 +391,7 @@ class DenseCaptioner(nn.Module):
 
         # self.prop_fc = nn.Linear(in_features=config.cnn_feats_size+config.c3d_feats_size, out_features=num_proposals)
 
+        # start proposals module
         self.prop_s_rnn_0 = nn.LSTMCell(
             input_size=config.cnn_feats_size + config.c3d_feats_size, hidden_size=proposals_tagger_config.rnn_h_size,
         )
@@ -405,9 +406,16 @@ class DenseCaptioner(nn.Module):
             input_size=proposals_tagger_config.rnn_h_size, hidden_size=proposals_tagger_config.rnn_h_size,
         )
 
+        # end proposals module
         self.prop_e_rnn_0 = nn.LSTMCell(
             input_size=config.cnn_feats_size + config.c3d_feats_size, hidden_size=proposals_tagger_config.rnn_h_size,
         )
+
+        self.prop_e_back_rnn_0 = nn.LSTM(
+            input_size=config.cnn_feats_size + config.c3d_feats_size,
+            hidden_size=proposals_tagger_config.rnn_h_size,
+            batch_first=True,
+        )        
 
         self.prop_e_rnn_1 = nn.LSTMCell(
             input_size=proposals_tagger_config.rnn_h_size, hidden_size=proposals_tagger_config.rnn_h_size,
@@ -429,7 +437,7 @@ class DenseCaptioner(nn.Module):
         )
 
         self.prop_enc_e = TaggerMLP(
-            v_size=proposals_tagger_config.rnn_h_size,
+            v_size=proposals_tagger_config.rnn_h_size * 2,
             out_size=num_proposals,
             h_sizes=proposals_tagger_config.h_sizes,
             in_drop_p=proposals_tagger_config.in_drop_p,
@@ -694,6 +702,8 @@ class DenseCaptioner(nn.Module):
                 # clip_feats = [feats[vidx_to_describe, :, :] for feats in self.v_p_q_feats]
                 # clip_global = self.v_p_q_pool[vidx_to_describe, :]
 
+                # START MODULE
+
                 # compute prop_s_back_rnn_0 from features in back direction
                 lens = torch.min(self.p[vidx_to_describe]+1, feats_count[vidx_to_describe]).to('cpu')
                 sub_v_feats_padded = pad_sequence(
@@ -703,9 +713,6 @@ class DenseCaptioner(nn.Module):
                     ],
                     batch_first=True,
                 )
-                # sub_v_feats = torch.zeros(len(vidx_to_describe), max_len, self.feats_size)
-                # for i, (vidx, l) in enumerate(zip(vidx_to_describe, lens)):
-                #     sub_v_feats[i, :l, :] = torch.cat([f[vidx, :l, :].flip((0,)) for f in v_feats], dim=1)
                 sub_v_feats_packed = pack_padded_sequence(
                     input=sub_v_feats_padded, lengths=lens, batch_first=True, enforce_sorted=False
                 )
@@ -722,6 +729,22 @@ class DenseCaptioner(nn.Module):
                     torch.cat((self.prop_s_h_1[vidx_to_describe], prop_s_back_h_0.squeeze(0)), dim=-1)
                 )[0]
 
+                # END MODULE
+
+                # compute prop_e_back_rnn_0 from features in back direction
+                lens = torch.min(self.q[vidx_to_describe]+1, feats_count[vidx_to_describe]).to('cpu')
+                sub_v_feats_padded = pad_sequence(
+                    [
+                        torch.cat([f[vidx, :l, :].flip((0,)) for f in v_feats], dim=1)
+                        for vidx, l in zip(vidx_to_describe, lens)
+                    ],
+                    batch_first=True,
+                )
+                sub_v_feats_packed = pack_padded_sequence(
+                    input=sub_v_feats_padded, lengths=lens, batch_first=True, enforce_sorted=False
+                )
+                _, (prop_e_back_h_0, _) = self.prop_e_back_rnn_0(sub_v_feats_packed)
+
                 # compute another step of prop_e_rnn_1, considering the prop_e_h_0 as input
                 (self.prop_e_h_1[vidx_to_describe, :], self.prop_e_c_1[vidx_to_describe, :],) = self.prop_e_rnn_1(
                     self.prop_e_h_0[vidx_to_describe, :],
@@ -730,7 +753,7 @@ class DenseCaptioner(nn.Module):
 
                 # compute the proposal encoding for end position from prop_e_h_1
                 prop_logits_e[vidx_to_describe, caps_count[vidx_to_describe], :] = self.prop_enc_e(
-                    self.prop_e_h_1[vidx_to_describe]
+                    torch.cat((self.prop_e_h_1[vidx_to_describe], prop_e_back_h_0.squeeze(0)), dim=-1)
                 )[0]
 
                 # _, v_p_q_feats = self.get_clip_feats(v_feats, self.p, self.q)
