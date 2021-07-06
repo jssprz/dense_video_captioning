@@ -734,7 +734,6 @@ class DenseCaptioner(nn.Module):
                     torch.min(self.q[vidx_to_describe] + 1, feats_count[vidx_to_describe])
                     - torch.min(self.p[vidx_to_describe], feats_count[vidx_to_describe] - 1)
                 ).to("cpu")
-                print(lens)
                 sub_v_feats_padded = pad_sequence(
                     [
                         torch.cat(
