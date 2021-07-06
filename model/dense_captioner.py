@@ -642,29 +642,42 @@ class DenseCaptioner(nn.Module):
             a_id = gt_program[:, seq_pos]
 
             # updates the p and q positions for each video, and save sub-batch of video clips to be described
-            vidx_to_skip = []
-            vidx_to_advance = []
-            vidx_to_describe = []
+            vidx_to_skip = (a_id == 0).nonzero(as_tuple=True)[0]
+            self.p[vidx_to_skip] += 1
+            self.q[vidx_to_skip] = self.p[vidx_to_skip] + 1
 
-            for i, a in enumerate(a_id):
-                if a == 0:
-                    # skip
-                    self.p[i] += 1
-                    self.q[i] = self.p[i] + 1
-                    vidx_to_skip.append(i)
-                    if self.q[i] > self.prop_e_rnn_0_pos[i]:
-                        vidx_to_advance.append(i)
-                elif a == 1:
-                    # enqueue
-                    self.q[i] += 1
-                    if self.q[i] > self.prop_e_rnn_0_pos[i]:
-                        vidx_to_advance.append(i)
-                elif a == 2:
-                    # generate, save interval to be described. It going to be used for constructiong a captioning sub-batch
-                    vidx_to_describe.append(i)
-                    # intervals[i, caps_count[i], :] = torch.tensor([self.p[i], self.q[i]])
-                    # intervals[i, caps_count[i], 0] = self.p[i]
-                    # intervals[i, caps_count[i], 1] = self.q[i]
+            vidx_to_advance = (a_id == 1).nonzero(as_tuple=True)[0]
+            self.q[vidx_to_advance] += 1
+            vidx_to_advance = list(
+                set(
+                    (self.q[vidx_to_skip] > self.prop_e_rnn_0_pos[vidx_to_skip]).nonzero(as_tuple=True)[0].tolist()
+                    + (self.q[vidx_to_advance] > self.prop_e_rnn_0_pos[vidx_to_advance])
+                    .nonzero(as_tuple=True)[0]
+                    .tolist()
+                )
+            )
+
+            vidx_to_describe = (a_id == 2).nonzero(as_tuple=True)[0]
+
+            # for i, a in enumerate(a_id):
+            #     if a == 0:
+            #         # skip
+            #         self.p[i] += 1
+            #         self.q[i] = self.p[i] + 1
+            #         vidx_to_skip.append(i)
+            #         if self.q[i] > self.prop_e_rnn_0_pos[i]:
+            #             vidx_to_advance.append(i)
+            #     elif a == 1:
+            #         # enqueue
+            #         self.q[i] += 1
+            #         if self.q[i] > self.prop_e_rnn_0_pos[i]:
+            #             vidx_to_advance.append(i)
+            #     elif a == 2:
+            #         # generate, save interval to be described. It going to be used for constructiong a captioning sub-batch
+            #         vidx_to_describe.append(i)
+            #         # intervals[i, caps_count[i], :] = torch.tensor([self.p[i], self.q[i]])
+            #         # intervals[i, caps_count[i], 0] = self.p[i]
+            #         # intervals[i, caps_count[i], 1] = self.q[i]
 
             if len(vidx_to_skip) > 0:
                 v_p = torch.cat(

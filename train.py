@@ -589,7 +589,7 @@ class DenseVideo2TextTrainer(Trainer):
         # gt_pos = gt_pos.to(self.device)
         # gt_upos = gt_upos.to(self.device)
         # gt_cap_lens = gt_cap_lens.to(self.device)
-        # gt_program = gt_program.to(self.device)
+        gt_program = gt_program.to(self.device)
         # gt_prog_len = gt_prog_len.to(self.device)
         # gt_caps_sem_enc = gt_caps_sem_enc.to(self.device)
 
@@ -645,13 +645,14 @@ class DenseVideo2TextTrainer(Trainer):
             # gt_proposals = gt_proposals[:, :int(torch.max(gt_intervals[:,self.avg_caps,0]))].to(self.device)
 
             # move the gt batch tensors to device for computing the generalization loss
-            gt_program = gt_program.to(self.device)
+            # gt_program = gt_program.to(self.device)
             # gt_captions = gt_captions.to(self.device)
             # gt_caps_sem_enc = gt_caps_sem_enc.to(self.device)
             # gt_pos = gt_pos.to(self.device)
             # gt_intervals = gt_intervals.to(self.device)
             # # gt_upos = gt_upos.to(self.device)
             # gt_proposals = gt_proposals.to(self.device)
+            pass
         else:
             pass
 
@@ -831,7 +832,7 @@ class DenseVideo2TextTrainer(Trainer):
                     self.__save_checkpoint(epoch, save_checkpoints_dir, True)
 
     def train_model(self, resume=False, checkpoint_path=None, min_num_epochs=50, early_stop_limit=10):
-        parallel_pool = Pool()
+        # parallel_pool = Pool()
         # self.logger.info('Training captioning model on [{}] dataset with [{}] encoder and [{}] decoder'
         #                  .format(self.config.dataset_name, self.encoder_name, self.decoder_name))
 
