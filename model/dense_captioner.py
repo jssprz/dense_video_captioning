@@ -752,7 +752,6 @@ class DenseCaptioner(nn.Module):
                 sub_v_feats_packed = pack_padded_sequence(
                     input=sub_v_feats_padded, lengths=lens, batch_first=True, enforce_sorted=False
                 )
-                print(sub_v_feats_packed.data.size())
                 _, (prop_e_back_h_0, _) = self.prop_e_back_rnn_0(sub_v_feats_packed)
 
                 # compute another step of prop_e_rnn_1, considering the prop_e_h_0 as input
