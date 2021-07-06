@@ -535,21 +535,31 @@ class DenseCaptioner(nn.Module):
             a_id = gt_program[:, seq_pos]
 
             # updates the p and q positions for each video, and save sub-batch of video clips to be described
-            vidx_to_describe = []
-            for i, a in enumerate(a_id):
-                if a == 0:
-                    # skip
-                    self.p[i] += 1
-                    self.q[i] = self.p[i] + 1
-                elif a == 1:
-                    # enqueue
-                    self.q[i] += 1
-                elif a == 2 and caps_count[i] < intervals.size(1):
-                    # generate, save interval to be described. It going to be used for constructiong a captioning sub-batch
-                    vidx_to_describe.append(i)
-                    # intervals[i, caps_count[i], :] = torch.tensor([self.p[i], self.q[i]])
-                    intervals[i, caps_count[i], 0] = self.p[i]
-                    intervals[i, caps_count[i], 1] = self.q[i]
+            vidx_to_skip = (a_id == 0).nonzero(as_tuple=True)[0]
+            self.p[vidx_to_skip] += 1
+            self.q[vidx_to_skip] = self.p[vidx_to_skip] + 1
+
+            vidx_to_advance = (a_id == 1).nonzero(as_tuple=True)[0]
+            self.q[vidx_to_advance] += 1
+
+            vidx_to_describe = ((a_id == 2) * (caps_count < intervals.size(1))).nonzero(as_tuple=True)[0]
+            intervals[vidx_to_describe, caps_count[vidx_to_describe], 0] = self.p[vidx_to_describe].float()
+            intervals[vidx_to_describe, caps_count[vidx_to_describe], 1] = self.q[vidx_to_describe].float()
+
+            # for i, a in enumerate(a_id):
+            #     if a == 0:
+            #         # skip
+            #         self.p[i] += 1
+            #         self.q[i] = self.p[i] + 1
+            #     elif a == 1:
+            #         # enqueue
+            #         self.q[i] += 1
+            #     elif a == 2 and caps_count[i] < intervals.size(1):
+            #         # generate, save interval to be described. It going to be used for constructiong a captioning sub-batch
+            #         vidx_to_describe.append(i)
+            #         # intervals[i, caps_count[i], :] = torch.tensor([self.p[i], self.q[i]])
+            #         intervals[i, caps_count[i], 0] = self.p[i]
+            #         intervals[i, caps_count[i], 1] = self.q[i]
 
             # generate a caption from the current video-clips saved in the sub-batch
             if len(vidx_to_describe) > 0:

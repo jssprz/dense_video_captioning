@@ -432,7 +432,7 @@ class DenseVideo2TextTrainer(Trainer):
             h5_file_path=self.trainer_config.train_h5_file_path,
             h5_file_group_name=self.trainer_config.h5_file_group_name,
             vidxs=vidxs,
-            vidxs_blcklist=self.trainer_config.valid_blacklist,
+            vidxs_blcklist=self.trainer_config.train_blacklist,
             vfps=fps,
             cidxs=cidxs_t,
             intervals=intervals_t,
@@ -770,7 +770,7 @@ class DenseVideo2TextTrainer(Trainer):
                     self.__save_checkpoint(epoch, save_checkpoints_dir, True)
 
     def train_model(self, resume=False, checkpoint_path=None, min_num_epochs=50, early_stop_limit=10):
-        parallel_pool = Pool()
+        # parallel_pool = Pool()
         # self.logger.info('Training captioning model on [{}] dataset with [{}] encoder and [{}] decoder'
         #                  .format(self.config.dataset_name, self.encoder_name, self.decoder_name))
 
