@@ -1142,7 +1142,7 @@ class DenseVideo2TextTrainer(Trainer):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Generate captions por test samples")
+    parser = argparse.ArgumentParser(description="Train a new dense video captioning model")
     parser.add_argument(
         "-chkpt",
         "--checkpoint_path",
