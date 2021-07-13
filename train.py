@@ -696,6 +696,7 @@ class DenseVideo2TextTrainer(Trainer):
                 max_caps=self.avg_caps,  # max_caps=self.max_caps,
                 max_cap=self.max_words,
                 max_chunks=self.avg_truncation,
+                max_back_steps=self.modules_config["proposals_tagger_config"].max_back_steps
             )  # the maximum value of start pointers is lower than the max_prog to be generated
             self.logger.info(f"proposals count: {caps_count}")
 

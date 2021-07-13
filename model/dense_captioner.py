@@ -556,6 +556,7 @@ class DenseCaptioner(nn.Module):
         max_caps=None,
         max_cap=None,
         max_chunks=None,
+        max_back_steps=10
     ):
         # initialize
         bs, device = v_feats[0].size(0), v_feats[0].device
@@ -642,153 +643,134 @@ class DenseCaptioner(nn.Module):
             a_id = gt_program[:, seq_pos]
 
             # updates the p and q positions for each video, and save sub-batch of video clips to be described
-            vidx_to_skip = (a_id == 0).nonzero(as_tuple=True)[0]
-            self.p[vidx_to_skip] += 1
-            self.q[vidx_to_skip] = self.p[vidx_to_skip] + 1
+            vix_2_skip = (a_id == 0).nonzero(as_tuple=True)[0]
+            self.p[vix_2_skip] += 1
+            self.q[vix_2_skip] = self.p[vix_2_skip] + 1
 
-            vidx_to_advance = (a_id == 1).nonzero(as_tuple=True)[0]
-            self.q[vidx_to_advance] += 1
-            vidx_to_advance = list(
+            vix_2_advance = (a_id == 1).nonzero(as_tuple=True)[0]
+            self.q[vix_2_advance] += 1
+            vix_2_advance = list(
                 set(
-                    (self.q[vidx_to_skip] > self.prop_e_rnn_0_pos[vidx_to_skip]).nonzero(as_tuple=True)[0].tolist()
-                    + (self.q[vidx_to_advance] > self.prop_e_rnn_0_pos[vidx_to_advance])
-                    .nonzero(as_tuple=True)[0]
-                    .tolist()
+                    (self.q[vix_2_skip] > self.prop_e_rnn_0_pos[vix_2_skip]).nonzero(as_tuple=True)[0].tolist()
+                    + (self.q[vix_2_advance] > self.prop_e_rnn_0_pos[vix_2_advance]).nonzero(as_tuple=True)[0].tolist()
                 )
             )
 
-            vidx_to_describe = (a_id == 2).nonzero(as_tuple=True)[0]
+            vix_2_dscr = (a_id == 2).nonzero(as_tuple=True)[0]
 
             # for i, a in enumerate(a_id):
             #     if a == 0:
             #         # skip
             #         self.p[i] += 1
             #         self.q[i] = self.p[i] + 1
-            #         vidx_to_skip.append(i)
+            #         vix_2_skip.append(i)
             #         if self.q[i] > self.prop_e_rnn_0_pos[i]:
-            #             vidx_to_advance.append(i)
+            #             vix_2_advance.append(i)
             #     elif a == 1:
             #         # enqueue
             #         self.q[i] += 1
             #         if self.q[i] > self.prop_e_rnn_0_pos[i]:
-            #             vidx_to_advance.append(i)
+            #             vix_2_advance.append(i)
             #     elif a == 2:
             #         # generate, save interval to be described. It going to be used for constructiong a captioning sub-batch
-            #         vidx_to_describe.append(i)
+            #         vix_2_dscr.append(i)
             #         # intervals[i, caps_count[i], :] = torch.tensor([self.p[i], self.q[i]])
             #         # intervals[i, caps_count[i], 0] = self.p[i]
             #         # intervals[i, caps_count[i], 1] = self.q[i]
 
-            if len(vidx_to_skip) > 0:
-                v_p = torch.cat(
-                    [f[vidx_to_skip, torch.min(self.p[vidx_to_skip], feats_count[vidx_to_skip]), :] for f in v_feats],
-                    dim=1,
-                )
-                self.prop_s_h_0[vidx_to_skip, :], self.prop_s_c_0[vidx_to_skip, :] = self.prop_s_rnn_0(
-                    v_p, (self.prop_s_h_0[vidx_to_skip, :], self.prop_s_c_0[vidx_to_skip, :])
+            if len(vix_2_skip) > 0:
+                fidx = torch.min(self.p[vix_2_skip], feats_count[vix_2_skip])
+                v_p = torch.cat([f[vix_2_skip, fidx, :] for f in v_feats], dim=1,)
+                self.prop_s_h_0[vix_2_skip, :], self.prop_s_c_0[vix_2_skip, :] = self.prop_s_rnn_0(
+                    v_p, (self.prop_s_h_0[vix_2_skip, :], self.prop_s_c_0[vix_2_skip, :])
                 )
                 # with torch.no_grad():
-                #     v_p = torch.cat([f[vidx_to_skip, self.p[vidx_to_skip], :] for f in v_feats], dim=1)
+                #     v_p = torch.cat([f[vix_2_skip, self.p[vix_2_skip], :] for f in v_feats], dim=1)
                 #     proposals = self.prop_enc(v_p)[0]
                 #     self.current_proposals = torch.clone(self.current_proposals)
-                #     self.current_proposals[vidx_to_skip, :] = proposals
-                # # proposals_logits[vidx_to_skip, self.p[vidx_to_skip], :] = proposals
+                #     self.current_proposals[vix_2_skip, :] = proposals
+                # # proposals_logits[vix_2_skip, self.p[vix_2_skip], :] = proposals
 
-            if len(vidx_to_advance) > 0:
-                self.prop_e_rnn_0_pos[vidx_to_advance] = self.q[vidx_to_advance]
+            if len(vix_2_advance) > 0:
+                self.prop_e_rnn_0_pos[vix_2_advance] = self.q[vix_2_advance]
 
-                v_q = torch.cat(
-                    [
-                        f[vidx_to_advance, torch.min(self.q[vidx_to_advance], feats_count[vidx_to_advance]), :]
-                        for f in v_feats
-                    ],
-                    dim=1,
-                )
-                (self.prop_e_h_0[vidx_to_advance, :], self.prop_e_c_0[vidx_to_advance, :],) = self.prop_e_rnn_0(
-                    v_q, (self.prop_e_h_0[vidx_to_advance, :], self.prop_e_c_0[vidx_to_advance, :])
+                fidx = torch.min(self.q[vix_2_advance], feats_count[vix_2_advance])
+                v_q = torch.cat([f[vix_2_advance, fidx, :] for f in v_feats], dim=1,)
+                (self.prop_e_h_0[vix_2_advance, :], self.prop_e_c_0[vix_2_advance, :],) = self.prop_e_rnn_0(
+                    v_q, (self.prop_e_h_0[vix_2_advance, :], self.prop_e_c_0[vix_2_advance, :])
                 )
 
             # generate a caption from the current video-clips saved in the sub-batch
-            if len(vidx_to_describe) > 0:
-                # print(seq_pos, use_teacher_forcing, teacher_forcing_p, vidx_to_describe, caps_count, self.p.data, self.q.data)
+            if len(vix_2_dscr) > 0:
+                # print(seq_pos, use_teacher_forcing, teacher_forcing_p, vix_2_dscr, caps_count, self.p.data, self.q.data)
                 # get sub-batch of video features to be described
-                # clip_feats = [feats[vidx_to_describe, :, :] for feats in self.v_p_q_feats]
-                # clip_global = self.v_p_q_pool[vidx_to_describe, :]
+                # clip_feats = [feats[vix_2_dscr, :, :] for feats in self.v_p_q_feats]
+                # clip_global = self.v_p_q_pool[vix_2_dscr, :]
 
                 # START MODULE
                 # compute prop_s_back_rnn_0 from features in back direction
-                lens = torch.min(self.p[vidx_to_describe] + 1, feats_count[vidx_to_describe]).to("cpu")
+                ends = torch.min(self.p[vix_2_dscr] + 1, feats_count[vix_2_dscr])
+                starts = (ends - max_back_steps).clamp(min=0)
                 sub_v_feats_padded = pad_sequence(
                     [
-                        torch.cat([f[vidx, :l, :].flip((0,)) for f in v_feats], dim=1)
-                        for vidx, l in zip(vidx_to_describe, lens)
+                        torch.cat([f[v, s:e, :] for f in v_feats], dim=1).flip((0,))
+                        for v, s, e in zip(vix_2_dscr, starts, ends)
                     ],
                     batch_first=True,
                 )
                 sub_v_feats_packed = pack_padded_sequence(
-                    input=sub_v_feats_padded, lengths=lens, batch_first=True, enforce_sorted=False
+                    input=sub_v_feats_padded, lengths=(ends - starts).to("cpu"), batch_first=True, enforce_sorted=False
                 )
                 _, (prop_s_back_h_0, _) = self.prop_s_back_rnn_0(sub_v_feats_packed)
 
                 # compute another step of prop_s_rnn_1, considering the prop_s_h_0 as input
-                (self.prop_s_h_1[vidx_to_describe, :], self.prop_s_c_1[vidx_to_describe, :],) = self.prop_s_rnn_1(
-                    self.prop_s_h_0[vidx_to_describe, :],
-                    (self.prop_s_h_1[vidx_to_describe, :], self.prop_s_c_1[vidx_to_describe, :],),
+                (self.prop_s_h_1[vix_2_dscr, :], self.prop_s_c_1[vix_2_dscr, :],) = self.prop_s_rnn_1(
+                    self.prop_s_h_0[vix_2_dscr, :], (self.prop_s_h_1[vix_2_dscr, :], self.prop_s_c_1[vix_2_dscr, :],),
                 )
 
                 # compute the proposal encoding for start position from prop_s_h_1 and prop_s_back_h_0
-                prop_logits_s[vidx_to_describe, caps_count[vidx_to_describe], :] = self.prop_enc_s(
-                    torch.cat((self.prop_s_h_1[vidx_to_describe], prop_s_back_h_0.squeeze(0)), dim=-1)
+                prop_logits_s[vix_2_dscr, caps_count[vix_2_dscr], :] = self.prop_enc_s(
+                    torch.cat((self.prop_s_h_1[vix_2_dscr], prop_s_back_h_0.squeeze(0)), dim=-1)
                 )[0]
 
                 # END MODULE
                 # compute prop_e_back_rnn_0 from features in back direction
-                lens = (
-                    torch.min(self.q[vidx_to_describe] + 1, feats_count[vidx_to_describe])
-                    - torch.min(self.p[vidx_to_describe], feats_count[vidx_to_describe] - 1)
-                ).to("cpu")
+                max_fix = feats_count[vix_2_dscr] - 1
+                ends = torch.min(self.q[vix_2_dscr], max_fix) + 1
+                starts = torch.max((torch.min(self.p[vix_2_dscr], max_fix)), ends - max_back_steps)
                 sub_v_feats_padded = pad_sequence(
                     [
-                        torch.cat(
-                            [
-                                f[v, min(self.p[v], feats_count[v] - 1) : min(self.q[v] + 1, feats_count[v]), :,].flip(
-                                    (0,)
-                                )
-                                for f in v_feats
-                            ],
-                            dim=1,
-                        )
-                        for v in vidx_to_describe
+                        torch.cat([f[v, s:e, :,] for f in v_feats], dim=1,).flip((0,))
+                        for v, s, e in zip(vix_2_dscr, starts, ends)
                     ],
                     batch_first=True,
                 )
                 sub_v_feats_packed = pack_padded_sequence(
-                    input=sub_v_feats_padded, lengths=lens, batch_first=True, enforce_sorted=False
+                    input=sub_v_feats_padded, lengths=(ends - starts).to("cpu"), batch_first=True, enforce_sorted=False
                 )
                 _, (prop_e_back_h_0, _) = self.prop_e_back_rnn_0(sub_v_feats_packed)
 
                 # compute another step of prop_e_rnn_1, considering the prop_e_h_0 as input
-                (self.prop_e_h_1[vidx_to_describe, :], self.prop_e_c_1[vidx_to_describe, :],) = self.prop_e_rnn_1(
-                    self.prop_e_h_0[vidx_to_describe, :],
-                    (self.prop_e_h_1[vidx_to_describe, :], self.prop_e_c_1[vidx_to_describe, :],),
+                (self.prop_e_h_1[vix_2_dscr, :], self.prop_e_c_1[vix_2_dscr, :],) = self.prop_e_rnn_1(
+                    self.prop_e_h_0[vix_2_dscr, :], (self.prop_e_h_1[vix_2_dscr, :], self.prop_e_c_1[vix_2_dscr, :],),
                 )
 
                 # compute the proposal encoding for end position from prop_e_h_1
-                prop_logits_e[vidx_to_describe, caps_count[vidx_to_describe], :] = self.prop_enc_e(
-                    torch.cat((self.prop_e_h_1[vidx_to_describe], prop_e_back_h_0.squeeze(0)), dim=-1)
+                prop_logits_e[vix_2_dscr, caps_count[vix_2_dscr], :] = self.prop_enc_e(
+                    torch.cat((self.prop_e_h_1[vix_2_dscr], prop_e_back_h_0.squeeze(0)), dim=-1)
                 )[0]
 
                 # _, v_p_q_feats = self.get_clip_feats(v_feats, self.p, self.q)
-                # clip_feats = torch.cat([feats[vidx_to_describe, :, :] for feats in v_p_q_feats], dim=-1)
-                # _, (self.prop_h_e[vidx_to_describe], _) = self.e_prop_rnn(
+                # clip_feats = torch.cat([feats[vix_2_dscr, :, :] for feats in v_p_q_feats], dim=-1)
+                # _, (self.prop_h_e[vix_2_dscr], _) = self.e_prop_rnn(
                 #     clip_feats,
                 #     (
-                #         self.prop_h_s[vidx_to_describe, :].unsqueeze(0),
-                #         self.prop_c_s[vidx_to_describe, :].unsqueeze(0),
+                #         self.prop_h_s[vix_2_dscr, :].unsqueeze(0),
+                #         self.prop_c_s[vix_2_dscr, :].unsqueeze(0),
                 #     ),
                 # )
-                # prop_logits_e[vidx_to_describe, caps_count[vidx_to_describe], :] = self.prop_enc_e(
-                #     self.prop_h_e[vidx_to_describe]
+                # prop_logits_e[vix_2_dscr, caps_count[vix_2_dscr], :] = self.prop_enc_e(
+                #     self.prop_h_e[vix_2_dscr]
                 # )[0]
 
                 # TODO: get ground-truth captions according to the position of p and q and the interval associated to each gt caption
@@ -797,9 +779,9 @@ class DenseCaptioner(nn.Module):
                 # # if self.training:
                 # # get ground-truth captions and pos-tags according to the number of captions that have been generated per video
                 # gt_c = torch.stack(
-                #     [gt_captions[i][min(gt_captions.size(1) - 1, caps_count[i])] for i in vidx_to_describe]
+                #     [gt_captions[i][min(gt_captions.size(1) - 1, caps_count[i])] for i in vix_2_dscr]
                 # )
-                #     # gt_p = torch.stack([gt_pos[i][min(gt_pos.size(1) - 1, caps_count[i])] for i in vidx_to_describe])
+                #     # gt_p = torch.stack([gt_pos[i][min(gt_pos.size(1) - 1, caps_count[i])] for i in vix_2_dscr])
 
                 # cap = gt_c
                 # generate captions
@@ -854,12 +836,12 @@ class DenseCaptioner(nn.Module):
 
                 # save captions in the list of each video that was described in this step
                 # self.prev_match = torch.clone(self.prev_match)
-                # captions[vidx_to_describe, caps_count[vidx_to_describe], :] = cap
-                # caps_logits[vidx_to_describe, caps_count[vidx_to_describe], :, :] = cap_logits
-                # pos_tag_logits[vidx_to_describe, caps_count[vidx_to_describe], :, :] = pos_tag_seq_logits
-                # caps_sem_enc[vidx_to_describe, caps_count[vidx_to_describe], :] = cap_sem_enc
-                caps_count[vidx_to_describe] += 1
-                # self.prev_match[vidx_to_describe, :] = match
+                # captions[vix_2_dscr, caps_count[vix_2_dscr], :] = cap
+                # caps_logits[vix_2_dscr, caps_count[vix_2_dscr], :, :] = cap_logits
+                # pos_tag_logits[vix_2_dscr, caps_count[vix_2_dscr], :, :] = pos_tag_seq_logits
+                # caps_sem_enc[vix_2_dscr, caps_count[vix_2_dscr], :] = cap_sem_enc
+                caps_count[vix_2_dscr] += 1
+                # self.prev_match[vix_2_dscr, :] = match
 
                 # reset rnn_cel weights, precomputing weights related to the prev_match only
                 # self.rnn_cell.precompute_dots_4_m(self.prev_match, var_drop_p=0.1)
