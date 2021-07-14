@@ -501,7 +501,9 @@ class DenseCaptioner(nn.Module):
         # condition for finishing the process, according if we are training or testing
         # if self.training:
         # iterate at least prog_len steps, generating at least a caption for each video
-        condition = lambda i: i < prog_len and not torch.all(caps_count >= gt_caps_count) # or torch.any(caps_count < 1)
+        condition = lambda i: i < prog_len and not torch.all(
+            caps_count >= gt_caps_count
+        )  # or torch.any(caps_count < 1)
 
         # initialize result tensors according to the sizes of ground truth
         captions = torch.zeros_like(gt_captions)
@@ -535,16 +537,16 @@ class DenseCaptioner(nn.Module):
             a_id = gt_program[:, seq_pos]
 
             # updates the p and q positions for each video, and save sub-batch of video clips to be described
-            vidx_to_skip = (a_id == 0).nonzero(as_tuple=True)[0]
-            self.p[vidx_to_skip] += 1
-            self.q[vidx_to_skip] = self.p[vidx_to_skip] + 1
+            vix_2_skip = (a_id == 0).nonzero(as_tuple=True)[0]
+            self.p[vix_2_skip] += 1
+            self.q[vix_2_skip] = self.p[vix_2_skip] + 1
 
-            vidx_to_advance = (a_id == 1).nonzero(as_tuple=True)[0]
-            self.q[vidx_to_advance] += 1
+            vix_2_advance = (a_id == 1).nonzero(as_tuple=True)[0]
+            self.q[vix_2_advance] += 1
 
-            vidx_to_describe = ((a_id == 2) * (caps_count < intervals.size(1))).nonzero(as_tuple=True)[0]
-            intervals[vidx_to_describe, caps_count[vidx_to_describe], 0] = self.p[vidx_to_describe].float()
-            intervals[vidx_to_describe, caps_count[vidx_to_describe], 1] = self.q[vidx_to_describe].float()
+            vix_2_dscr = ((a_id == 2) * (caps_count < intervals.size(1))).nonzero(as_tuple=True)[0]
+            intervals[vix_2_dscr, caps_count[vix_2_dscr], 0] = self.p[vix_2_dscr].float()
+            intervals[vix_2_dscr, caps_count[vix_2_dscr], 1] = self.q[vix_2_dscr].float()
 
             # for i, a in enumerate(a_id):
             #     if a == 0:
@@ -556,16 +558,16 @@ class DenseCaptioner(nn.Module):
             #         self.q[i] += 1
             #     elif a == 2 and caps_count[i] < intervals.size(1):
             #         # generate, save interval to be described. It going to be used for constructiong a captioning sub-batch
-            #         vidx_to_describe.append(i)
+            #         vix_2_dscr.append(i)
             #         # intervals[i, caps_count[i], :] = torch.tensor([self.p[i], self.q[i]])
             #         intervals[i, caps_count[i], 0] = self.p[i]
             #         intervals[i, caps_count[i], 1] = self.q[i]
 
             # generate a caption from the current video-clips saved in the sub-batch
-            if len(vidx_to_describe) > 0:
+            if len(vix_2_dscr) > 0:
                 self.__step__(seq_pos, v_feats)
-                clip_feats = [feats[vidx_to_describe, :, :] for feats in self.v_p_q_feats]
-                clip_global = self.v_p_q_pool[vidx_to_describe, :]
+                clip_feats = [feats[vix_2_dscr, :, :] for feats in self.v_p_q_feats]
+                clip_global = self.v_p_q_pool[vix_2_dscr, :]
 
                 # TODO: get ground-truth captions according to the position of p and q and the interval associated to each gt caption
 
@@ -573,9 +575,9 @@ class DenseCaptioner(nn.Module):
                 if self.training:
                     # get ground-truth captions and pos-tags according to the number of captions that have been generated per video
                     gt_c = torch.stack(
-                        [gt_captions[i][min(gt_captions.size(1) - 1, caps_count[i])] for i in vidx_to_describe]
+                        [gt_captions[i][min(gt_captions.size(1) - 1, caps_count[i])] for i in vix_2_dscr]
                     )
-                    gt_p = torch.stack([gt_pos[i][min(gt_pos.size(1) - 1, caps_count[i])] for i in vidx_to_describe])
+                    gt_p = torch.stack([gt_pos[i][min(gt_pos.size(1) - 1, caps_count[i])] for i in vix_2_dscr])
 
                 # generate captions
                 cap_logits, cap_sem_enc, pos_tag_seq_logits = self.clip_captioner(
@@ -629,12 +631,12 @@ class DenseCaptioner(nn.Module):
 
                 # save captions in the list of each video that was described in this step
                 # self.prev_match = torch.clone(self.prev_match)
-                captions[vidx_to_describe, caps_count[vidx_to_describe], :] = cap
-                caps_logits[vidx_to_describe, caps_count[vidx_to_describe], :, :] = cap_logits
-                pos_tag_logits[vidx_to_describe, caps_count[vidx_to_describe], :, :] = pos_tag_seq_logits
-                caps_sem_enc[vidx_to_describe, caps_count[vidx_to_describe], :] = cap_sem_enc
-                caps_count[vidx_to_describe] += 1
-                # self.prev_match[vidx_to_describe, :] = match
+                captions[vix_2_dscr, caps_count[vix_2_dscr], :] = cap
+                caps_logits[vix_2_dscr, caps_count[vix_2_dscr], :, :] = cap_logits
+                pos_tag_logits[vix_2_dscr, caps_count[vix_2_dscr], :, :] = pos_tag_seq_logits
+                caps_sem_enc[vix_2_dscr, caps_count[vix_2_dscr], :] = cap_sem_enc
+                caps_count[vix_2_dscr] += 1
+                # self.prev_match[vix_2_dscr, :] = match
 
                 # reset rnn_cel weights, precomputing weights related to the prev_match only
                 # self.rnn_cell.precompute_dots_4_m(self.prev_match, var_drop_p=0.1)
@@ -656,4 +658,3 @@ class DenseCaptioner(nn.Module):
             None,  # proposals_logits,
             None,  # self.p,
         )
-
