@@ -556,7 +556,7 @@ class DenseCaptioner(nn.Module):
         max_caps=None,
         max_cap=None,
         max_chunks=None,
-        max_back_steps=10
+        max_back_steps=10,
     ):
         # initialize
         bs, device = v_feats[0].size(0), v_feats[0].device
@@ -566,34 +566,35 @@ class DenseCaptioner(nn.Module):
         self.q = torch.ones(bs, dtype=torch.long).to(device)
         # self.x = torch.zeros(bs, self.embedding_size).to(device)
 
-        v_p = torch.cat([f[:, 0, :] for f in v_feats], dim=1)
-        v_q = torch.cat([f[:, 1, :] for f in v_feats], dim=1)
+        v_fcat = torch.cat(v_feats, dim=-1)
+        v_p = v_fcat[:, 0, :]
+        v_q = v_fcat[:, 1, :]
 
         # self.h = torch.zeros(bs, self.h_size).to(device)
         # self.c = torch.zeros(bs, self.h_size).to(device)
         # self.prev_match = torch.zeros(bs, self.mm_size).to(device)
-        self.prop_s_h_0 = torch.zeros(bs, self.prop_rnn_h_size).to(device)
-        self.prop_s_c_0 = torch.zeros(bs, self.prop_rnn_h_size).to(device)
+        prop_s_h_0 = torch.zeros(bs, self.prop_rnn_h_size).to(device)
+        prop_s_c_0 = torch.zeros(bs, self.prop_rnn_h_size).to(device)
         idxs = list(range(bs))
-        self.prop_s_h_0[idxs, :], self.prop_s_c_0[idxs, :] = self.prop_s_rnn_0(
-            v_p, (self.prop_s_h_0[idxs, :], self.prop_s_c_0[idxs, :])
-        )
+        prop_s_h_0[idxs, :], prop_s_c_0[idxs, :] = self.prop_s_rnn_0(v_p, (prop_s_h_0[idxs, :], prop_s_c_0[idxs, :]))
 
-        self.prop_s_h_1 = torch.zeros(bs, self.prop_rnn_h_size).to(device)
-        self.prop_s_c_1 = torch.zeros(bs, self.prop_rnn_h_size).to(device)
+        prop_s_back_h_0 = torch.zeros(bs, self.prop_rnn_h_size).to(device)
+        prev_s_back_end = torch.full((bs,), -1, dtype=torch.long).to(device)
 
-        self.prop_e_h_0 = torch.zeros(bs, self.prop_rnn_h_size).to(device)
-        self.prop_e_c_0 = torch.zeros(bs, self.prop_rnn_h_size).to(device)
-        self.prop_e_h_0[idxs, :], self.prop_e_c_0[idxs, :] = self.prop_e_rnn_0(
-            v_p, (self.prop_e_h_0[idxs, :], self.prop_e_c_0[idxs, :])
-        )
-        self.prop_e_h_0[idxs, :], self.prop_e_c_0[idxs, :] = self.prop_e_rnn_0(
-            v_q, (self.prop_e_h_0[idxs, :], self.prop_e_c_0[idxs, :])
-        )
-        self.prop_e_rnn_0_pos = torch.ones(bs, dtype=torch.long).to(device)
+        prop_s_h_1 = torch.zeros(bs, self.prop_rnn_h_size).to(device)
+        prop_s_c_1 = torch.zeros(bs, self.prop_rnn_h_size).to(device)
 
-        self.prop_e_h_1 = torch.zeros(bs, self.prop_rnn_h_size).to(device)
-        self.prop_e_c_1 = torch.zeros(bs, self.prop_rnn_h_size).to(device)
+        prop_e_h_0 = torch.zeros(bs, self.prop_rnn_h_size).to(device)
+        prop_e_c_0 = torch.zeros(bs, self.prop_rnn_h_size).to(device)
+        prop_e_h_0[idxs, :], prop_e_c_0[idxs, :] = self.prop_e_rnn_0(v_p, (prop_e_h_0[idxs, :], prop_e_c_0[idxs, :]))
+        prop_e_h_0[idxs, :], prop_e_c_0[idxs, :] = self.prop_e_rnn_0(v_q, (prop_e_h_0[idxs, :], prop_e_c_0[idxs, :]))
+        prop_e_0_pos = torch.ones(bs, dtype=torch.long).to(device)
+
+        prop_e_back_h_0 = torch.zeros(bs, self.prop_rnn_h_size).to(device)
+        prev_e_back_end = torch.zeros(bs, dtype=torch.long).to(device)
+
+        prop_e_h_1 = torch.zeros(bs, self.prop_rnn_h_size).to(device)
+        prop_e_c_1 = torch.zeros(bs, self.prop_rnn_h_size).to(device)
 
         # precomputing weights related to the prev_match only
         # self.rnn_cell.precompute_dots_4_m(self.prev_match, var_drop_p=0.1)
@@ -647,12 +648,12 @@ class DenseCaptioner(nn.Module):
             self.p[vix_2_skip] += 1
             self.q[vix_2_skip] = self.p[vix_2_skip] + 1
 
-            vix_2_advance = (a_id == 1).nonzero(as_tuple=True)[0]
-            self.q[vix_2_advance] += 1
-            vix_2_advance = list(
+            vix_2_adv = (a_id == 1).nonzero(as_tuple=True)[0]
+            self.q[vix_2_adv] += 1
+            vix_2_adv = list(
                 set(
-                    (self.q[vix_2_skip] > self.prop_e_rnn_0_pos[vix_2_skip]).nonzero(as_tuple=True)[0].tolist()
-                    + (self.q[vix_2_advance] > self.prop_e_rnn_0_pos[vix_2_advance]).nonzero(as_tuple=True)[0].tolist()
+                    vix_2_skip[(self.q[vix_2_skip] > prop_e_0_pos[vix_2_skip]).nonzero(as_tuple=True)[0]].tolist()
+                    + vix_2_adv[(self.q[vix_2_adv] > prop_e_0_pos[vix_2_adv]).nonzero(as_tuple=True)[0]].tolist()
                 )
             )
 
@@ -664,13 +665,13 @@ class DenseCaptioner(nn.Module):
             #         self.p[i] += 1
             #         self.q[i] = self.p[i] + 1
             #         vix_2_skip.append(i)
-            #         if self.q[i] > self.prop_e_rnn_0_pos[i]:
-            #             vix_2_advance.append(i)
+            #         if self.q[i] > self.prop_e_0_pos[i]:
+            #             vix_2_adv.append(i)
             #     elif a == 1:
             #         # enqueue
             #         self.q[i] += 1
-            #         if self.q[i] > self.prop_e_rnn_0_pos[i]:
-            #             vix_2_advance.append(i)
+            #         if self.q[i] > self.prop_e_0_pos[i]:
+            #             vix_2_adv.append(i)
             #     elif a == 2:
             #         # generate, save interval to be described. It going to be used for constructiong a captioning sub-batch
             #         vix_2_dscr.append(i)
@@ -680,9 +681,9 @@ class DenseCaptioner(nn.Module):
 
             if len(vix_2_skip) > 0:
                 fidx = torch.min(self.p[vix_2_skip], feats_count[vix_2_skip])
-                v_p = torch.cat([f[vix_2_skip, fidx, :] for f in v_feats], dim=1,)
-                self.prop_s_h_0[vix_2_skip, :], self.prop_s_c_0[vix_2_skip, :] = self.prop_s_rnn_0(
-                    v_p, (self.prop_s_h_0[vix_2_skip, :], self.prop_s_c_0[vix_2_skip, :])
+                v_p = v_fcat[vix_2_skip, fidx, :]
+                prop_s_h_0[vix_2_skip, :], prop_s_c_0[vix_2_skip, :] = self.prop_s_rnn_0(
+                    v_p, (prop_s_h_0[vix_2_skip, :], prop_s_c_0[vix_2_skip, :])
                 )
                 # with torch.no_grad():
                 #     v_p = torch.cat([f[vix_2_skip, self.p[vix_2_skip], :] for f in v_feats], dim=1)
@@ -691,13 +692,13 @@ class DenseCaptioner(nn.Module):
                 #     self.current_proposals[vix_2_skip, :] = proposals
                 # # proposals_logits[vix_2_skip, self.p[vix_2_skip], :] = proposals
 
-            if len(vix_2_advance) > 0:
-                self.prop_e_rnn_0_pos[vix_2_advance] = self.q[vix_2_advance]
+            if len(vix_2_adv) > 0:
+                prop_e_0_pos[vix_2_adv] = self.q[vix_2_adv]
 
-                fidx = torch.min(self.q[vix_2_advance], feats_count[vix_2_advance])
-                v_q = torch.cat([f[vix_2_advance, fidx, :] for f in v_feats], dim=1,)
-                (self.prop_e_h_0[vix_2_advance, :], self.prop_e_c_0[vix_2_advance, :],) = self.prop_e_rnn_0(
-                    v_q, (self.prop_e_h_0[vix_2_advance, :], self.prop_e_c_0[vix_2_advance, :])
+                fidx = torch.min(self.q[vix_2_adv], feats_count[vix_2_adv])
+                v_q = v_fcat[vix_2_adv, fidx, :]
+                (prop_e_h_0[vix_2_adv, :], prop_e_c_0[vix_2_adv, :],) = self.prop_e_rnn_0(
+                    v_q, (prop_e_h_0[vix_2_adv, :], prop_e_c_0[vix_2_adv, :])
                 )
 
             # generate a caption from the current video-clips saved in the sub-batch
@@ -711,26 +712,32 @@ class DenseCaptioner(nn.Module):
                 # compute prop_s_back_rnn_0 from features in back direction
                 ends = torch.min(self.p[vix_2_dscr] + 1, feats_count[vix_2_dscr])
                 starts = (ends - max_back_steps).clamp(min=0)
-                sub_v_feats_padded = pad_sequence(
-                    [
-                        torch.cat([f[v, s:e, :] for f in v_feats], dim=1).flip((0,))
-                        for v, s, e in zip(vix_2_dscr, starts, ends)
-                    ],
-                    batch_first=True,
-                )
-                sub_v_feats_packed = pack_padded_sequence(
-                    input=sub_v_feats_padded, lengths=(ends - starts).to("cpu"), batch_first=True, enforce_sorted=False
-                )
-                _, (prop_s_back_h_0, _) = self.prop_s_back_rnn_0(sub_v_feats_packed)
+                vix_2_back = ((starts == 0) + (starts > prev_s_back_end[vix_2_dscr])).nonzero(as_tuple=True)[0]
+                if len(vix_2_back):
+                    prev_s_back_end[vix_2_dscr][vix_2_back] = ends[vix_2_back]
+                    sub_v_feats_padded = pad_sequence(
+                        [
+                            v_fcat[vix_2_dscr][v, s:e, :].flip((0,))
+                            for v, s, e in zip(vix_2_back, starts[vix_2_back], ends[vix_2_back])
+                        ],
+                        batch_first=True,
+                    )
+                    sub_v_feats_packed = pack_padded_sequence(
+                        input=sub_v_feats_padded,
+                        lengths=(ends[vix_2_back] - starts[vix_2_back]).to("cpu"),
+                        batch_first=True,
+                        enforce_sorted=False,
+                    )
+                    _, (prop_s_back_h_0[vix_2_dscr][vix_2_back], _) = self.prop_s_back_rnn_0(sub_v_feats_packed)
 
                 # compute another step of prop_s_rnn_1, considering the prop_s_h_0 as input
-                (self.prop_s_h_1[vix_2_dscr, :], self.prop_s_c_1[vix_2_dscr, :],) = self.prop_s_rnn_1(
-                    self.prop_s_h_0[vix_2_dscr, :], (self.prop_s_h_1[vix_2_dscr, :], self.prop_s_c_1[vix_2_dscr, :],),
+                (prop_s_h_1[vix_2_dscr, :], prop_s_c_1[vix_2_dscr, :],) = self.prop_s_rnn_1(
+                    prop_s_h_0[vix_2_dscr, :], (prop_s_h_1[vix_2_dscr, :], prop_s_c_1[vix_2_dscr, :],),
                 )
 
                 # compute the proposal encoding for start position from prop_s_h_1 and prop_s_back_h_0
                 prop_logits_s[vix_2_dscr, caps_count[vix_2_dscr], :] = self.prop_enc_s(
-                    torch.cat((self.prop_s_h_1[vix_2_dscr], prop_s_back_h_0.squeeze(0)), dim=-1)
+                    torch.cat((prop_s_h_1[vix_2_dscr], prop_s_back_h_0[vix_2_dscr]), dim=-1)
                 )[0]
 
                 # END MODULE
@@ -738,26 +745,32 @@ class DenseCaptioner(nn.Module):
                 max_fix = feats_count[vix_2_dscr] - 1
                 ends = torch.min(self.q[vix_2_dscr], max_fix) + 1
                 starts = torch.max((torch.min(self.p[vix_2_dscr], max_fix)), ends - max_back_steps)
-                sub_v_feats_padded = pad_sequence(
-                    [
-                        torch.cat([f[v, s:e, :,] for f in v_feats], dim=1,).flip((0,))
-                        for v, s, e in zip(vix_2_dscr, starts, ends)
-                    ],
-                    batch_first=True,
-                )
-                sub_v_feats_packed = pack_padded_sequence(
-                    input=sub_v_feats_padded, lengths=(ends - starts).to("cpu"), batch_first=True, enforce_sorted=False
-                )
-                _, (prop_e_back_h_0, _) = self.prop_e_back_rnn_0(sub_v_feats_packed)
+                vix_2_back = (starts > prev_e_back_end[vix_2_dscr]).nonzero(as_tuple=True)[0]
+                if len(vix_2_back):
+                    prev_e_back_end[vix_2_dscr][vix_2_back] = ends[vix_2_back]
+                    sub_v_feats_padded = pad_sequence(
+                        [
+                            v_fcat[vix_2_dscr][v, s:e, :].flip((0,))
+                            for v, s, e in zip(vix_2_back, starts[vix_2_back], ends[vix_2_back])
+                        ],
+                        batch_first=True,
+                    )
+                    sub_v_feats_packed = pack_padded_sequence(
+                        input=sub_v_feats_padded,
+                        lengths=(ends[vix_2_back] - starts[vix_2_back]).to("cpu"),
+                        batch_first=True,
+                        enforce_sorted=False,
+                    )
+                    _, (prop_e_back_h_0[vix_2_dscr][vix_2_back], _) = self.prop_e_back_rnn_0(sub_v_feats_packed)
 
                 # compute another step of prop_e_rnn_1, considering the prop_e_h_0 as input
-                (self.prop_e_h_1[vix_2_dscr, :], self.prop_e_c_1[vix_2_dscr, :],) = self.prop_e_rnn_1(
-                    self.prop_e_h_0[vix_2_dscr, :], (self.prop_e_h_1[vix_2_dscr, :], self.prop_e_c_1[vix_2_dscr, :],),
+                (prop_e_h_1[vix_2_dscr, :], prop_e_c_1[vix_2_dscr, :],) = self.prop_e_rnn_1(
+                    prop_e_h_0[vix_2_dscr, :], (prop_e_h_1[vix_2_dscr, :], prop_e_c_1[vix_2_dscr, :],),
                 )
 
                 # compute the proposal encoding for end position from prop_e_h_1
                 prop_logits_e[vix_2_dscr, caps_count[vix_2_dscr], :] = self.prop_enc_e(
-                    torch.cat((self.prop_e_h_1[vix_2_dscr], prop_e_back_h_0.squeeze(0)), dim=-1)
+                    torch.cat((prop_e_h_1[vix_2_dscr], prop_e_back_h_0[vix_2_dscr]), dim=-1)
                 )[0]
 
                 # _, v_p_q_feats = self.get_clip_feats(v_feats, self.p, self.q)
