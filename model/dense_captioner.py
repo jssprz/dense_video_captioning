@@ -714,7 +714,8 @@ class DenseCaptioner(nn.Module):
                 starts = (ends - max_back_steps).clamp(min=0)
                 vix_2_back = ((starts == 0) + (starts > prev_s_back_end[vix_2_dscr])).nonzero(as_tuple=True)[0]
                 if len(vix_2_back):
-                    prev_s_back_end[vix_2_dscr][vix_2_back] = ends[vix_2_back]
+                    print("s: ", prev_s_back_end[vix_2_dscr][vix_2_back], vix_2_dscr[vix_2_back], starts, ends)
+                    prev_s_back_end[vix_2_dscr[vix_2_back]] = ends[vix_2_back]
                     sub_v_feats_padded = pad_sequence(
                         [
                             v_fcat[vix_2_dscr][v, s:e, :].flip((0,))
@@ -728,7 +729,7 @@ class DenseCaptioner(nn.Module):
                         batch_first=True,
                         enforce_sorted=False,
                     )
-                    _, (prop_s_back_h_0[vix_2_dscr][vix_2_back], _) = self.prop_s_back_rnn_0(sub_v_feats_packed)
+                    _, (prop_s_back_h_0[vix_2_dscr[vix_2_back]], _) = self.prop_s_back_rnn_0(sub_v_feats_packed)
 
                 # compute another step of prop_s_rnn_1, considering the prop_s_h_0 as input
                 (prop_s_h_1[vix_2_dscr, :], prop_s_c_1[vix_2_dscr, :],) = self.prop_s_rnn_1(
@@ -747,7 +748,8 @@ class DenseCaptioner(nn.Module):
                 starts = torch.max((torch.min(self.p[vix_2_dscr], max_fix)), ends - max_back_steps)
                 vix_2_back = (starts > prev_e_back_end[vix_2_dscr]).nonzero(as_tuple=True)[0]
                 if len(vix_2_back):
-                    prev_e_back_end[vix_2_dscr][vix_2_back] = ends[vix_2_back]
+                    print("e: ", prev_e_back_end[vix_2_dscr][vix_2_back], vix_2_dscr[vix_2_back], starts, ends)
+                    prev_e_back_end[vix_2_dscr[vix_2_back]] = ends[vix_2_back]
                     sub_v_feats_padded = pad_sequence(
                         [
                             v_fcat[vix_2_dscr][v, s:e, :].flip((0,))
@@ -761,7 +763,7 @@ class DenseCaptioner(nn.Module):
                         batch_first=True,
                         enforce_sorted=False,
                     )
-                    _, (prop_e_back_h_0[vix_2_dscr][vix_2_back], _) = self.prop_e_back_rnn_0(sub_v_feats_packed)
+                    _, (prop_e_back_h_0[vix_2_dscr[vix_2_back]], _) = self.prop_e_back_rnn_0(sub_v_feats_packed)
 
                 # compute another step of prop_e_rnn_1, considering the prop_e_h_0 as input
                 (prop_e_h_1[vix_2_dscr, :], prop_e_c_1[vix_2_dscr, :],) = self.prop_e_rnn_1(
