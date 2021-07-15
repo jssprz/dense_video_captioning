@@ -714,7 +714,7 @@ class DenseCaptioner(nn.Module):
                 starts = (ends - max_back_steps).clamp(min=0)
                 vix_2_back = ((starts == 0) + (starts > prev_s_back_end[vix_2_dscr])).nonzero(as_tuple=True)[0]
                 if len(vix_2_back):
-                    print("s: ", prev_s_back_end[vix_2_dscr][vix_2_back], vix_2_dscr[vix_2_back], starts, ends)
+                    # print("s: ", prev_s_back_end[vix_2_dscr][vix_2_back], vix_2_dscr[vix_2_back], starts, ends)
                     prev_s_back_end[vix_2_dscr[vix_2_back]] = ends[vix_2_back]
                     sub_v_feats_padded = pad_sequence(
                         [
@@ -748,7 +748,7 @@ class DenseCaptioner(nn.Module):
                 starts = torch.max((torch.min(self.p[vix_2_dscr], max_fix)), ends - max_back_steps)
                 vix_2_back = (starts > prev_e_back_end[vix_2_dscr]).nonzero(as_tuple=True)[0]
                 if len(vix_2_back):
-                    print("e: ", prev_e_back_end[vix_2_dscr][vix_2_back], vix_2_dscr[vix_2_back], starts, ends)
+                    # print("e: ", prev_e_back_end[vix_2_dscr][vix_2_back], vix_2_dscr[vix_2_back], starts, ends)
                     prev_e_back_end[vix_2_dscr[vix_2_back]] = ends[vix_2_back]
                     sub_v_feats_padded = pad_sequence(
                         [
