@@ -135,7 +135,7 @@ class DenseVideo2TextTrainer(Trainer):
         # self.__load_fusion_ground_truth_captions()
 
         # load vocabularies
-        with open(os.path.join(dataset_folder, "dense_corpus2.pkl"), "rb") as f:
+        with open(os.path.join(dataset_folder, "dense_corpus3.pkl"), "rb") as f:
             self.corpus = pickle.load(f)
             idx2op_dict = self.corpus[4]
             idx2word_dict = self.corpus[6]
@@ -955,7 +955,7 @@ class DenseVideo2TextTrainer(Trainer):
             self.writer.add_scalar("proposals/teacher_forcing_ratio", tf_ratio, epoch)
 
             loss_phases = {"train": 0, "val_1": 0}
-            for phase in ["train", "val_1"]:
+            for phase in ["val_1"]:
                 # prepare gradients of the model according to the phase to be performed
                 if phase == "train":
                     self.dense_captioner.train()
@@ -964,9 +964,12 @@ class DenseVideo2TextTrainer(Trainer):
                     self.avg_feats = 0
                 else:
                     self.dense_captioner.eval()
-                    self.avg_truncation //= len(self.loaders["train"])
-                    self.avg_caps //= len(self.loaders["train"])
-                    self.avg_feats //= len(self.loaders["train"])
+                    self.avg_truncation = 0
+                    self.avg_caps = 0
+                    self.avg_feats = 0
+                    # self.avg_truncation //= len(self.loaders["train"])
+                    # self.avg_caps //= len(self.loaders["train"])
+                    # self.avg_feats //= len(self.loaders["train"])
                     self.writer.add_scalar(
                         "proposals/{}-epochs-avg_truncation".format(phase), self.avg_truncation, epoch,
                     )
@@ -1013,6 +1016,11 @@ class DenseVideo2TextTrainer(Trainer):
 
                     video_feats = [cnn, c3d]
                     iteration = epoch * len(self.loaders[phase]) + i
+
+                    if iteration == 103:
+                        import ipdb; ipdb.set_trace()
+                        print(vidx)
+                        print(gt_intervals)
 
                     (
                         loss,

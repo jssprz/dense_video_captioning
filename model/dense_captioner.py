@@ -591,7 +591,6 @@ class DenseCaptioner(nn.Module):
         prop_e_0_pos = torch.ones(bs, dtype=torch.long).to(device)
 
         prop_e_back_h_0 = torch.zeros(bs, self.prop_rnn_h_size).to(device)
-        prev_e_back_end = torch.zeros(bs, dtype=torch.long).to(device)
 
         prop_e_h_1 = torch.zeros(bs, self.prop_rnn_h_size).to(device)
         prop_e_c_1 = torch.zeros(bs, self.prop_rnn_h_size).to(device)
@@ -745,8 +744,7 @@ class DenseCaptioner(nn.Module):
                 # compute prop_e_back_rnn_0 from features in back direction
                 max_fix = feats_count[vix_2_dscr] - 1
                 ends = torch.min(self.q[vix_2_dscr], max_fix) + 1
-                starts = torch.max((torch.min(self.p[vix_2_dscr], max_fix)), ends - max_back_steps)
-                # print("e: ", prev_e_back_end[vix_2_dscr][vix_2_back], vix_2_dscr[vix_2_back], starts, ends)
+                starts = torch.max(torch.min(self.p[vix_2_dscr], max_fix), ends - max_back_steps)
                 sub_v_feats_padded = pad_sequence(
                     [v_fcat[v, s:e, :].flip((0,)) for v, s, e in zip(vix_2_dscr, starts, ends)], batch_first=True,
                 )
