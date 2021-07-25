@@ -1017,11 +1017,6 @@ class DenseVideo2TextTrainer(Trainer):
                     video_feats = [cnn, c3d]
                     iteration = epoch * len(self.loaders[phase]) + i
 
-                    if iteration == 103:
-                        import ipdb; ipdb.set_trace()
-                        print(vidx)
-                        print(gt_intervals)
-
                     (
                         loss,
                         _,
