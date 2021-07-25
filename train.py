@@ -955,7 +955,7 @@ class DenseVideo2TextTrainer(Trainer):
             self.writer.add_scalar("proposals/teacher_forcing_ratio", tf_ratio, epoch)
 
             loss_phases = {"train": 0, "val_1": 0}
-            for phase in ["val_1"]:
+            for phase in ["train", "val_1"]:
                 # prepare gradients of the model according to the phase to be performed
                 if phase == "train":
                     self.dense_captioner.train()
