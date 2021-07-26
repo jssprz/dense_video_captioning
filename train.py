@@ -140,7 +140,7 @@ class DenseVideo2TextTrainer(Trainer):
         # self.__load_fusion_ground_truth_captions()
 
         # load vocabularies
-        with open(os.path.join(dataset_folder, "dense_corpus2.pkl"), "rb") as f:
+        with open(os.path.join(dataset_folder, "dense_corpus3.pkl"), "rb") as f:
             self.corpus = pickle.load(f)
             idx2op_dict = self.corpus[4]
             idx2word_dict = self.corpus[6]
