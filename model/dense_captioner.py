@@ -627,7 +627,7 @@ class DenseCaptioner(nn.Module):
                     torch.stack([gt_captions[i][min(gt_captions.size(1) - 1, caps_count[i])] for i in vix_2_dscr])
                 )
                 gt_p.append(torch.stack([gt_pos[i][min(gt_pos.size(1) - 1, caps_count[i])] for i in vix_2_dscr]))
-                vixs.append(vix_2_dscr)
+                vixs += vix_2_dscr
 
                 if len(clip_feats[0]) >= captioning_batch:
                     # compute captioning for batch, considering teacher forcing strategy for cap tensor
