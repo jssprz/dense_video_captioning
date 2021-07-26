@@ -32,14 +32,14 @@ class MLP(nn.Module):
         if have_last_bn:
             self.bn = nn.BatchNorm1d(out_size)
 
-        self.__init_layers()
+        # self.__init_layers()
 
-    def __init_layers(self):
-        for m in self.modules():
-            if type(m) == nn.Linear:
-                nn.init.xavier_normal_(m.weight)
-                if not m.bias is None:
-                    nn.init.zeros_(m.bias)
+    # def __init_layers(self):
+    #     for m in self.modules():
+    #         if type(m) == nn.Linear:
+    #             nn.init.xavier_normal_(m.weight)
+    #             if not m.bias is None:
+    #                 nn.init.zeros_(m.bias)
 
     def forward(self, x):
         h = self.in_drop(x)
