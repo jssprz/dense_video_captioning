@@ -1133,7 +1133,7 @@ class DenseVideo2TextTrainer(Trainer):
         # self.h5_train.close()
         # self.h5_val.close()
         for loader in self.loaders.values():
-            loader.close_h5_file()
+            loader.dataset.close_h5_file()
 
         # log best results
         self.logger.info("Best results: {}".format(str(self.best_metrics)))
@@ -1143,6 +1143,14 @@ class DenseVideo2TextTrainer(Trainer):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train a new dense video captioning model")
+    parser.add_argument(
+        "-comp",
+        "--component",
+        type=str,
+        default="",
+        required=True,
+        help="Set the component of the model that you want to train model.",
+    )
     parser.add_argument(
         "-chkpt",
         "--checkpoint_path",
