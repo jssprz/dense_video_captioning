@@ -284,7 +284,7 @@ class DenseVideo2TextTrainer(Trainer):
                     del self.ref_densecaps[phase][str(vidx)]
 
             print(
-                f" For phase {phase} were sekiped:\n  vidxs: {ref_vidxs_blacklists[phase]}\n  cidxs: {ref_cidxs_blacklists[phase]}"
+                f" For phase {phase} were skiped:\n  vidxs: {ref_vidxs_blacklists[phase]}\n  cidxs: {ref_cidxs_blacklists[phase]}"
             )
 
             # self.ref_programs[phase] = {k:self.ref_programs[phase][k] for k in range(3)}

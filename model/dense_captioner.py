@@ -711,7 +711,8 @@ class DenseCaptioner(nn.Module):
                 # compute prop_s_back_rnn_0 from features in back direction
                 ends = torch.min(self.p[vix_2_dscr] + 1, feats_count[vix_2_dscr])
                 starts = (ends - max_back_steps).clamp(min=0)
-                vix_2_back = ((starts == 0) + (starts > prev_s_back_end[vix_2_dscr])).nonzero(as_tuple=True)[0]
+                # vix_2_back = ((starts == 0) + (starts > prev_s_back_end[vix_2_dscr])).nonzero(as_tuple=True)[0]
+                vix_2_back = torch.arange(len(vix_2_dscr))
                 if len(vix_2_back):
                     # print("s: ", prev_s_back_end[vix_2_dscr][vix_2_back], vix_2_dscr[vix_2_back], starts, ends)
                     prev_s_back_end[vix_2_dscr[vix_2_back]] = ends[vix_2_back]
