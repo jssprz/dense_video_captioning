@@ -464,6 +464,53 @@ class DenseCaptioner(nn.Module):
 
         # self.a_logits = self.fc(torch.cat((self.h, self.current_proposals), dim=1))
 
+    def compute_captioning_batch(self, clip_feats, clip_global, gt_c, gt_p, max_cap, teacher_forcing_p):
+        # TODO: create batch from lists
+        clip_feats = [torch.cat(feats, dim=0) for feats in clip_feats]
+        clip_global = torch.cat(clip_global, dim=0)
+        gt_c = torch.cat(gt_c, dim=0)
+        gt_p = torch.cat(gt_p, dim=0)
+
+        # TODO:compute captioning
+        cap_logits, cap_sem_enc, pos_tag_seq_logits = self.clip_captioner(
+            v_feats=clip_feats,
+            v_global=clip_global,
+            teacher_forcing_p=teacher_forcing_p,
+            gt_captions=gt_c,
+            gt_pos=gt_p,
+            max_words=max_cap,
+        )
+
+        if self.training:
+            use_teacher_forcing = random.random() < teacher_forcing_p
+            if use_teacher_forcing:
+                cap = gt_c
+            elif self.train_sample_max:
+                # select the words ids with the max probability,
+                # (sub-batch_size x max-cap-len)
+                cap = cap_logits.max(2)[1]
+            else:
+                # sample words from probability distribution
+                # (sub-batch_size*max-cap-len x caps_vocab_size)
+                cap = cap_logits.view(-1, self.caps_vocab_size)
+                # (sub-batch_size*max-cap-len)
+                cap = torch.multinomial(torch.softmax(cap, dim=1), 1).squeeze(1)
+                # (sub-batch_size x max-cap-len)
+                cap = cap.view(cap_logits.size(0), cap_logits.size(1))
+        elif self.test_sample_max:
+            # select the words ids with the max probability,
+            # (sub-batch_size x max-cap-len)
+            cap = cap_logits.max(2)[1]
+        else:
+            # sample words from probability distribution
+            # (sub-batch_size*max-cap-len x caps_vocab_size)
+            cap = cap_logits.view(-1, self.caps_vocab_size)
+            # (sub-batch_size*max-cap-len)
+            cap = torch.multinomial(torch.softmax(cap, dim=1), 1).squeeze(1)
+            # (sub-batch_size x max-cap-len)
+            cap = cap.view(cap_logits.size(0), cap_logits.size(1))
+        return cap, cap_logits, cap_sem_enc, pos_tag_seq_logits
+
     def forward(
         self,
         v_feats,
@@ -481,6 +528,7 @@ class DenseCaptioner(nn.Module):
         max_caps=None,
         max_cap=None,
         max_chunks=None,
+        captioning_batch=10,
     ):
         # initialize
         bs, device = v_feats[0].size(0), v_feats[0].device
@@ -531,6 +579,12 @@ class DenseCaptioner(nn.Module):
             device
         )
 
+        clip_feats = [[] for _ in v_feats]
+        clip_global = []
+        gt_c = []
+        gt_p = []
+        vixs = []
+
         seq_pos = 0
         while condition(seq_pos):
             # self.__step__(seq_pos, v_feats)
@@ -566,82 +620,60 @@ class DenseCaptioner(nn.Module):
             # generate a caption from the current video-clips saved in the sub-batch
             if len(vix_2_dscr) > 0:
                 self.__step__(seq_pos, v_feats)
-                clip_feats = [feats[vix_2_dscr, :, :] for feats in self.v_p_q_feats]
-                clip_global = self.v_p_q_pool[vix_2_dscr, :]
-
-                # TODO: get ground-truth captions according to the position of p and q and the interval associated to each gt caption
-
-                gt_c, gt_p = None, None
-                if self.training:
-                    # get ground-truth captions and pos-tags according to the number of captions that have been generated per video
-                    gt_c = torch.stack(
-                        [gt_captions[i][min(gt_captions.size(1) - 1, caps_count[i])] for i in vix_2_dscr]
-                    )
-                    gt_p = torch.stack([gt_pos[i][min(gt_pos.size(1) - 1, caps_count[i])] for i in vix_2_dscr])
-
-                # generate captions
-                cap_logits, cap_sem_enc, pos_tag_seq_logits = self.clip_captioner(
-                    v_feats=clip_feats,
-                    v_global=clip_global,
-                    teacher_forcing_p=teacher_forcing_p,
-                    gt_captions=gt_c,
-                    gt_pos=gt_p,
-                    max_words=max_cap,
+                for i, feats in enumerate(clip_feats):
+                    feats.append(self.v_p_q_feats[i][vix_2_dscr, :, :])
+                clip_global.append(self.v_p_q_pool[vix_2_dscr, :])
+                gt_c.append(
+                    torch.stack([gt_captions[i][min(gt_captions.size(1) - 1, caps_count[i])] for i in vix_2_dscr])
                 )
+                gt_p.append(torch.stack([gt_pos[i][min(gt_pos.size(1) - 1, caps_count[i])] for i in vix_2_dscr]))
+                vixs.append(vix_2_dscr)
 
-                if self.training:
-                    use_teacher_forcing = (random.random() < teacher_forcing_p) or seq_pos == 0
-                    if use_teacher_forcing:
-                        cap = gt_c
-                    elif self.train_sample_max:
-                        # select the words ids with the max probability,
-                        # (sub-batch_size x max-cap-len)
-                        cap = cap_logits.max(2)[1]
-                    else:
-                        # sample words from probability distribution
-                        # (sub-batch_size*max-cap-len x caps_vocab_size)
-                        cap = cap_logits.view(-1, self.caps_vocab_size)
-                        # (sub-batch_size*max-cap-len)
-                        cap = torch.multinomial(torch.softmax(cap, dim=1), 1).squeeze(1)
-                        # (sub-batch_size x max-cap-len)
-                        cap = cap.view(cap_logits.size(0), cap_logits.size(1))
-                elif self.test_sample_max:
-                    # select the words ids with the max probability,
-                    # (sub-batch_size x max-cap-len)
-                    cap = cap_logits.max(2)[1]
-                else:
-                    # sample words from probability distribution
-                    # (sub-batch_size*max-cap-len x caps_vocab_size)
-                    cap = cap_logits.view(-1, self.caps_vocab_size)
-                    # (sub-batch_size*max-cap-len)
-                    cap = torch.multinomial(torch.softmax(cap, dim=1), 1).squeeze(1)
-                    # (sub-batch_size x max-cap-len)
-                    cap = cap.view(cap_logits.size(0), cap_logits.size(1))
+                if len(clip_feats[0]) >= captioning_batch:
+                    # compute captioning for batch, considering teacher forcing strategy for cap tensor
+                    cap, cap_logits, cap_sem_enc, pos_tag_seq_logits = self.compute_captioning_batch(
+                        clip_feats=clip_feats,
+                        clip_global=clip_global,
+                        gt_c=gt_c,
+                        gt_p=gt_p,
+                        max_cap=max_cap,
+                        teacher_forcing_p=teacher_forcing_p,
+                    )
 
-                # TODO: sort visual and textual information according to the caption's length
+                    # fill the result tensors according to caps_count and vixs lists
+                    for i, vix in enumerate(vixs):
+                        captions[vix, caps_count[vix], :] = cap[i]
+                        caps_logits[vix, caps_count[vix], :, :] = cap_logits[i]
+                        pos_tag_logits[vix, caps_count[vix], :, :] = pos_tag_seq_logits[i]
+                        caps_sem_enc[vix, caps_count[vix], :] = cap_sem_enc[i]
+                        caps_count[vix] += 1
 
-                # TEMP: setting the same len for all captions (the maximum possible len)
-                # cap_len = torch.IntTensor(cap.size(0)).fill_(cap.size(1))
-
-                # compute caption's bow, the make_bow_vector can also compute the caption len
-                # cap_bow = bow_vectors(cap, self.caps_vocab_size)
-
-                # compute the multimodal representation
-                # match = self.mm_enc(clip_feats, clip_global, cap, cap_len, cap_bow)
-
-                # save captions in the list of each video that was described in this step
-                # self.prev_match = torch.clone(self.prev_match)
-                captions[vix_2_dscr, caps_count[vix_2_dscr], :] = cap
-                caps_logits[vix_2_dscr, caps_count[vix_2_dscr], :, :] = cap_logits
-                pos_tag_logits[vix_2_dscr, caps_count[vix_2_dscr], :, :] = pos_tag_seq_logits
-                caps_sem_enc[vix_2_dscr, caps_count[vix_2_dscr], :] = cap_sem_enc
-                caps_count[vix_2_dscr] += 1
-                # self.prev_match[vix_2_dscr, :] = match
-
-                # reset rnn_cel weights, precomputing weights related to the prev_match only
-                # self.rnn_cell.precompute_dots_4_m(self.prev_match, var_drop_p=0.1)
+                    clip_feats = [[] for _ in v_feats]
+                    clip_global = []
+                    gt_c = []
+                    gt_p = []
+                    vixs = []
 
             seq_pos += 1
+
+        # compute captioning of last batch
+        if len(clip_feats[0]):
+            cap, cap_logits, cap_sem_enc, pos_tag_seq_logits = self.compute_captioning_batch(
+                clip_feats=clip_feats,
+                clip_global=clip_global,
+                gt_c=gt_c,
+                gt_p=gt_p,
+                max_cap=max_cap,
+                teacher_forcing_p=teacher_forcing_p,
+            )
+
+            # fill the result tensors according to caps_count and vixs lists
+            for i, vix in enumerate(vixs):
+                captions[vix, caps_count[vix], :] = cap[i]
+                caps_logits[vix, caps_count[vix], :, :] = cap_logits[i]
+                pos_tag_logits[vix, caps_count[vix], :, :] = pos_tag_seq_logits[i]
+                caps_sem_enc[vix, caps_count[vix], :] = cap_sem_enc[i]
+                caps_count[vix] += 1
 
         # if self.training:
         #     caps_count = torch.min(caps_count, gt_caps_count)

@@ -598,11 +598,7 @@ class AVSCNDecoder(nn.Module):
                 # (batch_size x output_size)
                 word_logits = self.out(rnn_h)
 
-                use_teacher_forcing = (
-                    True
-                    if random.random() < teacher_forcing_p or seq_pos == 0
-                    else False
-                )
+                use_teacher_forcing = random.random() < teacher_forcing_p or seq_pos == 0
                 if use_teacher_forcing:
                     # use the correct words,
                     # (batch_size)

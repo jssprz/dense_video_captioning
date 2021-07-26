@@ -649,6 +649,7 @@ class DenseVideo2TextTrainer(Trainer):
                 max_caps=self.avg_caps,  # max_caps=self.max_caps,
                 max_cap=self.max_words,
                 max_chunks=self.avg_truncation,
+                captioning_batch=self.modules_config["dense_captioner_config"].captioning_batch
             )  # the maximum value of start pointers is lower than the max_prog to be generated
 
             # if "val" in phase:
