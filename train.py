@@ -658,7 +658,6 @@ class DenseVideo2TextTrainer(Trainer):
 
             # Evaluate the loss function
             self.logger.info("loss computation....")
-            # import ipdb; ipdb.set_trace() # BREAKPOINT
             (loss, _, cap_loss, sem_enc_loss, pos_loss, _, _,) = self.criterion(
                 gt_captions=gt_captions,
                 gt_cap_lens=gt_cap_lens,

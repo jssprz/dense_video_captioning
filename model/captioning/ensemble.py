@@ -3,7 +3,7 @@ import torch.nn as nn
 
 from model.captioning.avscn.decoder import AVSCNDecoder
 from model.captioning.sem_syn_an.decoder import SemSynANDecoder
-from model.tagging.semantic import TaggerMLP
+from model.tagging.semantic import TaggerMLP, TaggerMultilevel
 from model.tagging.syntactic import POSTagger
 
 
@@ -20,14 +20,16 @@ class ClipEncoder(nn.Module):
     ):
         super(ClipEncoder, self).__init__()
 
-        self.sem_model = TaggerMLP(
-            v_size=v_size,
-            out_size=sem_tagger_config.out_size,
-            h_sizes=sem_tagger_config.h_sizes,
-            in_drop_p=sem_tagger_config.in_drop_p,
-            drop_ps=sem_tagger_config.drop_ps,
-            have_last_bn=sem_tagger_config.have_last_bn,
-        )
+        # self.sem_model = TaggerMLP(
+        #     v_size=v_size,
+        #     out_size=sem_tagger_config.out_size,
+        #     h_sizes=sem_tagger_config.h_sizes,
+        #     in_drop_p=sem_tagger_config.in_drop_p,
+        #     drop_ps=sem_tagger_config.drop_ps,
+        #     have_last_bn=sem_tagger_config.have_last_bn,
+        # )
+
+        self.sem_model = TaggerMultilevel(sem_tagger_config)
 
         self.syn_model = POSTagger(
             syn_embedd_config, syn_tagger_config, pos_vocab, pretrained_pe, device
@@ -36,8 +38,9 @@ class ClipEncoder(nn.Module):
     def forward(
         self, v_feats, v_global, teacher_forcing_p, gt_pos=None, max_words=None
     ):
-        v_feats_cat = torch.cat(v_feats, dim=2)
-        sem_enc = self.sem_model(v_global)
+        v_feats_cat = torch.cat(v_feats, dim=-1)
+        # sem_enc = self.sem_model(v_global)
+        sem_enc = self.sem_model(v_feats=v_feats, v_global=v_global)
         syn_enc = self.syn_model(
             encoding=[v_feats_cat, v_global, sem_enc],
             v_feats=v_feats,

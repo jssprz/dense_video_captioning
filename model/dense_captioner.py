@@ -414,7 +414,6 @@ class DenseCaptioner(nn.Module):
 
     def get_clip_feats(self, v_feats, start_idx, end_idx):
         bs = start_idx.size(0)
-        # import ipdb; ipdb.set_trace() # BREAKPOINT
         feats = [torch.zeros(bs, self.max_clip_len, f.size(2)).to(f.device) for f in v_feats]
         pool = torch.zeros(bs, sum([f.size(2) for f in feats])).to(feats[0].device)
         for i, (s, e) in enumerate(zip(start_idx, end_idx)):
