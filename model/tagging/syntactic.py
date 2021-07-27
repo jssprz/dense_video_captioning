@@ -34,9 +34,9 @@ class POSTagger(nn.Module):
         )
 
     def forward(
-        self, encoding, v_feats, teacher_forcing_p, gt_pos=None, max_words=None
+        self, encoding, v_feats, feats_count, teacher_forcing_p, gt_pos=None, max_words=None
     ):
-        multilevel_enc = self.syn_model(v_feats[0], v_feats[1], encoding[1])
+        multilevel_enc = self.syn_model(v_feats[0], v_feats[1], encoding[1], lengths=feats_count)
         return self.semsynan_dec(
             encoding=encoding + [multilevel_enc],
             teacher_forcing_p=teacher_forcing_p,

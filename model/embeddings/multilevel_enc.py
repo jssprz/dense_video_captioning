@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
+from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence, pad_sequence
 
 from utils import l2norm
 from model.mlp import MLP
@@ -31,23 +31,15 @@ class VisualMultiLevelEncoding(nn.Module):
 
         pool_channels = 512
         self.cnn_conv = nn.Conv1d(
-            in_channels=1,
-            out_channels=pool_channels,
-            kernel_size=3 * cnn_feats_size,
-            stride=cnn_feats_size,
+            in_channels=1, out_channels=pool_channels, kernel_size=3 * cnn_feats_size, stride=cnn_feats_size,
         )
 
         self.c3d_conv = nn.Conv1d(
-            in_channels=1,
-            out_channels=pool_channels,
-            kernel_size=3 * c3d_feats_size,
-            stride=c3d_feats_size,
+            in_channels=1, out_channels=pool_channels, kernel_size=3 * c3d_feats_size, stride=c3d_feats_size,
         )
 
         # visual bidirectional rnn encoder
-        self.rnn = nn.GRU(
-            cnn_feats_size, rnn_size, batch_first=True, bidirectional=True
-        )
+        self.rnn = nn.GRU(cnn_feats_size, rnn_size, batch_first=True, bidirectional=True)
         # self.rnn = nn.LSTM(word_dim, rnn_size, batch_first=True, bidirectional=True)
         # self.gru_drop = nn.Dropout(p=drop_p)
         self.rnn_output_size = rnn_size * 2
@@ -55,12 +47,7 @@ class VisualMultiLevelEncoding(nn.Module):
         # visual 1-d convolutional network
         self.convs1 = nn.ModuleList(
             [
-                nn.Conv2d(
-                    1,
-                    cnn_out_channels,
-                    (window_size, self.rnn_output_size),
-                    padding=(window_size - 1, 0),
-                )
+                nn.Conv2d(1, cnn_out_channels, (window_size, self.rnn_output_size), padding=(window_size - 1, 0),)
                 for window_size in cnn_kernel_sizes
             ]
         )
@@ -113,7 +100,14 @@ class VisualMultiLevelEncoding(nn.Module):
         org_out = torch.cat((cnn_pool, c3d_pool, video_global_feat), dim=1)
 
         # Level 2. Temporal-Aware Encoding by biGRU
-        rnn_out, rnn_h = self.rnn(cnn_feats)
+        cnn_feats_padded = pad_sequence([feats[:l, :] for feats, l in zip(cnn_feats, lengths)], batch_first=True,)
+        cnn_feats_packed = pack_padded_sequence(
+            input=cnn_feats_padded, lengths=lengths.to("cpu"), batch_first=True, enforce_sorted=False,
+        )
+        rnn_out, rnn_h = self.rnn(cnn_feats_packed)
+        rnn_out, _ = pad_packed_sequence(rnn_out, batch_first=True)
+        # rnn_out, rnn_h = self.rnn(cnn_feats)
+
         # mean_rnn = torch.zeros(rnn_out.size(0), self.rnn_output_size).to(cnn_feats.device)
         # for i, batch in enumerate(rnn_out):
         #     mean_gru[i] = torch.mean(batch[:lengths[i]], 0)
@@ -176,10 +170,7 @@ class TextMultiLevelEncoding(nn.Module):
         # 1-d convolutional network
         pool_channels = 512
         self.embed_conv = nn.Conv1d(
-            in_channels=1,
-            out_channels=pool_channels,
-            kernel_size=3 * word_dim,
-            stride=word_dim,
+            in_channels=1, out_channels=pool_channels, kernel_size=3 * word_dim, stride=word_dim,
         )
 
         # bidirectional rnn encoder
@@ -192,12 +183,7 @@ class TextMultiLevelEncoding(nn.Module):
         # visual 1-d convolutional network
         self.convs1 = nn.ModuleList(
             [
-                nn.Conv2d(
-                    1,
-                    cnn_out_channels,
-                    (window_size, self.rnn_output_size),
-                    padding=(window_size - 1, 0),
-                )
+                nn.Conv2d(1, cnn_out_channels, (window_size, self.rnn_output_size), padding=(window_size - 1, 0),)
                 for window_size in cnn_kernel_sizes
             ]
         )

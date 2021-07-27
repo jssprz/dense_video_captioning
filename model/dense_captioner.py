@@ -416,14 +416,17 @@ class DenseCaptioner(nn.Module):
         bs = start_idx.size(0)
         feats = [torch.zeros(bs, self.max_clip_len, f.size(2)).to(f.device) for f in v_feats]
         pool = torch.zeros(bs, sum([f.size(2) for f in feats])).to(feats[0].device)
+        clip_len = torch.zeros(bs, dtype=torch.long).to(feats[0].device)
         for i, (s, e) in enumerate(zip(start_idx, end_idx)):
             if (e - s) > self.max_clip_len:
                 indices = torch.linspace(s, min(e, v_feats[0].size(1) - 1), steps=self.max_clip_len, dtype=torch.long,)
                 f1 = v_feats[0][i, indices, :]
                 f2 = v_feats[1][i, indices, :]
+                clip_len[i] = len(indices)
             else:
                 f1 = v_feats[0][i, s:e, :]
                 f2 = v_feats[1][i, s:e, :]
+                clip_len[i] = e - s
 
             feats[0][i, : f1.size(0), :] = f1
             feats[1][i, : f2.size(0), :] = f2
@@ -431,7 +434,7 @@ class DenseCaptioner(nn.Module):
             # pool.append(torch.cat((torch.mean(f1, dim=0), torch.mean(f2, dim=0))))
             pool[i, :] = torch.cat((f1, f2), dim=1).mean(dim=0)
 
-        return pool, feats
+        return pool, feats, clip_len
         # return torch.stack(pool), feats
 
     # TODO: check if using a moving pool is faster than the pool in each step
@@ -454,7 +457,7 @@ class DenseCaptioner(nn.Module):
             )
 
     def __step__(self, t, v_feats):
-        self.v_p_q_pool, self.v_p_q_feats = self.get_clip_feats(v_feats, self.p, self.q)
+        self.v_p_q_pool, self.v_p_q_feats, self.clip_len = self.get_clip_feats(v_feats, self.p, self.q)
         # v_q_w_pool, _ = self.get_clip_feats(v_feats, self.q, self.q + self.future_steps)
 
         # self.h, self.c = self.rnn_cell(
@@ -463,9 +466,10 @@ class DenseCaptioner(nn.Module):
 
         # self.a_logits = self.fc(torch.cat((self.h, self.current_proposals), dim=1))
 
-    def compute_captioning_batch(self, clip_feats, clip_global, gt_c, gt_p, max_cap, teacher_forcing_p):
+    def compute_captioning_batch(self, clip_feats, clip_len, clip_global, gt_c, gt_p, max_cap, teacher_forcing_p):
         # TODO: create batch from lists
         clip_feats = [torch.cat(feats, dim=0) for feats in clip_feats]
+        clip_len = torch.cat(clip_len, dim=0)
         clip_global = torch.cat(clip_global, dim=0)
         gt_c = torch.cat(gt_c, dim=0)
         gt_p = torch.cat(gt_p, dim=0)
@@ -478,6 +482,7 @@ class DenseCaptioner(nn.Module):
             gt_captions=gt_c,
             gt_pos=gt_p,
             max_words=max_cap,
+            feats_count=clip_len,
         )
 
         if self.training:
@@ -579,6 +584,7 @@ class DenseCaptioner(nn.Module):
         )
 
         clip_feats = [[] for _ in v_feats]
+        clip_lens = []
         clip_global = []
         gt_c = []
         gt_p = []
@@ -621,6 +627,7 @@ class DenseCaptioner(nn.Module):
                 self.__step__(seq_pos, v_feats)
                 for i, feats in enumerate(clip_feats):
                     feats.append(self.v_p_q_feats[i][vix_2_dscr, :, :])
+                clip_lens.append(self.clip_len[vix_2_dscr])
                 clip_global.append(self.v_p_q_pool[vix_2_dscr, :])
                 gt_c.append(
                     torch.stack([gt_captions[i][min(gt_captions.size(1) - 1, caps_count[i])] for i in vix_2_dscr])
@@ -632,6 +639,7 @@ class DenseCaptioner(nn.Module):
                     # compute captioning for batch, considering teacher forcing strategy for cap tensor
                     cap, cap_logits, cap_sem_enc, pos_tag_seq_logits = self.compute_captioning_batch(
                         clip_feats=clip_feats,
+                        clip_len=clip_lens,
                         clip_global=clip_global,
                         gt_c=gt_c,
                         gt_p=gt_p,
@@ -648,6 +656,7 @@ class DenseCaptioner(nn.Module):
                         caps_count[vix] += 1
 
                     clip_feats = [[] for _ in v_feats]
+                    clip_lens = []
                     clip_global = []
                     gt_c = []
                     gt_p = []
