@@ -668,6 +668,7 @@ class DenseCaptioner(nn.Module):
         if len(clip_feats[0]):
             cap, cap_logits, cap_sem_enc, pos_tag_seq_logits = self.compute_captioning_batch(
                 clip_feats=clip_feats,
+                clip_len=clip_lens,
                 clip_global=clip_global,
                 gt_c=gt_c,
                 gt_p=gt_p,
