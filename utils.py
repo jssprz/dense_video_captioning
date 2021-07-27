@@ -215,7 +215,7 @@ def get_dense_captioner_str(config):
 
 def get_sem_tagger_str(config):
     drops = str([config.mapping_in_drop_p] + config.mapping_h_drop_ps)
-    hs = str(config.h_sizes)
+    hs = str(config.mapping_h_sizes)
     return f"sem hs-{hs}.out-{config.out_size}.drops-{drops}.lastbn-{config.have_last_bn}"
 
 

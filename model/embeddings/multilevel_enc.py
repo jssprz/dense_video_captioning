@@ -89,11 +89,13 @@ class VisualMultiLevelEncoding(nn.Module):
 
     def forward(self, cnn_feats, c3d_feats, video_global_feat, lengths=None):
         # Level 1. Global Encoding by Mean Pooling
-        cnn_pool = cnn_feats.view(cnn_feats.shape[0], 1, -1)
+        # cnn_pool = torch.stack([feats[:l, :].flatten() for feats, l in zip(cnn_feats, lengths)]).unsqueeze(1)
+        max_len = lengths.max()
+        cnn_pool = cnn_feats[:, :max_len, :].view(cnn_feats.shape[0], 1, -1)
         cnn_pool = torch.relu(self.cnn_conv(cnn_pool))
         cnn_pool = cnn_pool.mean(dim=2)
 
-        c3d_pool = c3d_feats.view(c3d_feats.shape[0], 1, -1)
+        c3d_pool = c3d_feats[:, :max_len, :].view(c3d_feats.shape[0], 1, -1)
         c3d_pool = torch.relu(self.c3d_conv(c3d_pool))
         c3d_pool = c3d_pool.mean(dim=2)
 
