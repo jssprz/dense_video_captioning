@@ -1,3 +1,4 @@
+from model.captioning.avscn.decoder import AVSCNDecoder
 import torch
 import torch.nn as nn
 
@@ -6,9 +7,7 @@ from model.captioning.sem_syn_an.decoder import SemSynANDecoder
 
 
 class POSTagger(nn.Module):
-    def __init__(
-        self, syn_embedd_config, syn_tagger_config, pos_vocab, pretrained_pe, device
-    ):
+    def __init__(self, syn_embedd_config, syn_tagger_config, pos_vocab, pretrained_pe, device):
         super(POSTagger, self).__init__()
 
         self.syn_model = VisualMultiLevelEncoding(
@@ -25,19 +24,22 @@ class POSTagger(nn.Module):
             pretrained_model_path=syn_embedd_config.v_enc_config.pretrained_model_path,
         )
 
-        self.semsynan_dec = SemSynANDecoder(
-            config=syn_tagger_config,
-            vocab=pos_vocab,
-            pretrained_we=pretrained_pe,
-            device=device,
-            dataset_name="MSVD",
+        # self.pos_dec = SemSynANDecoder(
+        #     config=syn_tagger_config,
+        #     vocab=pos_vocab,
+        #     pretrained_we=pretrained_pe,
+        #     device=device,
+        #     dataset_name="MSVD",
+        # )
+
+        self.pos_dec = AVSCNDecoder(
+            config=syn_tagger_config, vocab=pos_vocab, pretrained_we=pretrained_pe, device=device
         )
 
-    def forward(
-        self, encoding, v_feats, feats_count, teacher_forcing_p, gt_pos=None, max_words=None
-    ):
+    def forward(self, encoding, v_feats, feats_count, teacher_forcing_p, gt_pos=None, max_words=None):
         multilevel_enc = self.syn_model(v_feats[0], v_feats[1], encoding[1], lengths=feats_count)
-        return self.semsynan_dec(
+
+        return self.pos_dec(
             encoding=encoding + [multilevel_enc],
             teacher_forcing_p=teacher_forcing_p,
             gt_captions=gt_pos,

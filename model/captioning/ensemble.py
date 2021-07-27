@@ -33,7 +33,7 @@ class ClipEncoder(nn.Module):
         # sem_enc = self.sem_model(v_global)
         sem_enc = self.sem_model(v_feats=v_feats, v_global=v_global, feats_count=feats_count)
         syn_enc = self.syn_model(
-            encoding=[v_feats_cat, v_global, sem_enc],
+            encoding=[v_feats_cat, v_global],
             v_feats=v_feats,
             teacher_forcing_p=teacher_forcing_p,
             gt_pos=gt_pos,
