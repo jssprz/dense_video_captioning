@@ -100,7 +100,7 @@ class DenseCaptioningDataset(Dataset):
         return None
 
     def __len__(self):
-        return len(self.vidxs)
+        return len(self.vidxs) - len(self.vidxs_blcklist)
 
 
 def filter_blacklist_collate(batch):
