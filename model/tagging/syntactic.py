@@ -24,17 +24,17 @@ class POSTagger(nn.Module):
             pretrained_model_path=syn_embedd_config.v_enc_config.pretrained_model_path,
         )
 
-        # self.pos_dec = SemSynANDecoder(
-        #     config=syn_tagger_config,
-        #     vocab=pos_vocab,
-        #     pretrained_we=pretrained_pe,
-        #     device=device,
-        #     dataset_name="MSVD",
-        # )
-
-        self.pos_dec = AVSCNDecoder(
-            config=syn_tagger_config, vocab=pos_vocab, pretrained_we=pretrained_pe, device=device
+        self.pos_dec = SemSynANDecoder(
+            config=syn_tagger_config,
+            vocab=pos_vocab,
+            pretrained_we=pretrained_pe,
+            device=device,
+            dataset_name="MSVD",
         )
+
+        # self.pos_dec = AVSCNDecoder(
+        #     config=syn_tagger_config, vocab=pos_vocab, pretrained_we=pretrained_pe, device=device
+        # )
 
     def forward(self, encoding, v_feats, feats_count, teacher_forcing_p, gt_pos=None, max_words=None):
         multilevel_enc = self.syn_model(v_feats[0], v_feats[1], encoding[1], lengths=feats_count)

@@ -30,10 +30,15 @@ class ClipEncoder(nn.Module):
         self, v_feats, feats_count, v_global, teacher_forcing_p, gt_pos=None, max_words=None,
     ):
         v_feats_cat = torch.cat(v_feats, dim=-1)
+
         # sem_enc = self.sem_model(v_global)
         sem_enc = self.sem_model(v_feats=v_feats, v_global=v_global, feats_count=feats_count)
+        
+        sem_enc_no_grad = sem_enc.clone()
+        sem_enc_no_grad.required_grad = False
+
         syn_enc = self.syn_model(
-            encoding=[v_feats_cat, v_global],
+            encoding=[v_feats_cat, v_global, sem_enc_no_grad],
             v_feats=v_feats,
             teacher_forcing_p=teacher_forcing_p,
             gt_pos=gt_pos,
