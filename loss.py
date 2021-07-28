@@ -68,8 +68,10 @@ class DenseCaptioningLoss(nn.Module):
         # captioning_loss function
         if config.captioning_loss == "MSE":
             self.captioning_loss = nn.MSELoss(reduction=config.captioning_loss_reduction)
+            self.pos_tag_loss = nn.MSELoss(reduction=config.captioning_loss_reduction)
         elif config.captioning_loss == "NLL":
             self.captioning_loss = nn.NLLLoss(reduction=config.captioning_loss_reduction)
+            self.pos_tag_loss = nn.NLLLoss(reduction=config.captioning_loss_reduction)
         elif config.captioning_loss == "LenW":
             self.captioning_loss = SentenceLengthLoss(
                 c_max_len,
@@ -77,8 +79,15 @@ class DenseCaptioningLoss(nn.Module):
                 beta=config.captioning_loss_b,
                 reduction=config.captioning_loss_reduction,
             )
+            self.pos_tag_loss = SentenceLengthLoss(
+                c_max_len,
+                class_weights=None,
+                beta=config.captioning_loss_b,
+                reduction=config.captioning_loss_reduction,
+            )
         elif config.captioning_loss == "XEnt":
             self.captioning_loss = nn.CrossEntropyLoss(reduction=config.captioning_loss_reduction)
+            self.pos_tag_loss = nn.CrossEntropyLoss(reduction=config.captioning_loss_reduction)
         else:
             raise ValueError(
                 f"wrong value '{config.captioning_loss}' for the captioning_loss option in Loss configuration"
@@ -178,8 +187,8 @@ class DenseCaptioningLoss(nn.Module):
         # pos-tagging loss
         pred_pos_seq = torch.cat(l3)
         gt_pos_seq = torch.cat(l4)
-        # cap_loss = self.captioning_loss(pred_pos_seq, gt_pos_seq, gt_cap_lens)  # length-weighted
-        pos_loss = self.captioning_loss(pred_pos_seq, gt_pos_seq)  # CELoss
+        # cap_loss = self.pos_tag_loss(pred_pos_seq, gt_pos_seq, gt_cap_lens)  # length-weighted
+        pos_loss = self.pos_tag_loss(pred_pos_seq, gt_pos_seq)  # CELoss
 
         # semantic tagging loss
         pred_caps_sem_enc = torch.cat(l5)
