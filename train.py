@@ -522,7 +522,7 @@ class DenseVideo2TextTrainer(Trainer):
 
         self.loaders = {"train": train_loader, "val_1": val_loader}
 
-    def __dynamic_backward(self, epoch, loss1, loss2, loss3, change_after=10):
+    def __dynamic_backward(self, epoch, loss1, loss2, loss3, change_after=5):
         stage = (epoch / change_after) % 3
         if stage == 0:
             loss1.backward()
@@ -697,7 +697,7 @@ class DenseVideo2TextTrainer(Trainer):
             # compute backward pass for somputing the gradients
             self.logger.info("loss backward....")
 
-            self.__dynamic_backward(epoch=epoch, loss1=sem_enc_loss, loss2=pos_loss, loss3=cap_loss, change_after=10)
+            self.__dynamic_backward(epoch=epoch, loss1=sem_enc_loss, loss2=pos_loss, loss3=cap_loss)
             # loss.backward()
 
             # clip gradients to prevent NaNs in the prog-loss
