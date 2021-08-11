@@ -21,6 +21,7 @@ from tensorboardX import SummaryWriter
 
 from utils import (
     get_freer_gpu,
+    get_gpu_temps,
     decode_from_tokens,
     load_texts,
     evaluate_from_tokens,
@@ -521,8 +522,21 @@ class DenseVideo2TextTrainer(Trainer):
 
         self.loaders = {"train": train_loader, "val_1": val_loader}
 
+    def __dynamic_backward(self, epoch, loss1, loss2, loss3, change_after=10):
+        stage = (epoch / change_after) % 3
+        if stage == 0:
+            loss1.backward()
+        elif stage == 1:
+            loss1.backward()
+            loss2.backward()
+        elif stage == 2:
+            loss1.backward()
+            loss2.backward()
+            loss3.backward()
+
     def __process_batch(
         self,
+        epoch,
         video_feats,
         feats_count,
         gt_intervals,
@@ -649,7 +663,7 @@ class DenseVideo2TextTrainer(Trainer):
                 max_caps=self.avg_caps,  # max_caps=self.max_caps,
                 max_cap=self.max_words,
                 max_chunks=self.avg_truncation,
-                captioning_batch=self.modules_config["dense_captioner_config"].captioning_batch
+                captioning_batch=self.modules_config["dense_captioner_config"].captioning_batch,
             )  # the maximum value of start pointers is lower than the max_prog to be generated
 
             # if "val" in phase:
@@ -682,7 +696,9 @@ class DenseVideo2TextTrainer(Trainer):
         if phase == "train":
             # compute backward pass for somputing the gradients
             self.logger.info("loss backward....")
-            loss.backward()
+
+            self.__dynamic_backward(epoch=epoch, loss1=sem_enc_loss, loss2=pos_loss, loss3=cap_loss, change_after=10)
+            # loss.backward()
 
             # clip gradients to prevent NaNs in the prog-loss
             # nn.utils.clip_grad_norm_(self.dense_captioner.rnn_cell.parameters(), 0.5)
@@ -938,6 +954,7 @@ class DenseVideo2TextTrainer(Trainer):
                         caps_count,
                         _,
                     ) = self.__process_batch(
+                        epoch,
                         video_feats,
                         feats_count,
                         gt_intervals,
@@ -964,9 +981,10 @@ class DenseVideo2TextTrainer(Trainer):
 
                     total_time_iters += time.perf_counter() - time_start_iter
                     lrs = self.lr_scheduler.get_last_lr()
+                    gpu_temp = get_gpu_temps(self.device)
                     log_msg = (
-                        "\rEpoch:{0:03d} Phase:{1:6s} Iter:{2:04d}/{3:04d} avg-Time:{4:.1f}s lr:{5:.6f} Loss:{6:9.4f}"
-                        "\t[cap-loss:{7:9.4f} sem-enc-loss:{8:9.4f} pos-tag-loss:{9:9.4f}]"
+                        "\rEpoch:{0:03d} Phase:{1:6s} Iter:{2:04d}/{3:04d} avg-Time:{4:.1f}s lr:{5:.6f} gpu-temp:{6:02d} Loss:{7:9.4f} "
+                        "\t[cap-loss:{8:9.4f} sem-enc-loss:{9:9.4f} pos-tag-loss:{10:9.4f}]"
                     ).format(
                         epoch,
                         phase,
@@ -974,6 +992,7 @@ class DenseVideo2TextTrainer(Trainer):
                         len(self.loaders[phase]),
                         total_time_iters / i,
                         lrs[0],
+                        gpu_temp,
                         loss.item(),
                         cap_loss.item(),
                         sem_enc_loss.item(),

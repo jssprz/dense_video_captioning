@@ -33,7 +33,6 @@ class ClipEncoder(nn.Module):
 
         # sem_enc = self.sem_model(v_global)
         sem_enc = self.sem_model(v_feats=v_feats, v_global=v_global, feats_count=feats_count)
-
         sem_enc_no_grad = sem_enc.detach()
 
         syn_enc = self.syn_model(
@@ -44,7 +43,6 @@ class ClipEncoder(nn.Module):
             max_words=max_words,
             feats_count=feats_count,
         )
-
         syn_enc_mean = syn_enc[2].mean(dim=1)
         syn_enc_no_grad = syn_enc_mean.detach()
 
@@ -114,11 +112,9 @@ class Ensemble(nn.Module):
         # use the semantic encoding without gradients
         encoding[2] = encoding[5]
 
-        # use the syntactic encoding without gradients
-        # encoding[3] = encoding[6]
-
-        # use the syntactic encoding with gradients
-        encoding[3] = encoding[4]
+        # syntactic encoding 
+        # encoding[3] = encoding[4]  # with gradients
+        encoding[3] = encoding[6]  # without gradients
 
         # TODO: evaluate the use of POS tagger as a global controler
 

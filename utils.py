@@ -11,9 +11,27 @@ from video_description_eval.densecap_eval import densecap_score
 
 
 def get_freer_gpu():
-    os.system("nvidia-smi -q -d Memory |grep -A4 GPU|grep Free >tmp")
-    memory_available = [int(x.split()[2]) for x in open("tmp", "r").readlines()]
+    if os.name == "posix":
+        os.system("nvidia-smi -q -d Memory |grep -A4 GPU|grep Free >tmp")
+        memory_available = [int(x.split()[2]) for x in open("tmp", "r").readlines()]
+    else:
+        import subprocess
+        subprocess.run(["powershell", "-Command", "nvidia-smi -q -d Memory | Select-String -Pattern GPU -Context 0,4 > tmp2"], capture_output=True)
+        subprocess.run(["powershell", "-Command", "cat tmp2 | Select-String -Pattern Free -Context 0,0  > tmp"], capture_output=True)
+        memory_available = [int(x.split()[2]) for x in open("tmp", "r", encoding="utf-16").readlines() if x != "\n"]
     return np.argmax(memory_available)
+
+
+def get_gpu_temps(device=None):
+    if os.name == "posix":
+        os.system("nvidia-smi -q -d Temperature |grep -A4 GPU|grep 'GPU Current Temp' >tmp")
+        temps = [int(x.split()[-2]) for x in open("tmp", "r").readlines()]
+    else:
+        import subprocess
+        subprocess.run(["powershell", "-Command", "nvidia-smi -q -d Temperature | Select-String -Pattern GPU -Context 0,4 > tmp2"], capture_output=True)
+        subprocess.run(["powershell", "-Command", "cat tmp2 | Select-String -Pattern 'GPU Current Temp' -Context 0,0  > tmp"], capture_output=True)
+        temps = [int(x.split()[-2]) for x in open("tmp", "r", encoding="utf-16").readlines() if x != "\n"]
+    return temps if device is None else (temps[device.index] if "cuda" == device.type else temps[0])
 
 
 def decode_from_tokens(vocab, tokens, until_eos=True, max_length=10000):
