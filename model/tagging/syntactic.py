@@ -12,11 +12,12 @@ class POSTagger(nn.Module):
 
         self.syn_model = VisualMultiLevelEncoding(
             cnn_feats_size=syn_embedd_config.v_enc_config.cnn_feats_size,
-            c3d_feats_size=syn_embedd_config.v_enc_config.cnn_feats_size,
+            c3d_feats_size=syn_embedd_config.v_enc_config.c3d_feats_size,
             global_feat_size=syn_embedd_config.v_enc_config.global_feat_size,
             out_size=syn_embedd_config.v_enc_config.out_size,
             norm=syn_embedd_config.v_enc_config.norm,
             drop_p=syn_embedd_config.v_enc_config.drop_p,
+            rnn_size=syn_embedd_config.v_enc_config.rnn_size,
             mapping_h_sizes=syn_embedd_config.v_enc_config.mapping_h_sizes,
             mapping_in_drop_p=syn_embedd_config.v_enc_config.mapping_in_drop_p,
             mapping_h_drop_ps=syn_embedd_config.v_enc_config.mapping_h_drop_ps,
