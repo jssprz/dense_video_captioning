@@ -36,6 +36,7 @@ class TaggerMultilevel(nn.Module):
             out_size=config.out_size,
             norm=config.norm,
             drop_p=config.drop_p,
+            rnn_size=config.rnn_size,
             mapping_h_sizes=config.mapping_h_sizes,
             mapping_in_drop_p=config.mapping_in_drop_p,
             mapping_h_drop_ps=config.mapping_h_drop_ps,
