@@ -30,13 +30,16 @@ class VisualMultiLevelEncoding(nn.Module):
         self.norm = norm
 
         pool_channels = 512
-        self.cnn_conv = nn.Conv1d(
-            in_channels=1, out_channels=pool_channels, kernel_size=3 * cnn_feats_size, stride=cnn_feats_size,
-        )
+        # self.cnn_conv = nn.Conv1d(
+        #     in_channels=1, out_channels=pool_channels, kernel_size=3 * cnn_feats_size, stride=cnn_feats_size,
+        # )
 
-        self.c3d_conv = nn.Conv1d(
-            in_channels=1, out_channels=pool_channels, kernel_size=3 * c3d_feats_size, stride=c3d_feats_size,
-        )
+        # self.c3d_conv = nn.Conv1d(
+        #     in_channels=1, out_channels=pool_channels, kernel_size=3 * c3d_feats_size, stride=c3d_feats_size,
+        # )
+
+        self.cnn_conv = nn.Conv2d(1, pool_channels, (3, cnn_feats_size), padding=(0, 0),)
+        self.c3d_conv = nn.Conv2d(1, pool_channels, (3, c3d_feats_size), padding=(0, 0),)
 
         # visual bidirectional rnn encoder
         self.rnn = nn.GRU(cnn_feats_size, rnn_size, batch_first=True, bidirectional=True)
@@ -91,13 +94,21 @@ class VisualMultiLevelEncoding(nn.Module):
         # Level 1. Global Encoding by Mean Pooling
         # cnn_pool = torch.stack([feats[:l, :].flatten() for feats, l in zip(cnn_feats, lengths)]).unsqueeze(1)
         max_len = min(lengths.max() + 2, cnn_feats.size(1))
-        cnn_pool = cnn_feats[:, :max_len, :].view(cnn_feats.shape[0], 1, -1)
-        cnn_pool = torch.relu(self.cnn_conv(cnn_pool))
-        cnn_pool = cnn_pool.mean(dim=2)
+        # cnn_pool = cnn_feats[:, :max_len, :].view(cnn_feats.shape[0], 1, -1)
+        # cnn_pool = torch.relu(self.cnn_conv(cnn_pool))
+        # cnn_pool = cnn_pool.mean(dim=2)
 
-        c3d_pool = c3d_feats[:, :max_len, :].view(c3d_feats.shape[0], 1, -1)
-        c3d_pool = torch.relu(self.c3d_conv(c3d_pool))
-        c3d_pool = c3d_pool.mean(dim=2)
+        # c3d_pool = c3d_feats[:, :max_len, :].view(c3d_feats.shape[0], 1, -1)
+        # c3d_pool = torch.relu(self.c3d_conv(c3d_pool))
+        # c3d_pool = c3d_pool.mean(dim=2)
+
+        cnn_pool = cnn_feats[:, :max_len, :].unsqueeze(1)
+        cnn_pool = torch.relu(self.cnn_conv(cnn_pool)).squeeze(3)
+        cnn_pool = torch.avg_pool1d(cnn_pool, cnn_pool.size(-1)).squeeze(2)
+
+        c3d_pool = cnn_feats[:, :max_len, :].unsqueeze(1)
+        c3d_pool = torch.relu(self.cnn_conv(c3d_pool)).squeeze(3)
+        c3d_pool = torch.avg_pool1d(c3d_pool, c3d_pool.size(-1)).squeeze(2)
 
         org_out = torch.cat((cnn_pool, c3d_pool, video_global_feat), dim=1)
 
@@ -120,7 +131,7 @@ class VisualMultiLevelEncoding(nn.Module):
         # Level 3. Local-Enhanced Encoding by biGRU-CNN
         conv_out = rnn_out.unsqueeze(1)
         conv_out = [torch.relu(conv(conv_out)).squeeze(3) for conv in self.convs1]
-        conv_out = [F.max_pool1d(i, i.size(2)).squeeze(2) for i in conv_out]
+        conv_out = [torch.max_pool1d(i, i.size(2)).squeeze(2) for i in conv_out]
         conv_out = torch.cat(conv_out, 1)
         # conv_out = self.dropout(conv_out)
 

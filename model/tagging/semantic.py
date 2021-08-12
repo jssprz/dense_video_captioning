@@ -31,7 +31,7 @@ class TaggerMultilevel(nn.Module):
 
         self.ml_enc = VisualMultiLevelEncoding(
             cnn_feats_size=config.cnn_feats_size,
-            c3d_feats_size=config.cnn_feats_size,
+            c3d_feats_size=config.c3d_feats_size,
             global_feat_size=config.global_feat_size,
             out_size=config.out_size,
             norm=config.norm,
