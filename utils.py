@@ -1,5 +1,6 @@
 import sys
 import os
+import re
 
 import torch
 import torch.nn as nn
@@ -40,7 +41,12 @@ def decode_from_tokens(vocab, tokens, until_eos=True, max_length=10000):
         if until_eos and token.item() == vocab("<eos>"):
             break
         words.append(vocab.idx_to_word(token.item()))
-    return " ".join(words)
+    result = " ".join(words)
+    
+    # replace unnecessary spaces before punctation
+    result = re.sub(r"\s([.,;:?!'\"](?:|$))", r"\1", result)
+
+    return result
 
 
 def get_sentences(vocab, outputs, gt_idxs, until_eos=True):
@@ -90,23 +96,21 @@ def evaluate_from_tokens(vocab, outputs, gt_idxs, ground_truth, until_eos=True):
     return metrics_results, pred_sentences
 
 
-def densecap_evaluate_from_tokens(vocab, vidxs, tstamps, f_counts, pred_intervals, pred_caps, ground_truth_dict):
+def densecap_evaluate_from_tokens(vocab, vidxs, pred_tstamps, pred_caps, ground_truth_dict):
     prediction = {}
-    for batch_pred_intervals, batch_pred_caps, batch_vidxs, batch_tstamps, batch_f_counts in zip(
-        pred_intervals, pred_caps, vidxs, tstamps, f_counts
+    for batch_pred_caps, batch_vidxs, batch_tstamps in zip(
+        pred_caps, vidxs, pred_tstamps
     ):
-        for v_intervals, v_caps, v_caps_count, vidx, v_tstamps, v_f_count in zip(
-            batch_pred_intervals, batch_pred_caps[0], batch_pred_caps[1], batch_vidxs, batch_tstamps, batch_f_counts
+        for v_caps, v_caps_count, vidx, v_tstamps in zip(
+            batch_pred_caps[0], batch_pred_caps[1], batch_vidxs, batch_tstamps
         ):
-            # prediction[str(vidx.item())] = [{'sentence': 'hola a todos', 'timestamp': [0., 1.]}, {'sentence': 'hello world', 'timestamp': [1., 2.]}]
-
             if v_caps_count > 0:
                 prediction[str(vidx.item())] = [
                     {
                         "sentence": decode_from_tokens(vocab, pred_tokens),
-                        "timestamp": [v_tstamps[int(i[0])], v_tstamps[int(min(i[1], v_f_count-1))]],
+                        "timestamp": [ts[0].item(), ts[1].item()],
                     }
-                    for i, pred_tokens in zip(v_intervals[:v_caps_count], v_caps[:v_caps_count])
+                    for ts, pred_tokens in zip(v_tstamps[:v_caps_count], v_caps[:v_caps_count])
                 ]
 
     scores = densecap_score(

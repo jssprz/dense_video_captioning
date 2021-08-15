@@ -537,6 +537,7 @@ class DenseCaptioner(nn.Module):
         # initialize
         bs, device = v_feats[0].size(0), v_feats[0].device
 
+        aux_caps_count = torch.zeros(bs, dtype=torch.long).to(device)
         caps_count = torch.zeros(bs, dtype=torch.long).to(device)
         self.p = torch.zeros(bs, dtype=torch.long)
         self.q = torch.ones(bs, dtype=torch.long)
@@ -603,9 +604,9 @@ class DenseCaptioner(nn.Module):
             vix_2_advance = (a_id == 1).nonzero(as_tuple=True)[0]
             self.q[vix_2_advance] += 1
 
-            vix_2_dscr = ((a_id == 2) * (caps_count < intervals.size(1))).nonzero(as_tuple=True)[0]
-            intervals[vix_2_dscr, caps_count[vix_2_dscr], 0] = self.p[vix_2_dscr].float()
-            intervals[vix_2_dscr, caps_count[vix_2_dscr], 1] = self.q[vix_2_dscr].float()
+            vix_2_dscr = ((a_id == 2) * (aux_caps_count < intervals.size(1))).nonzero(as_tuple=True)[0]
+            intervals[vix_2_dscr, aux_caps_count[vix_2_dscr], 0] = self.p[vix_2_dscr].float()
+            intervals[vix_2_dscr, aux_caps_count[vix_2_dscr], 1] = self.q[vix_2_dscr].float()
 
             # for i, a in enumerate(a_id):
             #     if a == 0:
@@ -630,12 +631,14 @@ class DenseCaptioner(nn.Module):
                 clip_lens.append(self.clip_len[vix_2_dscr])
                 clip_global.append(self.v_p_q_pool[vix_2_dscr, :])
                 gt_c.append(
-                    torch.stack([gt_captions[i][min(gt_captions.size(1) - 1, caps_count[i])] for i in vix_2_dscr])
+                    torch.stack([gt_captions[i][min(gt_captions.size(1) - 1, aux_caps_count[i])] for i in vix_2_dscr])
                 )
-                gt_p.append(torch.stack([gt_pos[i][min(gt_pos.size(1) - 1, caps_count[i])] for i in vix_2_dscr]))
+                gt_p.append(torch.stack([gt_pos[i][min(gt_pos.size(1) - 1, aux_caps_count[i])] for i in vix_2_dscr]))
                 vixs += vix_2_dscr
 
-                if len(clip_feats[0]) >= captioning_batch:
+                aux_caps_count[vix_2_dscr] += 1
+
+                if len(vixs) >= captioning_batch:
                     # compute captioning for batch, considering teacher forcing strategy for cap tensor
                     cap, cap_logits, cap_sem_enc, pos_tag_seq_logits = self.compute_captioning_batch(
                         clip_feats=clip_feats,
@@ -665,7 +668,7 @@ class DenseCaptioner(nn.Module):
             seq_pos += 1
 
         # compute captioning of last batch
-        if len(clip_feats[0]):
+        if len(vixs):
             cap, cap_logits, cap_sem_enc, pos_tag_seq_logits = self.compute_captioning_batch(
                 clip_feats=clip_feats,
                 clip_len=clip_lens,
