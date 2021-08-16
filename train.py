@@ -828,7 +828,7 @@ class DenseVideo2TextTrainer(Trainer):
                     pretrained_dict[k] = v
 
             # 3. load the new state dict
-            self.dense_captioner.load_state_dict(pretrained_dict)
+            self.dense_captioner.load_state_dict(pretrained_dict, self.trainer_config.resume_config)
 
             # 4. freeze the part of the model that was trained before
             if self.trainer_config.resume_config.unfreeze_at > 0:

@@ -389,24 +389,45 @@ class DenseCaptioner(nn.Module):
             device=device,
         )
 
-    def freeze(self, resume_config):
-        if resume_config.freeze_captioning:
-            for name, p in self.named_parameters():
-                if "clip_captioner" in name:
-                    p.requires_grad = False
-        elif resume_config.random_captioning:
-            self.clip_captioner.reset_parameters()
+    def load_state_dict(self, state_dict, resume_config):
+        if resume_config.load_cap_sem_enc:
+            sub_key = "clip_captioner.encoder.sem_model."
+            self.clip_captioner.encoder.sem_model.load_state_dict(
+                {k[len(sub_key) :]: v for k, v in state_dict.items() if sub_key in k}
+            )
+        if resume_config.load_cap_syn_enc:
+            sub_key = "clip_captioner.encoder.syn_model."
+            self.clip_captioner.encoder.syn_model.load_state_dict(
+                {k[len(sub_key) :]: v for k, v in state_dict.items() if sub_key in k}
+            )
+        if resume_config.load_cap_decoder:
+            sub_key = "clip_captioner.avscn_dec."
+            self.clip_captioner.decoders[0].load_state_dict(
+                {k[len(sub_key) :]: v for k, v in state_dict.items() if sub_key in k}
+            )
+            sub_key = "clip_captioner.semsynan_dec."
+            self.clip_captioner.decoders[1].load_state_dict(
+                {k[len(sub_key) :]: v for k, v in state_dict.items() if sub_key in k}
+            )
+        if resume_config.load_programmer:
+            self.mm_enc.load_state_dict({k: v for k, v in state_dict.items() if k.startswith("mm_enc.")})
+            self.rnn_cell.load_state_dict({k: v for k, v in state_dict.items() if k.startswith("rnn_cell.")})
+            self.proposal_enc.load_state_dict({k: v for k, v in state_dict.items() if k.startswith("proposal_enc.")})
+            self.fc.load_state_dict({k: v for k, v in state_dict.items() if k.startswith("fc.")})
 
+    def freeze(self, resume_config):
+        for name, p in self.named_parameters():
+            if resume_config.freeze_cap_sem_enc and "clip_captioner.encoder.sem_model" in name:
+                p.requires_grad = False
+            if resume_config.freeze_cap_syn_enc and "clip_captioner.encoder.syn_model" in name:
+                p.requires_grad = False
+            if resume_config.freeze_cap_decoder and "clip_captioner.decoders" in name:
+                p.requires_grad = False
         if resume_config.freeze_programmer:
             self.mm_enc.requires_grad = False
             self.rnn_cell.requires_grad = False
             self.proposal_enc.requires_grad = False
             self.fc.requires_grad = False
-        elif resume_config.random_programmer:
-            self.mm_enc.reset_parameters()
-            self.rnn_cell.reset_parameters()
-            self.proposal_enc.reset_parameters()
-            self.fc.reset_parameters()
 
     def unfreeze(self):
         for _, p in self.named_parameters():

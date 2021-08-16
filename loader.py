@@ -56,7 +56,7 @@ class DenseCaptioningDataset(Dataset):
         # self.event_proposals = event_proposals
 
     def close_h5_file(self):
-        self.h5_dataset.close()
+        self.h5.close()
 
     def __getitem__(self, index):
         if self.h5_dataset is None:
