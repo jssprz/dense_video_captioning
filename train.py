@@ -833,8 +833,10 @@ class DenseVideo2TextTrainer(Trainer):
             # 4. freeze the part of the model that was trained before
             if self.trainer_config.resume_config.unfreeze_at > 0:
                 self.dense_captioner.freeze(resume_config=self.trainer_config.resume_config)
-                if self.trainer_config.resume_config.begin_epoch != -1:
-                    begin_epoch = self.trainer_config.resume_config.begin_epoch
+            
+            # 5. set the begin_epoch variable for logging
+            if self.trainer_config.resume_config.begin_epoch != -1:
+                begin_epoch = self.trainer_config.resume_config.begin_epoch
         else:
             begin_epoch = 0
             self.best_metrics = {"programmer": {}, "captioning": {}, "densecap": {}}
