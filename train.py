@@ -799,6 +799,30 @@ class DenseVideo2TextTrainer(Trainer):
             os.makedirs(save_checkpoints_dir)
 
         val_phases = ["val_1"]
+        cap_metrics = [
+            "Bleu_1",
+            "Bleu_2",
+            "Bleu_3",
+            "Bleu_4",
+            "METEOR",
+            "ROUGE_L",
+            "CIDEr",
+            "SPICE",
+            "All_Metrics",
+        ]
+        densecap_metrics = [
+            "Bleu_1",
+            "Bleu_2",
+            "Bleu_3",
+            "Bleu_4",
+            "METEOR",
+            "ROUGE_L",
+            "CIDEr",
+            "SPICE",
+            "Recall",
+            "Precision",
+            "All_Metrics",
+        ]
 
         if resume and os.path.exists(checkpoint_path):
             self.logger.info(f"Resuming from checkpoint: {checkpoint_path}")
@@ -846,32 +870,9 @@ class DenseVideo2TextTrainer(Trainer):
             begin_epoch = 0
             self.best_metrics = {"programmer": {}, "captioning": {}, "densecap": {}}
             for p in val_phases:
-                cap_metrics = [
-                    "Bleu_1",
-                    "Bleu_2",
-                    "Bleu_3",
-                    "Bleu_4",
-                    "METEOR",
-                    "ROUGE_L",
-                    "CIDEr",
-                    "SPICE",
-                    "All_Metrics",
-                ]
+
                 self.best_metrics["captioning"][p] = {m: (0, 0) for m in cap_metrics}
 
-                densecap_metrics = [
-                    "Bleu_1",
-                    "Bleu_2",
-                    "Bleu_3",
-                    "Bleu_4",
-                    "METEOR",
-                    "ROUGE_L",
-                    "CIDEr",
-                    "SPICE",
-                    "Recall",
-                    "Precision",
-                    "All_Metrics",
-                ]
                 self.best_metrics["densecap"][p] = {m: (0, 0) for m in densecap_metrics}
 
         self.last_best_saved_epoch = {}
