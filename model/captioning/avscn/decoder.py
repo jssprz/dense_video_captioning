@@ -386,8 +386,8 @@ class AVSCNDecoder(nn.Module):
 
         self.semantic_layer = SCNAttnDecoder(
             config.in_seq_length,
-            config.n_feats,
-            config.n_tags,
+            config.v_enc_size,
+            config.sem_enc_size,
             config.embedding_size,
             config.h_size,
             config.rnn_in_size,
@@ -410,8 +410,8 @@ class AVSCNDecoder(nn.Module):
         # change n_feats and n_tags only
         self.visual_layer = SCNAttnDecoder(
             config.in_seq_length,
-            config.n_tags,
-            config.n_feats,
+            config.sem_enc_size,
+            config.v_enc_size,
             config.embedding_size,
             config.h_size,
             config.rnn_in_size,

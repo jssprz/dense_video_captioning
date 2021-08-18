@@ -235,23 +235,31 @@ def get_dense_captioner_str(config):
     return f"programmer max_clip_len-{config.max_clip_len}.future_steps-{config.future_steps}.hs-{hs}.drop-{config.drop_p}.train-{train_sample}.test-{test_sample}"
 
 
+def get_visual_enc_str(config):
+    drops = str([config.mapping_in_drop_p] + config.mapping_h_drop_ps)
+    hs = str(config.mapping_h_sizes)
+    return f"v-enc hs-{hs}.out-{config.out_size}.drops-{drops}.lastbn-{config.have_last_bn}"
+
+
 def get_sem_tagger_str(config):
     drops = str([config.mapping_in_drop_p] + config.mapping_h_drop_ps)
     hs = str(config.mapping_h_sizes)
     return f"sem hs-{hs}.out-{config.out_size}.drops-{drops}.lastbn-{config.have_last_bn}"
 
 
-def get_syn_embedd_str(config):
-    hs = str(config.v_enc_config.h_sizes)
-    in_size = config.v_enc_config.cnn_feats_size + config.v_enc_config.c3d_feats_size
-    return f"syn in-{in_size}.hs-{hs}.out-{config.v_enc_config.out_size}.drop-{config.v_enc_config.drop_p}.lastbn-{config.v_enc_config.have_last_bn}.norm-{config.v_enc_config.norm}"
-
-
 def get_syn_tagger_str(config):
-    hs = str([config.h_size] + [config.rnn_h_size])
-    train_sample = "max" if config.train_sample_max else "dist"
-    test_sample = "max" if config.test_sample_max else "dist"
-    return f"syn-dec in-{config.in_seq_length}.posemb-{config.posemb_size}.rnnin-{config.rnn_in_size}.hs-{hs}. drop-{config.drop_p}.layers-{config.num_layers}.train-{train_sample}.test-{test_sample}"
+    c = config.enc_config
+    hs = str(c.h_sizes)
+    in_size = c.cnn_feats_size + c.c3d_feats_size
+    enc = f"syn-enc in-{in_size}.hs-{hs}.out-{c.out_size}.drop-{c.drop_p}.lastbn-{c.have_last_bn}.norm-{c.norm}"
+
+    c = config.dec_config
+    hs = str([c.h_size] + [c.rnn_h_size])
+    train_sample = "max" if c.train_sample_max else "dist"
+    test_sample = "max" if c.test_sample_max else "dist"
+    dec = f"syn-dec in-{c.in_seq_length}.posemb-{c.embedding_size}.rnnin-{c.rnn_in_size}.hs-{hs}. drop-{c.drop_p}.layers-{c.num_layers}.train-{train_sample}.test-{test_sample}"
+
+    return f"{enc} {dec}"
 
 
 def get_avscn_decoder_str(config):
@@ -265,7 +273,7 @@ def get_semsynan_decoder_str(config):
     hs = str([config.h_size] + [config.rnn_h_size])
     train_sample = "max" if config.train_sample_max else "dist"
     test_sample = "max" if config.test_sample_max else "dist"
-    return f"semsynan-dec in-{config.in_seq_length}.posemb-{config.posemb_size}.rnnin-{config.rnn_in_size}.hs-{hs}. drop-{config.drop_p}.layers-{config.num_layers}.train-{train_sample}.test-{test_sample}"
+    return f"semsynan-dec in-{config.in_seq_length}.posemb-{config.syn_enc_size}.rnnin-{config.rnn_in_size}.hs-{hs}. drop-{config.drop_p}.layers-{config.num_layers}.train-{train_sample}.test-{test_sample}"
 
 
 def get_mm_str(config):

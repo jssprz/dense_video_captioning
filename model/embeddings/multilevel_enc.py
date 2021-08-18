@@ -106,8 +106,8 @@ class VisualMultiLevelEncoding(nn.Module):
         cnn_pool = torch.relu(self.cnn_conv(cnn_pool)).squeeze(3)
         cnn_pool = torch.avg_pool1d(cnn_pool, cnn_pool.size(-1)).squeeze(2)
 
-        c3d_pool = cnn_feats[:, :max_len, :].unsqueeze(1)
-        c3d_pool = torch.relu(self.cnn_conv(c3d_pool)).squeeze(3)
+        c3d_pool = c3d_feats[:, :max_len, :].unsqueeze(1)
+        c3d_pool = torch.relu(self.c3d_conv(c3d_pool)).squeeze(3)
         c3d_pool = torch.avg_pool1d(c3d_pool, c3d_pool.size(-1)).squeeze(2)
 
         org_out = torch.cat((cnn_pool, c3d_pool, video_global_feat), dim=1)

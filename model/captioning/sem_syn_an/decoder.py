@@ -499,8 +499,8 @@ class SemSynANDecoder(nn.Module):
 
         self.v_sem_layer = SCNDecoder(
             config.in_seq_length,
-            config.n_feats,
-            config.n_tags,
+            config.v_enc_size,
+            config.sem_enc_size,
             config.embedding_size,
             config.h_size,
             config.rnn_in_size,
@@ -522,8 +522,8 @@ class SemSynANDecoder(nn.Module):
 
         self.v_syn_layer = SCNDecoder(
             config.in_seq_length,
-            config.n_feats,
-            config.posemb_size,
+            config.v_enc_size,
+            config.syn_enc_size,
             config.embedding_size,
             config.h_size,
             config.rnn_in_size,
@@ -545,8 +545,8 @@ class SemSynANDecoder(nn.Module):
 
         self.se_sy_layer = SCNDecoder(
             config.in_seq_length,
-            config.n_tags,
-            config.posemb_size,
+            config.sem_enc_size,
+            config.syn_enc_size,
             config.embedding_size,
             config.h_size,
             config.rnn_in_size,

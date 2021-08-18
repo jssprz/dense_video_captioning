@@ -30,8 +30,8 @@ from utils import (
     get_tf_ratio,
     get_trainer_str,
     get_dense_captioner_str,
+    get_visual_enc_str,
     get_sem_tagger_str,
-    get_syn_embedd_str,
     get_syn_tagger_str,
     get_avscn_decoder_str,
     get_semsynan_decoder_str,
@@ -181,8 +181,8 @@ class DenseVideo2TextTrainer(Trainer):
         print("\nInitializing the Model...")
         self.dense_captioner = DenseCaptioner(
             self.modules_config["dense_captioner_config"],
+            self.modules_config["visual_enc_config"],
             self.modules_config["sem_tagger_config"],
-            self.modules_config["syn_embedd_config"],
             self.modules_config["syn_tagger_config"],
             self.modules_config["avscn_dec_config"],
             self.modules_config["semsynan_dec_config"],
@@ -524,7 +524,7 @@ class DenseVideo2TextTrainer(Trainer):
         self.loaders = {"train": train_loader, "val_1": val_loader}
 
     def __dynamic_backward(self, epoch, loss1, loss2, loss3, change_after=5):
-        stage = (epoch / change_after) % 3
+        stage = (epoch // change_after) % 3
         if stage == 0:
             loss1.backward()
         elif stage == 1:
@@ -1223,13 +1223,13 @@ if __name__ == "__main__":
     dense_captioner_config.str = get_dense_captioner_str(dense_captioner_config)
     print(dense_captioner_config.str)
 
+    visual_enc_config = ConfigDict(config["visual_enc_config"])
+    visual_enc_config.str = get_visual_enc_str(visual_enc_config)
+    print(visual_enc_config.str)
+
     sem_tagger_config = ConfigDict(config["sem_tagger_config"])
     sem_tagger_config.str = get_sem_tagger_str(sem_tagger_config)
     print(sem_tagger_config.str)
-
-    syn_embedd_config = ConfigDict(config["syn_embedd_config"])
-    syn_embedd_config.str = get_syn_embedd_str(syn_embedd_config)
-    print(syn_embedd_config.str)
 
     syn_tagger_config = ConfigDict(config["syn_tagger_config"])
     syn_tagger_config.str = get_syn_tagger_str(syn_tagger_config)
@@ -1258,8 +1258,8 @@ if __name__ == "__main__":
     print("Initializing the experiment.......")
     modules_config = {
         "dense_captioner_config": dense_captioner_config,
+        "visual_enc_config": visual_enc_config,
         "sem_tagger_config": sem_tagger_config,
-        "syn_embedd_config": syn_embedd_config,
         "syn_tagger_config": syn_tagger_config,
         "avscn_dec_config": avscn_dec_config,
         "semsynan_dec_config": semsynan_dec_config,

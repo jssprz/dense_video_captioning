@@ -7,26 +7,26 @@ from model.captioning.sem_syn_an.decoder import SemSynANDecoder
 
 
 class POSTagger(nn.Module):
-    def __init__(self, syn_embedd_config, syn_tagger_config, pos_vocab, pretrained_pe, device):
+    def __init__(self, config, pos_vocab, pretrained_pe, device):
         super(POSTagger, self).__init__()
 
         self.syn_model = VisualMultiLevelEncoding(
-            cnn_feats_size=syn_embedd_config.v_enc_config.cnn_feats_size,
-            c3d_feats_size=syn_embedd_config.v_enc_config.c3d_feats_size,
-            global_feat_size=syn_embedd_config.v_enc_config.global_feat_size,
-            out_size=syn_embedd_config.v_enc_config.out_size,
-            norm=syn_embedd_config.v_enc_config.norm,
-            drop_p=syn_embedd_config.v_enc_config.drop_p,
-            rnn_size=syn_embedd_config.v_enc_config.rnn_size,
-            mapping_h_sizes=syn_embedd_config.v_enc_config.mapping_h_sizes,
-            mapping_in_drop_p=syn_embedd_config.v_enc_config.mapping_in_drop_p,
-            mapping_h_drop_ps=syn_embedd_config.v_enc_config.mapping_h_drop_ps,
-            have_last_bn=syn_embedd_config.v_enc_config.have_last_bn,
-            pretrained_model_path=syn_embedd_config.v_enc_config.pretrained_model_path,
+            cnn_feats_size=config.enc_config.cnn_feats_size,
+            c3d_feats_size=config.enc_config.c3d_feats_size,
+            global_feat_size=config.enc_config.global_feat_size,
+            out_size=config.enc_config.out_size,
+            norm=config.enc_config.norm,
+            drop_p=config.enc_config.drop_p,
+            rnn_size=config.enc_config.rnn_size,
+            mapping_h_sizes=config.enc_config.mapping_h_sizes,
+            mapping_in_drop_p=config.enc_config.mapping_in_drop_p,
+            mapping_h_drop_ps=config.enc_config.mapping_h_drop_ps,
+            have_last_bn=config.enc_config.have_last_bn,
+            pretrained_model_path=config.enc_config.pretrained_model_path,
         )
 
         self.pos_dec = SemSynANDecoder(
-            config=syn_tagger_config,
+            config=config.dec_config,
             vocab=pos_vocab,
             pretrained_we=pretrained_pe,
             device=device,
@@ -38,10 +38,10 @@ class POSTagger(nn.Module):
         # )
 
     def forward(self, encoding, v_feats, feats_count, teacher_forcing_p, gt_pos=None, max_words=None):
-        multilevel_enc = self.syn_model(v_feats[0], v_feats[1], encoding[1], lengths=feats_count)
+        multilevel_enc = self.syn_model(v_feats[0], v_feats[1], encoding[2], lengths=feats_count)
 
         return self.pos_dec(
-            encoding=encoding + [multilevel_enc],
+            encoding=[encoding[0], multilevel_enc, encoding[1], encoding[2]],
             teacher_forcing_p=teacher_forcing_p,
             gt_captions=gt_pos,
             max_words=max_words,

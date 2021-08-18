@@ -3,13 +3,14 @@ import torch.nn as nn
 
 from model.captioning.avscn.decoder import AVSCNDecoder
 from model.captioning.sem_syn_an.decoder import SemSynANDecoder
+from model.embeddings.multilevel_enc import VisualMultiLevelEncoding
 from model.tagging.semantic import TaggerMLP, TaggerMultilevel
 from model.tagging.syntactic import POSTagger
 
 
 class ClipEncoder(nn.Module):
     def __init__(
-        self, v_size, sem_tagger_config, syn_embedd_config, syn_tagger_config, pos_vocab, pretrained_pe, device,
+        self, v_size, v_enc_config, sem_tagger_config, syn_tagger_config, pos_vocab, pretrained_pe, device,
     ):
         super(ClipEncoder, self).__init__()
 
@@ -22,21 +23,38 @@ class ClipEncoder(nn.Module):
         #     have_last_bn=sem_tagger_config.have_last_bn,
         # )
 
+        self.visual_model = VisualMultiLevelEncoding(
+            cnn_feats_size=v_enc_config.cnn_feats_size,
+            c3d_feats_size=v_enc_config.c3d_feats_size,
+            global_feat_size=v_enc_config.global_feat_size,
+            out_size=v_enc_config.out_size,
+            norm=v_enc_config.norm,
+            drop_p=v_enc_config.drop_p,
+            rnn_size=v_enc_config.rnn_size,
+            mapping_h_sizes=v_enc_config.mapping_h_sizes,
+            mapping_in_drop_p=v_enc_config.mapping_in_drop_p,
+            mapping_h_drop_ps=v_enc_config.mapping_h_drop_ps,
+            have_last_bn=v_enc_config.have_last_bn,
+            pretrained_model_path=v_enc_config.pretrained_model_path,
+        )
+
         self.sem_model = TaggerMultilevel(sem_tagger_config)
 
-        self.syn_model = POSTagger(syn_embedd_config, syn_tagger_config, pos_vocab, pretrained_pe, device)
+        self.syn_model = POSTagger(syn_tagger_config, pos_vocab, pretrained_pe, device)
 
     def forward(
         self, v_feats, feats_count, v_global, teacher_forcing_p, gt_pos=None, max_words=None,
     ):
         v_feats_cat = torch.cat(v_feats, dim=-1)
 
+        v_enc = self.visual_model(cnn_feats=v_feats[0], c3d_feats=v_feats[1], video_global_feat=v_global, lengths=feats_count)
+
         # sem_enc = self.sem_model(v_global)
         sem_enc = self.sem_model(v_feats=v_feats, v_global=v_global, feats_count=feats_count)
         sem_enc_no_grad = sem_enc.detach()
 
         syn_enc = self.syn_model(
-            encoding=[v_feats_cat, v_global, sem_enc_no_grad],
+            encoding=[v_feats_cat, sem_enc_no_grad, v_global],
             v_feats=v_feats,
             teacher_forcing_p=teacher_forcing_p,
             gt_pos=gt_pos,
@@ -46,15 +64,15 @@ class ClipEncoder(nn.Module):
         syn_enc_mean = syn_enc[2].mean(dim=1)
         syn_enc_no_grad = syn_enc_mean.detach()
 
-        return [v_feats_cat, v_global, sem_enc, syn_enc, syn_enc_mean, sem_enc_no_grad, syn_enc_no_grad]
+        return [v_feats_cat, v_enc, sem_enc, syn_enc, syn_enc_mean, sem_enc_no_grad, syn_enc_no_grad]
 
 
 class Ensemble(nn.Module):
     def __init__(
         self,
         v_size,
+        visual_enc_config,
         sem_tagger_config,
-        syn_embedd_config,
         syn_tagger_config,
         avscn_dec_config,
         semsynan_dec_config,
@@ -70,8 +88,8 @@ class Ensemble(nn.Module):
 
         self.encoder = ClipEncoder(
             v_size=v_size,
+            v_enc_config=visual_enc_config,
             sem_tagger_config=sem_tagger_config,
-            syn_embedd_config=syn_embedd_config,
             syn_tagger_config=syn_tagger_config,
             pos_vocab=pos_vocab,
             pretrained_pe=pretrained_pe,

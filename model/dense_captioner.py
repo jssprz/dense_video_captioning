@@ -307,8 +307,8 @@ class DenseCaptioner(nn.Module):
     def __init__(
         self,
         config,
+        visual_enc_config,
         sem_tagger_config,
-        syn_embedd_config,
         syn_tagger_config,
         avscn_dec_config,
         semsynan_dec_config,
@@ -377,8 +377,8 @@ class DenseCaptioner(nn.Module):
 
         self.clip_captioner = Ensemble(
             v_size=config.cnn_feats_size + config.c3d_feats_size,
+            visual_enc_config=visual_enc_config,
             sem_tagger_config=sem_tagger_config,
-            syn_embedd_config=syn_embedd_config,
             syn_tagger_config=syn_tagger_config,
             avscn_dec_config=avscn_dec_config,
             semsynan_dec_config=semsynan_dec_config,
@@ -417,11 +417,11 @@ class DenseCaptioner(nn.Module):
 
     def freeze(self, resume_config):
         for name, p in self.named_parameters():
-            if resume_config.freeze_cap_sem_enc and "clip_captioner.encoder.sem_model" in name:
+            if resume_config.freeze_cap_sem_enc and "clip_captioner.encoder.sem_model." in name:
                 p.requires_grad = False
-            if resume_config.freeze_cap_syn_enc and "clip_captioner.encoder.syn_model" in name:
+            if resume_config.freeze_cap_syn_enc and "clip_captioner.encoder.syn_model." in name:
                 p.requires_grad = False
-            if resume_config.freeze_cap_decoder and "clip_captioner.decoders" in name:
+            if resume_config.freeze_cap_decoder and ("clip_captioner.avscn_dec." in name or "clip_captioner.semsynan_dec." in name):
                 p.requires_grad = False
         if resume_config.freeze_programmer:
             self.mm_enc.requires_grad = False
