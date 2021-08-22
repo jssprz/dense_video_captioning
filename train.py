@@ -21,6 +21,7 @@ from tensorboardX import SummaryWriter
 
 from utils import (
     get_freer_gpu,
+    get_gpu_temps,
     decode_from_tokens,
     load_texts,
     evaluate_from_tokens,
@@ -43,6 +44,12 @@ from configuration_dict import ConfigDict
 from loader import extract_split_data_from_corpus, data2tensors, get_dense_loader
 from model.dense_captioner import DenseCaptioner
 from loss import DenseCaptioningLoss
+
+if os.name == "posix":
+    import resource
+
+    rlimit = resource.getrlimit(resource.RLIMIT_NOFILE)
+    resource.setrlimit(resource.RLIMIT_NOFILE, (4096, rlimit[1]))
 
 
 class Trainer:
@@ -318,14 +325,24 @@ class DenseVideo2TextTrainer(Trainer):
     def __get_sem_enc(self, freq_words, caps, caps_upos, postags=["NOUN", "ADJ", "VERB"]):
         uidxs_to_use = [self.upos_vocab(tag) for tag in postags]
 
-        X = torch.zeros(len(caps), self.max_caps, self.modules_config["sem_tagger_config"].out_size)
+        total_num_caps = 0
+        X = torch.zeros(len(caps), self.max_caps, len(freq_words))
         for i, (v_caps, v_caps_upos) in enumerate(zip(caps, caps_upos)):
+            total_num_caps += len(v_caps)
             for j, (cap, upos) in enumerate(zip(v_caps, v_caps_upos)):
                 for widx, uidx in zip(cap, upos):
                     if uidx in uidxs_to_use and widx in freq_words:
                         X[i, j, freq_words.index(widx)] = 1
 
-        return X
+        # total of activations for each tag
+        pos_samples = X.sum(dim=0).sum(dim=0)  # (len(freq_words), )
+
+        # total number of deactivations for each tag
+        neg_samples = torch.tensor(total_num_caps).repeat(len(freq_words)) - pos_samples
+
+        pos_weights = neg_samples / pos_samples
+
+        return X, pos_weights
 
     def __get_interval_mask(self, intervals, caps_count, max_num_chunks, proposals=None, num_estimates=128):
         # compute the length of all intervals, including padding region
@@ -1065,9 +1082,10 @@ class DenseVideo2TextTrainer(Trainer):
                     # logging message
                     total_time_iters += time.perf_counter() - time_start_iter
                     lrs = self.lr_scheduler.get_last_lr()
+                    gpu_temp = get_gpu_temps(self.device)
                     log_msg = (
-                        "\rEpoch:{0:03d} Phase:{1:6s} Iter:{2:04d}/{3:04d} avg-Time:{4:.1f}s lr:{5:.6f} Loss:{6:9.4f}"
-                        "\t[s-proposals-loss:{7:9.4f} e-proposals-loss:{8:9.4f}]"
+                        "\rEpoch:{0:03d} Phase:{1:6s} Iter:{2:04d}/{3:04d} avg-Time:{4:.1f}s lr:{5:.6f} gpu-temp:{6:02d} Loss:{7:9.4f} "
+                        "\t[s-proposals-loss:{8:9.4f} e-proposals-loss:{9:9.4f}]"
                     ).format(
                         epoch,
                         phase,
@@ -1075,6 +1093,7 @@ class DenseVideo2TextTrainer(Trainer):
                         len(self.loaders[phase]),
                         total_time_iters / i,
                         lrs[0],
+                        gpu_temp,
                         # rl_strategy,
                         loss.item(),
                         # prog_loss.item(),
@@ -1313,7 +1332,7 @@ if __name__ == "__main__":
 
     # load hiper-parameters
     print("Loading configuration file...")
-    config_path = os.path.join(args.dataset_folder, "train_config.json")
+    config_path = os.path.join(args.dataset_folder, "prop_train_config.json")
     with open(config_path, "r") as f:
         config = json.load(f)
 
