@@ -27,6 +27,7 @@ from utils import (
     load_texts,
     evaluate_from_tokens,
     densecap_evaluate_from_tokens,
+    multilabel_evaluate_from_logits,
     get_tf_ratio,
     get_trainer_str,
     get_dense_captioner_str,
@@ -719,13 +720,17 @@ class DenseVideo2TextTrainer(Trainer):
             None,  # program,
             captions,
             intervals,
+            caps_sem_enc,
             caps_count,
             None,  # truncate_prog_at,
         )
 
-    def __save_checkpoint(self, epoch, save_checkpoints_dir, phase=None, new_best=False, metric_name=None):
+    def __save_checkpoint(self, epoch, save_checkpoints_dir, phase=None, new_best=False, component=None, metric_name=None):
         if new_best:
-            chkpt_filename = f"best_chkpt_{epoch}_{phase}_{metric_name}.pt"
+            if "/" in metric_name:
+                # remove the "/weighted" part in multilabel metrics
+                metric_name = metric_name.split("/")[0]
+            chkpt_filename = f"best_chkpt_{epoch}_{phase}_{component}_{metric_name}.pt"
         else:
             chkpt_filename = f"chkpt_{epoch}.pt"
 
@@ -754,15 +759,15 @@ class DenseVideo2TextTrainer(Trainer):
             print(" saved")
 
         # remove previously saved
-        if new_best and self.last_best_saved_epoch[phase][metric_name] != -1:
-            last_best_epoch = self.last_best_saved_epoch[phase][metric_name]
-            os.remove(os.path.join(save_checkpoints_dir, f"best_chkpt_{last_best_epoch}_{phase}_{metric_name}.pt",))
+        if new_best and self.last_best_saved_epoch[component][phase][metric_name] != -1:
+            last_best_epoch = self.last_best_saved_epoch[component][phase][metric_name]
+            os.remove(os.path.join(save_checkpoints_dir, f"best_chkpt_{last_best_epoch}_{phase}_{component}_{metric_name}.pt",))
         elif not new_best and self.last_saved_epoch != -1:
             os.remove(os.path.join(save_checkpoints_dir, f"chkpt_{self.last_saved_epoch}.pt"))
 
         # update the last saved epoch
         if new_best:
-            self.last_best_saved_epoch[phase][metric_name] = epoch
+            self.last_best_saved_epoch[component][phase][metric_name] = epoch
         else:
             self.last_saved_epoch = epoch
 
@@ -785,9 +790,13 @@ class DenseVideo2TextTrainer(Trainer):
                         ) as f:
                             json.dump(prediction, f)
                         output_saved = True
-                if component == "captioning" and phase == "val_1":
-                    print("saving best checkpoint...")
-                    self.__save_checkpoint(epoch, save_checkpoints_dir, phase, True, name)
+                if component == "captioning" or (component in ["sem_enc"] and name in [
+                    "Recall/weighted",
+                    "F1/weighted",
+                    "ROC-AUC/weighted",
+                ]):
+                    print("saving best checkpoint due to improvement on {component}-{name}...")
+                    self.__save_checkpoint(epoch, save_checkpoints_dir, phase, True, component, name)
 
     def train_model(self, resume=False, checkpoint_path=None, min_num_epochs=50, early_stop_limit=10):
         # parallel_pool = Pool()
@@ -799,6 +808,11 @@ class DenseVideo2TextTrainer(Trainer):
             os.makedirs(save_checkpoints_dir)
 
         val_phases = ["val_1"]
+        sem_enc_metrics = [
+            "Recall",
+            "F1",
+            "ROC-AUC",
+        ]
         cap_metrics = [
             "Bleu_1",
             "Bleu_2",
@@ -868,16 +882,16 @@ class DenseVideo2TextTrainer(Trainer):
                 begin_epoch = self.trainer_config.resume_config.begin_epoch
         else:
             begin_epoch = 0
-            self.best_metrics = {"programmer": {}, "captioning": {}, "densecap": {}}
+            self.best_metrics = {"programmer": {}, "sem_enc": {}, "captioning": {}, "densecap": {}}
             for p in val_phases:
-
+                self.best_metrics["sem_enc"][p] = {m: (0, 0) for m in sem_enc_metrics}
                 self.best_metrics["captioning"][p] = {m: (0, 0) for m in cap_metrics}
-
                 self.best_metrics["densecap"][p] = {m: (0, 0) for m in densecap_metrics}
 
-        self.last_best_saved_epoch = {}
+        self.last_best_saved_epoch = {"programmer": {}, "sem_enc": {}, "captioning": {}, "densecap": {}}
         for p in val_phases:
-            self.last_best_saved_epoch[p] = {m: -1 for m in cap_metrics}
+            self.last_best_saved_epoch["sem_enc"][p] = {m: -1 for m in sem_enc_metrics}
+            self.last_best_saved_epoch["captioning"][p] = {m: -1 for m in cap_metrics}
 
         self.dense_captioner.to(self.device)
         print("\nParameters of Dense Captioner model:\n")
@@ -928,6 +942,8 @@ class DenseVideo2TextTrainer(Trainer):
                 all_caps_ids = []
                 all_tstamps = []
                 all_f_counts = []
+                all_sem_enc, all_gt_sem_enc = [], []
+                all_cap_counts = []
                 for (
                     i,
                     (
@@ -964,6 +980,7 @@ class DenseVideo2TextTrainer(Trainer):
                         _,
                         captions,
                         intervals,
+                        caps_sem_enc_logits,
                         caps_count,
                         _,
                     ) = self.__process_batch(
@@ -1054,12 +1071,18 @@ class DenseVideo2TextTrainer(Trainer):
                         all_prog_ids.append(vidx)
                         all_f_counts.append(feats_count)
 
+                        # save semantic encodings for computing evaluation metrics
+                        all_sem_enc.append(caps_sem_enc_logits.to("cpu"))
+                        all_gt_sem_enc.append(gt_caps_sem_enc.to("cpu"))
+
                         # save captions and the captions' idx for computing evaluation metrics (only the first caps_count captions are evaluated)
                         all_captions.append((captions.to("cpu"), caps_count.to("cpu"), gt_caps_count.to("cpu"),))
                         all_caps_ids.append(cidxs)
 
                         # save intervals for computing evaluation metrics
-                        all_tstamps.append((intervals * 16 / fps.unsqueeze(1).unsqueeze(1)).to("cpu"))
+                        all_tstamps.append((intervals * 16 / fps.unsqueeze(1).unsqueeze(1)).to("cpu"))                        
+
+                        all_cap_counts.append(caps_count.to("cpu"))
 
                 # for sanity, replace the last checkpoint when epoch is power of 2
                 if phase == "train" and (self.last_saved_epoch == -1 or not (epoch & (epoch - 1))):
@@ -1082,6 +1105,11 @@ class DenseVideo2TextTrainer(Trainer):
 
                     # print('evaluating progs...')
                     # prog_metrics_results, pred_progs = evaluate_from_tokens(self.programs_vocab, all_programs, all_prog_ids, self.ref_programs[phase], False)
+
+                    print("evaluating semanctic tagging...")
+                    sem_enc_metrics_results = multilabel_evaluate_from_logits(
+                        all_gt_sem_enc, all_sem_enc, all_cap_counts
+                    )
                     print("evaluating captions (basic)...")
                     cap_metrics_results, pred_caps = evaluate_from_tokens(
                         self.caps_vocab, all_captions, all_caps_ids, self.ref_captions[phase],
@@ -1093,6 +1121,9 @@ class DenseVideo2TextTrainer(Trainer):
 
                     # process results, saving the checkpoint if any improvement occurs
                     # self.__process_results(prog_metrics_results, pred_progs, phase, epoch-1, save_checkpoints_dir, 'programmer')
+                    self.__process_results(
+                        sem_enc_metrics_results, None, phase, epoch, save_checkpoints_dir, "sem_enc",
+                    )
                     self.__process_results(
                         cap_metrics_results, pred_caps, phase, epoch, save_checkpoints_dir, "captioning",
                     )

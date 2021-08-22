@@ -5,6 +5,7 @@ import re
 import torch
 import torch.nn as nn
 import numpy as np
+from sklearn.metrics import recall_score, precision_score, roc_auc_score, f1_score
 
 sys.path.append("video_description_eval/coco-caption")
 from video_description_eval.evaluate import score
@@ -138,6 +139,75 @@ def evaluate_from_sentences(pred_sentences, ground_truth):
     return metrics_results
 
 
+def multilabel_evaluate_from_logits(gt_multihots, pred_logits, cap_counts):
+    y_true = []
+    y_pred = []
+    for batch_gt, batch_pred, batch_count in zip(gt_multihots, pred_logits, cap_counts):
+        for v_gt, v_pred, v_count in zip(batch_gt, batch_pred, batch_count):
+            # mask = (v_gt[:v_count] == 1).nonzero(as_tuple=True)
+            y_true.append(v_gt[:v_count])
+            y_pred.append(torch.sigmoid(v_pred[:v_count]))
+
+    y_true = torch.cat(y_true, dim=0).numpy()
+    y_pred = torch.cat(y_pred, dim=0).numpy()
+    y_pred_sparse = y_pred > 0.5
+
+    # recall
+    recall_micro = recall_score(y_true, y_pred_sparse, average="micro")
+    recall_macro = recall_score(y_true, y_pred_sparse, average="macro")
+    recall_weighted = recall_score(y_true, y_pred_sparse, average="weighted")
+    recall_samples = recall_score(y_true, y_pred_sparse, average="samples")
+
+    # precision
+    precision_micro = precision_score(y_true, y_pred_sparse, average="micro")
+    precision_macro = precision_score(y_true, y_pred_sparse, average="macro")
+    precision_weighted = precision_score(y_true, y_pred_sparse, average="weighted")
+    precision_samples = precision_score(y_true, y_pred_sparse, average="samples")
+
+    # f1
+    f1_micro = f1_score(y_true, y_pred_sparse, average="micro")
+    f1_macro = f1_score(y_true, y_pred_sparse, average="macro")
+    f1_weighted = f1_score(y_true, y_pred_sparse, average="weighted")
+    f1_samples = f1_score(y_true, y_pred_sparse, average="samples")
+
+    # remove not represented labels
+    bad_labels = np.argwhere(np.all(y_true[..., :] == 0, axis=0))
+    y_true_filtered = np.delete(y_true, bad_labels, axis=1)
+    y_pred_filtered = np.delete(y_pred, bad_labels, axis=1)
+    print(f"labels without positive samples: {bad_labels}")
+
+    # roc_auc
+    roc_auc_micro = roc_auc_score(y_true_filtered, y_pred_filtered, average="micro")
+    roc_auc_macro = roc_auc_score(y_true_filtered, y_pred_filtered, average="macro")
+    roc_auc_weighted = roc_auc_score(y_true_filtered, y_pred_filtered, average="weighted")
+
+    # remove samples with only one class (without positive samples)
+    bad_samples = np.argwhere(np.all(y_true[:, ...] == 0, axis=1))
+    print(f"samples without positive labels: {bad_samples}")
+    y_true_filtered = np.delete(y_true, bad_samples, axis=0)
+    y_pred_filtered = np.delete(y_pred, bad_samples, axis=0)
+    roc_auc_samples = roc_auc_score(y_true_filtered, y_pred_filtered, average="samples")
+
+    return {
+        "Recall/micro": recall_micro,
+        "Recall/macro": recall_macro,
+        "Recall/weighted": recall_weighted,
+        "Recall/samples": recall_samples,
+        "Precision/micro": precision_micro,
+        "Precision/macro": precision_macro,
+        "Precision/weighted": precision_weighted,
+        "Precision/samples": precision_samples,
+        "F1/micro": f1_micro,
+        "F1/macro": f1_macro,
+        "F1/weighted": f1_weighted,
+        "F1/samples": f1_samples,
+        "ROC-AUC/micro": roc_auc_micro,
+        "ROC-AUC/macro": roc_auc_macro,
+        "ROC-AUC/weighted": roc_auc_weighted,
+        "ROC-AUC/samples": roc_auc_samples,
+    }
+
+
 def load_ground_truth_captions(reference_txt_path):
     gt = {}
     for line in list(open(reference_txt_path, "r")):
@@ -210,11 +280,11 @@ def get_tf_ratio(tf_config, epoch):
 def get_trainer_str(config):
     crit_config = config.criterion_config
     return (
-        f"{config.dataset_name} batch-{config.batch_size}.lr-{config.optimizer_config.learning_rate}.{config.optimizer_config.optimizer_name}"
-        f".closs-{crit_config.captioning_loss}-{crit_config.captioning_loss_reduction}"
-        f".ploss-{crit_config.programer_loss}-{crit_config.programer_loss_reduction}"
-        f".tagloss-{crit_config.tagging_loss}-{crit_config.tagging_loss_reduction}"
-        f".iloss-{crit_config.intervals_loss}-{crit_config.intervals_loss_reduction}"
+        f"{config.dataset_name} B{config.batch_size}.lr{config.optimizer_config.learning_rate}.{config.optimizer_config.optimizer_name}"
+        f".capL-{crit_config.captioning_loss}-{crit_config.captioning_loss_reduction}"
+        f".posL-{crit_config.programer_loss}-{crit_config.programer_loss_reduction}"
+        f".tagL-{crit_config.tagging_loss}-{crit_config.tagging_loss_reduction}"
+        f".intL-{crit_config.intervals_loss}-{crit_config.intervals_loss_reduction}"
     )
 
 
