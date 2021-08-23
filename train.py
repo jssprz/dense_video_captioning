@@ -958,6 +958,10 @@ class DenseVideo2TextTrainer(Trainer):
             tf_ratio = get_tf_ratio(self.trainer_config.tf_config, epoch)
             self.writer.add_scalar("captioning/teacher_forcing_ratio", tf_ratio, epoch)
 
+            self.writer.add_scalar("captioning/lr_cap_dec", self.optimizer.param_groups[0]["lr"], epoch)
+            self.writer.add_scalar("captioning/lr_sem_enc", self.optimizer.param_groups[2]["lr"], epoch)
+            self.writer.add_scalar("captioning/lr_syn_enc", self.optimizer.param_groups[3]["lr"], epoch)
+
             self.loss_phase, self.best_loss_phase = (
                 {p: 0 for p in ["train"] + val_phases},
                 {p: float("inf") for p in ["train"] + val_phases},
@@ -1279,10 +1283,7 @@ class DenseVideo2TextTrainer(Trainer):
                 self.logger.debug(msg)
                 print(msg)
                 break
-
-            self.writer.add_scalar("captioning/lr_cap_dec", self.optimizer.param_groups[0]["lr"], epoch)
-            self.writer.add_scalar("captioning/lr_sem_enc", self.optimizer.param_groups[2]["lr"], epoch)
-            self.writer.add_scalar("captioning/lr_syn_enc", self.optimizer.param_groups[3]["lr"], epoch)
+            
             self.lr_scheduler.step()
 
         # close h5 files
