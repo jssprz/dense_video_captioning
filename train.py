@@ -267,10 +267,10 @@ class DenseVideo2TextTrainer(Trainer):
         self.change_after = 5
         epochs_f = DenseVideo2TextTrainer.trained_epochs_per_module
         lambda_avscn_dec = lambda epoch: opt_conf.lr_decay_factor ** (
-            epochs_f(epoch, self.change_after, "cap_dec") // 40
+            epochs_f(epoch, self.change_after, "cap_dec") // 8
         )
         lambda_semsynan_dec = lambda epoch: opt_conf.lr_decay_factor ** (
-            epochs_f(epoch, self.change_after, "cap_dec") // 40
+            epochs_f(epoch, self.change_after, "cap_dec") // 8
         )
         lambda_sem_enc = lambda epoch: opt_conf.lr_decay_factor ** (epochs_f(epoch, self.change_after, "sem_enc") // 2)
         lambda_syn_enc = lambda epoch: opt_conf.lr_decay_factor ** (epochs_f(epoch, self.change_after, "syn_enc") // 3)
@@ -1181,7 +1181,7 @@ class DenseVideo2TextTrainer(Trainer):
 
                 if phase != "train":
                     # freeze modules without improvement in validation loss
-                    loss_early_stop = self.freeze_modules(phase=phase)
+                    # loss_early_stop = self.freeze_modules(phase=phase)
 
                     self.early_stop += 1
                     # predicted_sentences = pool.apply_async(self.__get_sentences, [all_outputs, all_video_ids])
