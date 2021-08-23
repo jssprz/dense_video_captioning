@@ -713,7 +713,7 @@ class DenseVideo2TextTrainer(Trainer):
                 max_caps=self.avg_caps,  # max_caps=self.max_caps,
                 max_cap=self.max_words,
                 max_chunks=self.avg_truncation,
-                max_back_steps=self.modules_config["proposals_tagger_config"].max_back_steps
+                max_back_steps=self.modules_config["proposals_tagger_config"].max_back_steps,
             )  # the maximum value of start pointers is lower than the max_prog to be generated
             self.logger.info(f"proposals count: {caps_count}")
 
@@ -972,6 +972,8 @@ class DenseVideo2TextTrainer(Trainer):
             self.writer.add_scalar("proposals/teacher_forcing_ratio", tf_ratio, epoch)
 
             loss_phases = {"train": 0, "val_1": 0}
+            s_prop_loss_phases = {"train": 0, "val_1": 0}
+            e_prop_loss_phases = {"train": 0, "val_1": 0}
             for phase in ["train", "val_1"]:
                 # prepare gradients of the model according to the phase to be performed
                 if phase == "train":
@@ -996,7 +998,8 @@ class DenseVideo2TextTrainer(Trainer):
                     )
 
                 # predicted_sentences = {}
-                time_start_epoch, total_time_iters, loss_count = time.perf_counter(), 0, 0
+                time_start_epoch, total_time_iters = time.perf_counter(), 0
+                loss_count, s_prop_loss_count, e_prop_loss_count = 0, 0, 0
                 all_programs = []
                 all_captions = []
                 all_prog_ids = []
@@ -1071,6 +1074,8 @@ class DenseVideo2TextTrainer(Trainer):
                         phase,
                     )
                     loss_count += loss.item()
+                    s_prop_loss_count += s_prop_loss.item()
+                    e_prop_loss_count += e_prop_loss.item()
 
                     rl_strategy = self.trainer_config.criterion_config.rl_strategy
                     self.writer.add_scalar(f"proposals/{phase}-iters-{rl_strategy}-loss", loss, iteration)
@@ -1165,6 +1170,18 @@ class DenseVideo2TextTrainer(Trainer):
                 avg_loss = loss_count / len(self.loaders[phase])
                 loss_phases[phase] = avg_loss
                 self.writer.add_scalar("proposals/{}-epochs-avg-loss".format(phase), avg_loss, epoch)
+
+                s_prop_avg_loss = s_prop_loss_count / len(self.loaders[phase])
+                s_prop_loss_phases[phase] = s_prop_avg_loss
+                self.writer.add_scalar(
+                    "proposals/{}-epochs-s_proposals-avg-loss".format(phase), s_prop_avg_loss, epoch
+                )
+
+                e_prop_avg_loss = e_prop_loss_count / len(self.loaders[phase])
+                e_prop_loss_phases[phase] = e_prop_avg_loss
+                self.writer.add_scalar(
+                    "proposals/{}-epochs-e_proposals-avg-loss".format(phase), e_prop_avg_loss, epoch
+                )
 
                 if phase != "train":
                     self.early_stop += 1
