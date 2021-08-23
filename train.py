@@ -1169,19 +1169,15 @@ class DenseVideo2TextTrainer(Trainer):
 
                 avg_loss = loss_count / len(self.loaders[phase])
                 loss_phases[phase] = avg_loss
-                self.writer.add_scalar("proposals/{}-epochs-avg-loss".format(phase), avg_loss, epoch)
+                self.writer.add_scalar(f"proposals/{phase}-epochs-avg-loss", avg_loss, epoch)
 
                 s_prop_avg_loss = s_prop_loss_count / len(self.loaders[phase])
                 s_prop_loss_phases[phase] = s_prop_avg_loss
-                self.writer.add_scalar(
-                    "proposals/{}-epochs-s_proposals-avg-loss".format(phase), s_prop_avg_loss, epoch
-                )
+                self.writer.add_scalar(f"proposals/{phase}-epochs-s_proposals-avg-loss", s_prop_avg_loss, epoch)
 
                 e_prop_avg_loss = e_prop_loss_count / len(self.loaders[phase])
                 e_prop_loss_phases[phase] = e_prop_avg_loss
-                self.writer.add_scalar(
-                    "proposals/{}-epochs-e_proposals-avg-loss".format(phase), e_prop_avg_loss, epoch
-                )
+                self.writer.add_scalar(f"proposals/{phase}-epochs-e_proposals-avg-loss", e_prop_avg_loss, epoch)
 
                 if phase != "train":
                     self.early_stop += 1
