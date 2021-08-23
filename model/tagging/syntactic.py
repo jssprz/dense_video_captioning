@@ -25,25 +25,28 @@ class POSTagger(nn.Module):
             pretrained_model_path=config.enc_config.pretrained_model_path,
         )
 
-        self.pos_dec = SemSynANDecoder(
-            config=config.dec_config,
-            vocab=pos_vocab,
-            pretrained_we=pretrained_pe,
-            device=device,
-            dataset_name="MSVD",
-        )
-
-        # self.pos_dec = AVSCNDecoder(
-        #     config=syn_tagger_config, vocab=pos_vocab, pretrained_we=pretrained_pe, device=device
-        # )
+        if config.dec_config.arch == "SemSynANDecoder":
+            self.pos_dec = SemSynANDecoder(
+                config=config.dec_config,
+                vocab=pos_vocab,
+                pretrained_we=pretrained_pe,
+                device=device,
+                dataset_name="MSVD",
+            )
+        elif config.dec_config.arch == "AVSCNDecoder":
+            self.pos_dec = AVSCNDecoder(
+                config=config.dec_config, vocab=pos_vocab, pretrained_we=pretrained_pe, device=device
+            )
 
     def forward(self, encoding, v_feats, feats_count, teacher_forcing_p, gt_pos=None, max_words=None):
         multilevel_enc = self.syn_model(v_feats[0], v_feats[1], encoding[2], lengths=feats_count)
 
+        if type(self.pos_dec) == SemSynANDecoder:
+            encoding = [encoding[0], multilevel_enc, encoding[1], encoding[2]]
+        elif type(self.pos_dec) == AVSCNDecoder:
+            encoding = [encoding[0], multilevel_enc, encoding[1]]
+
         return self.pos_dec(
-            encoding=[encoding[0], multilevel_enc, encoding[1], encoding[2]],
-            teacher_forcing_p=teacher_forcing_p,
-            gt_captions=gt_pos,
-            max_words=max_words,
+            encoding=encoding, teacher_forcing_p=teacher_forcing_p, gt_captions=gt_pos, max_words=max_words,
         )
 

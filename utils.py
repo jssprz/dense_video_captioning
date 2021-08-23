@@ -319,9 +319,8 @@ def get_sem_tagger_str(config):
 
 def get_syn_tagger_str(config):
     c = config.enc_config
-    hs = str(c.h_sizes)
     in_size = c.cnn_feats_size + c.c3d_feats_size
-    enc = f"syn-enc in-{in_size}.hs-{hs}.out-{c.out_size}.drop-{c.drop_p}.lastbn-{c.have_last_bn}.norm-{c.norm}"
+    enc = f"syn-enc in-{in_size}.out-{c.out_size}.drop-{c.drop_p}.lastbn-{c.have_last_bn}.norm-{c.norm}"
 
     c = config.dec_config
     hs = str([c.h_size] + [c.rnn_h_size])
