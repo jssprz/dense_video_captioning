@@ -562,17 +562,19 @@ class DenseVideo2TextTrainer(Trainer):
 
     def dynamic_backward(self, epoch, loss1, loss2, loss3, change_after=5):
         stage = (epoch // change_after) % 3
+
+        training_yet = False
         if not self.freezed_modules["sem_enc"]:
             loss1.backward()
-            return True
+            training_yet = True
         if not self.freezed_modules["syn_enc"] and stage in [1, 2]:
             loss2.backward()
-            return True
+            training_yet = True
         if not self.freezed_modules["cap_dec"] and stage == 2:
             loss3.backward()
-            return True
+            training_yet = True
 
-        return False
+        return training_yet
 
     def __process_batch(
         self,
