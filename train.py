@@ -344,7 +344,9 @@ class DenseVideo2TextTrainer(Trainer):
 
         return X, pos_weights
 
-    def __get_interval_mask(self, intervals, caps_count, max_num_chunks, proposals=None, num_estimates=128):
+    def __get_interval_mask(
+        self, intervals, caps_count, max_num_chunks, proposals=None, num_estimates=128, min_count_per_proposal=10
+    ):
         # compute the length of all intervals, including padding region
         aux = intervals[:, :, 1] - intervals[:, :, 0]
 
@@ -360,9 +362,24 @@ class DenseVideo2TextTrainer(Trainer):
             s = linspace(0, self.max_interval, num=num_estimates)
             e = kde.score_samples(s.reshape(-1, 1))
             proposals = s[argrelextrema(e, np.less)[0]]
-
             self.logger.info(f"PROPOSALS: Number of event-proposals: {len(proposals)}")
             self.logger.info(f"PROPOSALS: Event-proposals: {proposals}")
+            print(f"PROPOSALS: Number of event-proposals: {len(proposals)}")
+            print(f"PROPOSALS: Event-proposals: {proposals}")
+
+            # discard proposals with less than min_count_per_proposal of events
+            filter_proposals = [proposals[0]] if (data < proposals[0]).sum() >= min_count_per_proposal else []
+            filter_proposals += [
+                p
+                for i, p in enumerate(proposals[1:])
+                if ((data >= proposals[i - 1]) * (data < p)).sum() >= min_count_per_proposal
+            ]
+            filter_proposals += [proposals[-1]] if (data >= proposals[-1]).sum() >= min_count_per_proposal else []
+            proposals = filter_proposals
+            self.logger.info(f"PROPOSALS: Number of event-proposals (filtered): {len(proposals)}")
+            self.logger.info(f"PROPOSALS: Event-proposals (filtered): {proposals}")
+            print(f"PROPOSALS: Number of event-proposals (filtered): {len(proposals)}")
+            print(f"PROPOSALS: Event-proposals (filtered): {proposals}")
 
         # padding legths using -1
         for i, c in enumerate(caps_count):
@@ -395,7 +412,7 @@ class DenseVideo2TextTrainer(Trainer):
 
                 # set start and end proposals for intervals that start before the current interval too
                 for k in range(j):
-                    if intervals[i, k, 1] >= s:
+                    if intervals[i, k, 1] > s:
                         # interval that starts before and ends after the current interval starts
                         s_mask[i, s, result[i, k]] = 1
                     if intervals[i, k, 1] >= e:
@@ -408,7 +425,7 @@ class DenseVideo2TextTrainer(Trainer):
 
                 # set end proposal for intervals tat start after the current interval too
                 for k in range(j + 1, caps_count[i]):
-                    if intervals[i, k, 1] >= e:
+                    if intervals[i, k, 0] < e and intervals[i, k, 1] >= e:
                         # interval that starts after and ends after the current interval ends
                         e_mask[i, e, result[i, k]] = 1
 
