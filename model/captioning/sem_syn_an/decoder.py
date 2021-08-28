@@ -468,7 +468,7 @@ class SCNDecoder(nn.Module):
 
 class SemSynANDecoder(nn.Module):
     def __init__(
-        self, config, vocab, pretrained_we=None, device="gpu", dataset_name="MSVD"
+        self, config, vocab, with_embedding_layer=True, pretrained_we=None, device="gpu", dataset_name="MSVD"
     ):
         super(SemSynANDecoder, self).__init__()
 
@@ -491,11 +491,12 @@ class SemSynANDecoder(nn.Module):
 
         # Components
 
-        if pretrained_we is not None:
-            self.embedding = nn.Embedding.from_pretrained(pretrained_we)
-        else:
-            self.embedding = nn.Embedding(self.output_size, self.embedding_size)
-        self.embedd_drop = nn.Dropout(config.drop_p)
+        if with_embedding_layer:
+            if pretrained_we is not None:
+                self.embedding = nn.Embedding.from_pretrained(pretrained_we)
+            else:
+                self.embedding = nn.Embedding(self.output_size, self.embedding_size)
+            self.embedd_drop = nn.Dropout(config.drop_p)
 
         self.v_sem_layer = SCNDecoder(
             config.in_seq_length,
@@ -628,6 +629,54 @@ class SemSynANDecoder(nn.Module):
         aa1 = beta1 * v_sem_h + (1 - beta1) * v_syn_h
         return beta2 * aa1 + (1 - beta2) * sem_syn_h
 
+    def reset_internals(self, batch_size):
+        # (batch_size x embedding_size)
+        self.decoder_input = torch.zeros(batch_size, self.embedding_size).to(self.device)
+
+        self.v_sem_h = torch.zeros(batch_size, self.h_size).to(self.device)
+        self.v_sem_c = torch.zeros(batch_size, self.h_size).to(self.device)
+
+        self.v_syn_h = torch.zeros(batch_size, self.h_size).to(self.device)
+        self.v_syn_c = torch.zeros(batch_size, self.h_size).to(self.device)
+
+        self.se_sy_h = torch.zeros(batch_size, self.h_size).to(self.device)
+        self.se_sy_c = torch.zeros(batch_size, self.h_size).to(self.device)
+
+        self.rnn_h = torch.zeros(batch_size, self.h_size).to(self.device)
+
+    def precompute_mats(self, v_pool, s_tags, pos_emb, var_drop_p=0.1):
+        self.v_sem_layer.precompute_mats(v_pool, s_tags, var_drop_p)
+        self.v_syn_layer.precompute_mats(v_pool, pos_emb, var_drop_p)
+        self.se_sy_layer.precompute_mats(s_tags, pos_emb, var_drop_p)
+
+    def step(self, v_feats, s_tags, pos_emb):
+        self.v_sem_h, self.v_sem_c = self.v_sem_layer.step(
+            s_tags, self.v_sem_h, self.v_sem_c, self.decoder_input, var_drop_p=0.1
+        )
+        self.v_syn_h, self.v_syn_c = self.v_syn_layer.step(
+            pos_emb, self.v_syn_h, self.v_syn_c, self.decoder_input, var_drop_p=0.1
+        )
+        self.se_sy_h, self.se_sy_c = self.se_sy_layer.step(
+            pos_emb, self.se_sy_h, self.se_sy_c, self.decoder_input, var_drop_p=0.1
+        )
+
+        if self.dataset_name == "MSVD":
+            v_attn1 = self.v_sem_attn(v_feats, self.v_sem_h)
+            v_attn2 = self.v_syn_attn(v_feats, self.v_syn_h)
+            v_attn3 = self.se_sy_attn(v_feats, self.se_sy_h)
+            v_attn = (v_attn1 + v_attn2 + v_attn3) / 3
+        elif self.dataset_name == "MSR-VTT":
+            h = torch.cat((self.v_sem_h, self.v_syn_h, self.se_sy_h), dim=1)
+            v_attn = self.v_attn(v_feats, h)
+
+        self.rnn_h = self.__adaptive_merge(self.rnn_h, v_attn, self.v_sem_h, self.v_syn_h, self.se_sy_h)
+
+        # compute word_logits
+        # (batch_size x output_size)
+        word_logits = self.out(self.rnn_h)
+
+        return word_logits
+
     def forward_fn(
         self,
         v_feats,
@@ -638,72 +687,16 @@ class SemSynANDecoder(nn.Module):
         gt_captions=None,
         max_words=None,
     ):
-        batch_size = v_pool.size(0)
-
-        # (batch_size x embedding_size)
-        decoder_input = torch.zeros(batch_size, self.embedding_size).to(self.device)
-        # decoder_input = Variable(torch.Tensor(batch_size, self.embedding_size).fill_(0)).to(self.device)
-
-        # if type(enc_hidden) is tuple:
-        #     # (encoder_n_layers * encoder_num_directions x batch_size x h_size) -> (encoder_n_layers x encoder_num_directions x batch_size x h_size)
-        #     rnn_h = enc_hidden[0].view(self.encoder_num_layers, self.encoder_num_directions, batch_size, self.h_size)
-        #     rnn_c = enc_hidden[1].view(self.encoder_num_layers, self.encoder_num_directions, batch_size, self.h_size)
-
-        # v_sem_h = Variable(torch.cat([rnn_h[-i,0,:,:] for i in range(self.num_layers, 0, -1)], dim=0)).to(self.device)
-        # v_sem_c = Variable(torch.cat([rnn_c[-i,0,:,:] for i in range(self.num_layers, 0, -1)], dim=0)).to(self.device)
-
-        # v_syn_h = Variable(torch.cat([rnn_h[-i,0,:,:] for i in range(self.num_layers, 0, -1)], dim=0)).to(self.device)
-        # v_syn_c = Variable(torch.cat([rnn_c[-i,0,:,:] for i in range(self.num_layers, 0, -1)], dim=0)).to(self.device)
-
-        # se_sy_h = Variable(torch.cat([rnn_h[-i,0,:,:] for i in range(self.num_layers, 0, -1)], dim=0)).to(self.device)
-        # se_sy_c = Variable(torch.cat([rnn_c[-i,0,:,:] for i in range(self.num_layers, 0, -1)], dim=0)).to(self.device)
-
-        # rnn_h = Variable(torch.cat([rnn_h[-i,0,:,:] for i in range(self.num_layers, 0, -1)], dim=0)).to(self.device)
-
-        v_sem_h = torch.zeros(batch_size, self.h_size).to(self.device)
-        v_sem_c = torch.zeros(batch_size, self.h_size).to(self.device)
-
-        v_syn_h = torch.zeros(batch_size, self.h_size).to(self.device)
-        v_syn_c = torch.zeros(batch_size, self.h_size).to(self.device)
-
-        se_sy_h = torch.zeros(batch_size, self.h_size).to(self.device)
-        se_sy_c = torch.zeros(batch_size, self.h_size).to(self.device)
-
-        rnn_h = torch.zeros(batch_size, self.h_size).to(self.device)
+        bs = v_pool.size(0)
+        self.reset_internals(bs)
+        self.precompute_mats(v_pool, s_tags, pos_emb)
 
         outputs, embedds = [], []
-
-        self.v_sem_layer.precompute_mats(v_pool, s_tags, var_drop_p=0.1)
-        self.v_syn_layer.precompute_mats(v_pool, pos_emb, var_drop_p=0.1)
-        self.se_sy_layer.precompute_mats(s_tags, pos_emb, var_drop_p=0.1)
 
         if not self.training:
             words = []
             for step in range(max_words):
-                v_sem_h, v_sem_c = self.v_sem_layer.step(
-                    s_tags, v_sem_h, v_sem_c, decoder_input, var_drop_p=0.1
-                )
-                v_syn_h, v_syn_c = self.v_syn_layer.step(
-                    pos_emb, v_syn_h, v_syn_c, decoder_input, var_drop_p=0.1
-                )
-                se_sy_h, se_sy_c = self.se_sy_layer.step(
-                    pos_emb, se_sy_h, se_sy_c, decoder_input, var_drop_p=0.1
-                )
-
-                if self.dataset_name == "MSVD":
-                    v_attn1 = self.v_sem_attn(v_feats, v_sem_h)
-                    v_attn2 = self.v_syn_attn(v_feats, v_syn_h)
-                    v_attn3 = self.se_sy_attn(v_feats, se_sy_h)
-                    v_attn = (v_attn1 + v_attn2 + v_attn3) / 3
-                elif self.dataset_name == "MSR-VTT":
-                    h = torch.cat((v_sem_h, v_syn_h, se_sy_h), dim=1)
-                    v_attn = self.v_attn(v_feats, h)
-
-                rnn_h = self.__adaptive_merge(rnn_h, v_attn, v_sem_h, v_syn_h, se_sy_h)
-
-                # compute word_logits
-                # (batch_size x output_size)
-                word_logits = self.out(rnn_h)
+                word_logits = self.step(v_feats, s_tags, pos_emb)
 
                 # compute word probs
                 if self.test_sample_max:
@@ -733,36 +726,9 @@ class SemSynANDecoder(nn.Module):
         else:
             words = []
             for seq_pos in range(gt_captions.size(1)):
-                v_sem_h, v_sem_c = self.v_sem_layer.step(
-                    s_tags, v_sem_h, v_sem_c, decoder_input, var_drop_p=0.1
-                )
-                v_syn_h, v_syn_c = self.v_syn_layer.step(
-                    pos_emb, v_syn_h, v_syn_c, decoder_input, var_drop_p=0.1
-                )
-                se_sy_h, se_sy_c = self.se_sy_layer.step(
-                    pos_emb, se_sy_h, se_sy_c, decoder_input, var_drop_p=0.1
-                )
+                word_logits = self.step(v_feats, s_tags, pos_emb)
 
-                if self.dataset_name == "MSVD":
-                    v_attn1 = self.v_sem_attn(v_feats, v_sem_h)
-                    v_attn2 = self.v_syn_attn(v_feats, v_syn_h)
-                    v_attn3 = self.se_sy_attn(v_feats, se_sy_h)
-                    v_attn = (v_attn1 + v_attn2 + v_attn3) / 3
-                elif self.dataset_name == "MSR-VTT":
-                    h = torch.cat((v_sem_h, v_syn_h, se_sy_h), dim=1)
-                    v_attn = self.v_attn(v_feats, h)
-
-                rnn_h = self.__adaptive_merge(rnn_h, v_attn, v_sem_h, v_syn_h, se_sy_h)
-
-                # compute word_logits
-                # (batch_size x output_size)
-                word_logits = self.out(rnn_h)
-
-                use_teacher_forcing = (
-                    True
-                    if random.random() < teacher_forcing_p or seq_pos == 0
-                    else False
-                )
+                use_teacher_forcing = random.random() < teacher_forcing_p or seq_pos == 0
                 if use_teacher_forcing:
                     # use the correct words,
                     # (batch_size)

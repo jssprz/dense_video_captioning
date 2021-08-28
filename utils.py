@@ -331,18 +331,24 @@ def get_syn_tagger_str(config):
     return f"{enc} {dec}"
 
 
+def get_ensemble_decoder_str(config):
+    train_sample = "max" if config.train_sample_max else "dist"
+    test_sample = "max" if config.test_sample_max else "dist"
+    return f"dec in-{config.in_seq_length}.drop-{config.drop_p}.train-{train_sample}.test-{test_sample}"
+
+
 def get_avscn_decoder_str(config):
     hs = str([config.h_size] + [config.rnn_h_size])
     train_sample = "max" if config.train_sample_max else "dist"
     test_sample = "max" if config.test_sample_max else "dist"
-    return f"avscn-dec in-{config.in_seq_length}.rnnin-{config.rnn_in_size}.hs-{hs}.drop-{config.drop_p}.layers-{config.num_layers}.train-{train_sample}.test-{test_sample}"
+    return f"avscn-dec rnnin-{config.rnn_in_size}.hs-{hs}.drop-{config.drop_p}.layers-{config.num_layers}"
 
 
 def get_semsynan_decoder_str(config):
     hs = str([config.h_size] + [config.rnn_h_size])
     train_sample = "max" if config.train_sample_max else "dist"
     test_sample = "max" if config.test_sample_max else "dist"
-    return f"semsynan-dec in-{config.in_seq_length}.posemb-{config.syn_enc_size}.rnnin-{config.rnn_in_size}.hs-{hs}. drop-{config.drop_p}.layers-{config.num_layers}.train-{train_sample}.test-{test_sample}"
+    return f"semsynan-dec posemb-{config.syn_enc_size}.rnnin-{config.rnn_in_size}.hs-{hs}. drop-{config.drop_p}.layers-{config.num_layers}"
 
 
 def get_mm_str(config):

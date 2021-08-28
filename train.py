@@ -34,6 +34,7 @@ from utils import (
     get_visual_enc_str,
     get_sem_tagger_str,
     get_syn_tagger_str,
+    get_ensemble_decoder_str,
     get_avscn_decoder_str,
     get_semsynan_decoder_str,
     get_mm_str,
@@ -185,6 +186,7 @@ class DenseVideo2TextTrainer(Trainer):
             self.modules_config["visual_enc_config"],
             self.modules_config["sem_tagger_config"],
             self.modules_config["syn_tagger_config"],
+            self.modules_config["ensemble_dec_config"],
             self.modules_config["avscn_dec_config"],
             self.modules_config["semsynan_dec_config"],
             self.modules_config["mm_config"],
@@ -234,11 +236,11 @@ class DenseVideo2TextTrainer(Trainer):
                     #     "lr": self.trainer_config.optimizer_config.programmer_lr,
                     # },
                     {
-                        "params": self.dense_captioner.clip_captioner.avscn_dec.parameters(),
+                        "params": self.dense_captioner.clip_captioner.decoder.parameters(),
                         "lr": opt_conf.captioning_lr,
                     },
                     {
-                        "params": self.dense_captioner.clip_captioner.semsynan_dec.parameters(),
+                        "params": self.dense_captioner.clip_captioner.encoder.visual_model.parameters(),
                         "lr": opt_conf.captioning_lr,
                     },
                     {
@@ -266,10 +268,10 @@ class DenseVideo2TextTrainer(Trainer):
 
         self.change_after = 5
         epochs_f = DenseVideo2TextTrainer.trained_epochs_per_module
-        lambda_avscn_dec = lambda epoch: opt_conf.lr_decay_factor ** (
+        lambda_decoder = lambda epoch: opt_conf.lr_decay_factor ** (
             epochs_f(epoch, self.change_after, "cap_dec") // 8
         )
-        lambda_semsynan_dec = lambda epoch: opt_conf.lr_decay_factor ** (
+        lambda_v_enc = lambda epoch: opt_conf.lr_decay_factor ** (
             epochs_f(epoch, self.change_after, "cap_dec") // 8
         )
         lambda_sem_enc = lambda epoch: opt_conf.lr_decay_factor ** (epochs_f(epoch, self.change_after, "sem_enc") // 2)
@@ -277,7 +279,7 @@ class DenseVideo2TextTrainer(Trainer):
 
         self.lr_scheduler = optim.lr_scheduler.LambdaLR(
             optimizer=self.optimizer,
-            lr_lambda=[lambda_avscn_dec, lambda_semsynan_dec, lambda_sem_enc, lambda_syn_enc,],
+            lr_lambda=[lambda_decoder, lambda_v_enc, lambda_sem_enc, lambda_syn_enc,],
         )
 
         # Loss function
@@ -560,6 +562,11 @@ class DenseVideo2TextTrainer(Trainer):
                 (current_period_epochs - change_after * 2) if current_period_epochs > change_after * 2 else 0
             )
 
+    @staticmethod
+    def tf_ratio_per_module(tf_config, epoch, change_after, module):
+        module_epochs = DenseVideo2TextTrainer.trained_epochs_per_module(epoch, change_after, module)
+        return get_tf_ratio(tf_config, module_epochs)
+
     def dynamic_backward(self, epoch, loss1, loss2, loss3, change_after=5):
         stage = (epoch // change_after) % 3
 
@@ -591,7 +598,7 @@ class DenseVideo2TextTrainer(Trainer):
         gt_program,
         gt_prog_len,
         # gt_proposals,
-        teacher_forcing_ratio=0.5,
+        tf_ratios,
         phase="train",
         use_rl=False,
     ):
@@ -693,7 +700,7 @@ class DenseVideo2TextTrainer(Trainer):
                 v_feats=video_feats,
                 feats_count=feats_count,
                 prog_len=gt_program.size(1),
-                teacher_forcing_p=teacher_forcing_ratio,
+                tf_ratios=tf_ratios,
                 gt_program=gt_program,
                 gt_captions=gt_captions,
                 gt_caps_count=gt_caps_count,
@@ -957,8 +964,11 @@ class DenseVideo2TextTrainer(Trainer):
             if epoch == self.trainer_config.resume_config.unfreeze_at:
                 self.dense_captioner.unfreeze()
 
-            tf_ratio = get_tf_ratio(self.trainer_config.tf_config, epoch)
-            self.writer.add_scalar("captioning/teacher_forcing_ratio", tf_ratio, epoch)
+            syn_enc_tf_ratio = DenseVideo2TextTrainer.tf_ratio_per_module(self.trainer_config.tf_config, epoch, self.change_after, "syn_enc")
+            cap_dec_tf_ratio = DenseVideo2TextTrainer.tf_ratio_per_module(self.trainer_config.tf_config, epoch, self.change_after, "cap_dec")
+            self.writer.add_scalar("captioning/tf_ratio_syn_enc", syn_enc_tf_ratio, epoch)
+            self.writer.add_scalar("captioning/tf_ratio_cap_dec", cap_dec_tf_ratio, epoch)
+            tf_ratios = {"syn_enc": syn_enc_tf_ratio, "cap_dec": cap_dec_tf_ratio}
 
             self.writer.add_scalar("captioning/lr_cap_dec", self.optimizer.param_groups[0]["lr"], epoch)
             self.writer.add_scalar("captioning/lr_sem_enc", self.optimizer.param_groups[2]["lr"], epoch)
@@ -1066,7 +1076,7 @@ class DenseVideo2TextTrainer(Trainer):
                         gt_prog,
                         gt_prog_len,
                         # gt_proposals,
-                        tf_ratio,
+                        tf_ratios,
                         phase,
                         use_rl=use_rl,
                     )
@@ -1257,7 +1267,7 @@ class DenseVideo2TextTrainer(Trainer):
                 log_msg += " {0}-avg-loss:{1:9.4f}".format(k, v)
             for k, v in time_phase.items():
                 log_msg += " {0}-avg-time:{1:9.3f}h".format(k, (v / 3600) / (epoch + 1))
-            log_msg += " teacher_forcing_ratio:{0:.3f} enc-lr:{1:.6f} dec-lr:{1:.6f}".format(tf_ratio, lrs[0], lrs[1])
+            log_msg += " tf_ratios:{0} enc-lr:{1:.6f} dec-lr:{1:.6f}".format(tf_ratios, lrs[0], lrs[1])
             # vid = video_ids[0]
             # log_msg += '\n[vid {}]:\nWE: {}\nGT: {}'.format(vid, predicted_sentences[vid], self.ground_truth['valid'][vid])
 
@@ -1360,6 +1370,10 @@ if __name__ == "__main__":
     syn_tagger_config.str = get_syn_tagger_str(syn_tagger_config)
     print(syn_tagger_config.str)
 
+    ensemble_dec_config = ConfigDict(config["ensemble_dec_config"])
+    ensemble_dec_config.str = get_ensemble_decoder_str(ensemble_dec_config)
+    print(ensemble_dec_config.str)
+
     avscn_dec_config = ConfigDict(config["avscn_decoder_config"])
     avscn_dec_config.str = get_avscn_decoder_str(avscn_dec_config)
     print(avscn_dec_config.str)
@@ -1386,6 +1400,7 @@ if __name__ == "__main__":
         "visual_enc_config": visual_enc_config,
         "sem_tagger_config": sem_tagger_config,
         "syn_tagger_config": syn_tagger_config,
+        "ensemble_dec_config": ensemble_dec_config,
         "avscn_dec_config": avscn_dec_config,
         "semsynan_dec_config": semsynan_dec_config,
         "mm_config": mm_config,

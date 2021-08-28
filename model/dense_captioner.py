@@ -310,6 +310,7 @@ class DenseCaptioner(nn.Module):
         visual_enc_config,
         sem_tagger_config,
         syn_tagger_config,
+        ensemble_dec_config,
         avscn_dec_config,
         semsynan_dec_config,
         mm_config,
@@ -380,6 +381,7 @@ class DenseCaptioner(nn.Module):
             visual_enc_config=visual_enc_config,
             sem_tagger_config=sem_tagger_config,
             syn_tagger_config=syn_tagger_config,
+            ensemble_dec_config=ensemble_dec_config,
             avscn_dec_config=avscn_dec_config,
             semsynan_dec_config=semsynan_dec_config,
             caps_vocab=caps_vocab,
@@ -487,7 +489,7 @@ class DenseCaptioner(nn.Module):
 
         # self.a_logits = self.fc(torch.cat((self.h, self.current_proposals), dim=1))
 
-    def compute_captioning_batch(self, clip_feats, clip_len, clip_global, gt_c, gt_p, max_cap, teacher_forcing_p):
+    def compute_captioning_batch(self, clip_feats, clip_len, clip_global, gt_c, gt_p, max_cap, tf_ratios):
         # TODO: create batch from lists
         clip_feats = [torch.cat(feats, dim=0) for feats in clip_feats]
         clip_len = torch.cat(clip_len, dim=0)
@@ -496,52 +498,24 @@ class DenseCaptioner(nn.Module):
         gt_p = torch.cat(gt_p, dim=0)
 
         # TODO:compute captioning
-        cap_logits, cap_sem_enc, pos_tag_seq_logits = self.clip_captioner(
+        cap_logits, cap, cap_sem_enc, pos_tag_seq_logits = self.clip_captioner(
             v_feats=clip_feats,
             v_global=clip_global,
-            teacher_forcing_p=teacher_forcing_p,
+            tf_ratios=tf_ratios,
             gt_captions=gt_c,
             gt_pos=gt_p,
             max_words=max_cap,
             feats_count=clip_len,
         )
 
-        if self.training:
-            use_teacher_forcing = random.random() < teacher_forcing_p
-            if use_teacher_forcing:
-                cap = gt_c
-            elif self.train_sample_max:
-                # select the words ids with the max probability,
-                # (sub-batch_size x max-cap-len)
-                cap = cap_logits.max(2)[1]
-            else:
-                # sample words from probability distribution
-                # (sub-batch_size*max-cap-len x caps_vocab_size)
-                cap = cap_logits.view(-1, self.caps_vocab_size)
-                # (sub-batch_size*max-cap-len)
-                cap = torch.multinomial(torch.softmax(cap, dim=1), 1).squeeze(1)
-                # (sub-batch_size x max-cap-len)
-                cap = cap.view(cap_logits.size(0), cap_logits.size(1))
-        elif self.test_sample_max:
-            # select the words ids with the max probability,
-            # (sub-batch_size x max-cap-len)
-            cap = cap_logits.max(2)[1]
-        else:
-            # sample words from probability distribution
-            # (sub-batch_size*max-cap-len x caps_vocab_size)
-            cap = cap_logits.view(-1, self.caps_vocab_size)
-            # (sub-batch_size*max-cap-len)
-            cap = torch.multinomial(torch.softmax(cap, dim=1), 1).squeeze(1)
-            # (sub-batch_size x max-cap-len)
-            cap = cap.view(cap_logits.size(0), cap_logits.size(1))
         return cap, cap_logits, cap_sem_enc, pos_tag_seq_logits
 
     def forward(
         self,
         v_feats,
         feats_count,
+        tf_ratios,
         prog_len=100,
-        teacher_forcing_p=0.5,
         gt_program=None,
         gt_captions=None,
         gt_caps_count=None,
@@ -668,7 +642,7 @@ class DenseCaptioner(nn.Module):
                         gt_c=gt_c,
                         gt_p=gt_p,
                         max_cap=max_cap,
-                        teacher_forcing_p=teacher_forcing_p,
+                        tf_ratios=tf_ratios,
                     )
 
                     # fill the result tensors according to caps_count and vixs lists
@@ -697,7 +671,7 @@ class DenseCaptioner(nn.Module):
                 gt_c=gt_c,
                 gt_p=gt_p,
                 max_cap=max_cap,
-                teacher_forcing_p=teacher_forcing_p,
+                tf_ratios=tf_ratios,
             )
 
             # fill the result tensors according to caps_count and vixs lists

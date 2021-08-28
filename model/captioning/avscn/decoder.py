@@ -137,44 +137,16 @@ class SCNAttnDecoder(nn.Module):
 
         # (batch_size x h_size)
         i = self.__compute_gate(
-            torch.sigmoid,
-            temp1_i,
-            self.temp2_i,
-            self.temp5_i,
-            temp6_i,
-            self.Wc_i,
-            self.Uc_i,
-            self.b_i,
+            torch.sigmoid, temp1_i, self.temp2_i, self.temp5_i, temp6_i, self.Wc_i, self.Uc_i, self.b_i,
         )
         f = self.__compute_gate(
-            torch.sigmoid,
-            temp1_f,
-            self.temp2_f,
-            self.temp5_f,
-            temp6_f,
-            self.Wc_f,
-            self.Uc_f,
-            self.b_f,
+            torch.sigmoid, temp1_f, self.temp2_f, self.temp5_f, temp6_f, self.Wc_f, self.Uc_f, self.b_f,
         )
         o = self.__compute_gate(
-            torch.sigmoid,
-            temp1_o,
-            self.temp2_o,
-            self.temp5_o,
-            temp6_o,
-            self.Wc_o,
-            self.Uc_o,
-            self.b_o,
+            torch.sigmoid, temp1_o, self.temp2_o, self.temp5_o, temp6_o, self.Wc_o, self.Uc_o, self.b_o,
         )
         c = self.__compute_gate(
-            torch.tanh,
-            temp1_c,
-            self.temp2_c,
-            self.temp5_c,
-            temp6_c,
-            self.Wc_c,
-            self.Uc_c,
-            self.b_c,
+            torch.tanh, temp1_c, self.temp2_c, self.temp5_c, temp6_c, self.Wc_c, self.Uc_c, self.b_c,
         )
 
         # (batch_size x h_size)
@@ -184,46 +156,20 @@ class SCNAttnDecoder(nn.Module):
         return rnn_h, rnn_c
 
     def forward_fn(
-        self,
-        v_pool,
-        s_tags,
-        encoder_h,
-        encoder_outputs,
-        captions,
-        teacher_forcing_p=0.5,
+        self, v_pool, s_tags, encoder_h, encoder_outputs, captions, teacher_forcing_p=0.5,
     ):
         batch_size = encoder_outputs.size(0)
 
         # (batch_size x embedding_size)
-        decoder_input = Variable(
-            torch.Tensor(batch_size, self.embedding_size).fill_(0)
-        ).to(self.device)
+        decoder_input = Variable(torch.Tensor(batch_size, self.embedding_size).fill_(0)).to(self.device)
 
         if type(encoder_h) is tuple:
             # (encoder_n_layers * encoder_num_directions x batch_size x h_size) -> (encoder_n_layers x encoder_num_directions x batch_size x h_size)
-            rnn_h = encoder_h[0].view(
-                self.encoder_num_layers,
-                self.encoder_num_directions,
-                batch_size,
-                self.h_size,
-            )
-            rnn_c = encoder_h[1].view(
-                self.encoder_num_layers,
-                self.encoder_num_directions,
-                batch_size,
-                self.h_size,
-            )
+            rnn_h = encoder_h[0].view(self.encoder_num_layers, self.encoder_num_directions, batch_size, self.h_size,)
+            rnn_c = encoder_h[1].view(self.encoder_num_layers, self.encoder_num_directions, batch_size, self.h_size,)
 
-        rnn_h = Variable(
-            torch.cat(
-                [rnn_h[-i, 0, :, :] for i in range(self.num_layers, 0, -1)], dim=0
-            )
-        ).to(self.device)
-        rnn_c = Variable(
-            torch.cat(
-                [rnn_c[-i, 0, :, :] for i in range(self.num_layers, 0, -1)], dim=0
-            )
-        ).to(self.device)
+        rnn_h = Variable(torch.cat([rnn_h[-i, 0, :, :] for i in range(self.num_layers, 0, -1)], dim=0)).to(self.device)
+        rnn_c = Variable(torch.cat([rnn_c[-i, 0, :, :] for i in range(self.num_layers, 0, -1)], dim=0)).to(self.device)
 
         outputs = []
 
@@ -244,9 +190,7 @@ class SCNAttnDecoder(nn.Module):
                         decoder_input = self.embedding(decoder_input).squeeze(1)
                         decoder_input = self.embedd_drop(decoder_input)
 
-                    rnn_h, rnn_c = self.step(
-                        rnn_h, rnn_c, decoder_input, encoder_h, encoder_outputs
-                    )
+                    rnn_h, rnn_c = self.step(rnn_h, rnn_c, decoder_input, encoder_h, encoder_outputs)
 
                     # compute word_logits
                     # (batch_size x output_size)
@@ -258,64 +202,42 @@ class SCNAttnDecoder(nn.Module):
                     if self.test_sample_max:
                         # sample max probailities
                         # (batch_size x beam_size), (batch_size x beam_size)
-                        sample_log_probs, sample_ids = word_log_probs.topk(
-                            k=self.beam_size, dim=1
-                        )
+                        sample_log_probs, sample_ids = word_log_probs.topk(k=self.beam_size, dim=1)
                     else:
                         # sample from distribution
-                        word_probs = torch.exp(
-                            torch.div(word_log_probs, self.temperature)
-                        )
+                        word_probs = torch.exp(torch.div(word_log_probs, self.temperature))
                         # (batch_size x beam_size)
-                        sample_ids = torch.multinomial(word_probs, self.beam_size).to(
-                            self.device
-                        )
-                        sample_log_probs = word_log_probs.gather(
-                            dim=1, index=sample_ids
-                        )
+                        sample_ids = torch.multinomial(word_probs, self.beam_size).to(self.device)
+                        sample_log_probs = word_log_probs.gather(dim=1, index=sample_ids)
 
                     for j in range(self.beam_size):
                         temp.append(
                             (
                                 tokens_seqs + [sample_ids[:, j].unsqueeze(1)],
                                 word_logits_seqs + [word_logits],
-                                log_probs
-                                + torch.mean(sample_log_probs[:, j]).item()
-                                / self.out_seq_length,
+                                log_probs + torch.mean(sample_log_probs[:, j]).item() / self.out_seq_length,
                                 rnn_h.clone(),
                             )
                         )
 
-                next_nodes = sorted(temp, reverse=True, key=lambda x: x[2])[
-                    : self.beam_size
-                ]
+                next_nodes = sorted(temp, reverse=True, key=lambda x: x[2])[: self.beam_size]
 
             best_seqs, best_word_logits_seq, max_avg_prob, _ = next_nodes[0]
             return (
-                torch.cat(
-                    [o.unsqueeze(1) for o in best_word_logits_seq], dim=1
-                ).contiguous(),
+                torch.cat([o.unsqueeze(1) for o in best_word_logits_seq], dim=1).contiguous(),
                 torch.cat([t for t in best_seqs[1:]], dim=1).contiguous(),
             )
         else:
             for seq_pos in range(self.out_seq_length):
-                rnn_h, rnn_c = self.step(
-                    rnn_h, rnn_c, decoder_input, encoder_h, encoder_outputs
-                )
+                rnn_h, rnn_c = self.step(rnn_h, rnn_c, decoder_input, encoder_h, encoder_outputs)
 
                 # compute word_logits
                 # (batch_size x output_size)
                 word_logits = self.out(rnn_h)
 
-                use_teacher_forcing = (
-                    True
-                    if random.random() < teacher_forcing_p or seq_pos == 0
-                    else False
-                )
+                use_teacher_forcing = True if random.random() < teacher_forcing_p or seq_pos == 0 else False
                 if use_teacher_forcing:
-                    decoder_input = captions[
-                        :, seq_pos
-                    ]  # use the correct words, (batch_size x 1)
+                    decoder_input = captions[:, seq_pos]  # use the correct words, (batch_size x 1)
                 elif self.train_sample_max:
                     # select the words ids with the max probability,
                     # (batch_size x 1)
@@ -323,9 +245,7 @@ class SCNAttnDecoder(nn.Module):
                 else:
                     # sample words from probability distribution
                     # (batch_size x 1)
-                    decoder_input = torch.multinomial(
-                        torch.softmax(word_logits, dim=1), 1
-                    )
+                    decoder_input = torch.multinomial(torch.softmax(word_logits, dim=1), 1)
 
                 # (batch_size x 1) -> (batch_size x embedding_size)
                 decoder_input = self.embedding(decoder_input).squeeze(1)
@@ -354,7 +274,7 @@ class SCNAttnDecoder(nn.Module):
 
 
 class AVSCNDecoder(nn.Module):
-    def __init__(self, config, vocab, pretrained_we=None, device=None):
+    def __init__(self, config, vocab, with_embedding_layer=True, pretrained_we=None, device=None):
         super(AVSCNDecoder, self).__init__()
         self.vocab = vocab
         self.device = device
@@ -378,11 +298,12 @@ class AVSCNDecoder(nn.Module):
         self.in_v_drop = nn.Dropout(config.drop_p)
         self.in_s_drop = nn.Dropout(config.drop_p)
 
-        if pretrained_we is not None:
-            self.embedding = nn.Embedding.from_pretrained(pretrained_we)
-        else:
-            self.embedding = nn.Embedding(self.output_size, config.embedding_size)
-        self.embedd_drop = nn.Dropout(config.drop_p)
+        if with_embedding_layer:
+            if pretrained_we is not None:
+                self.embedding = nn.Embedding.from_pretrained(pretrained_we)
+            else:
+                self.embedding = nn.Embedding(self.output_size, self.embedding_size)
+            self.embedd_drop = nn.Dropout(config.drop_p)
 
         self.semantic_layer = SCNAttnDecoder(
             config.in_seq_length,
@@ -432,20 +353,10 @@ class AVSCNDecoder(nn.Module):
         )
 
         self.attn1 = Attention(
-            self.in_seq_length,
-            self.embedding_size,
-            self.h_size,
-            self.num_layers,
-            self.num_directions,
-            mode="soft",
+            self.in_seq_length, self.embedding_size, self.h_size, self.num_layers, self.num_directions, mode="soft",
         )
         self.attn2 = Attention(
-            self.in_seq_length,
-            self.embedding_size,
-            self.h_size,
-            self.num_layers,
-            self.num_directions,
-            mode="soft",
+            self.in_seq_length, self.embedding_size, self.h_size, self.num_layers, self.num_directions, mode="soft",
         )
 
         self.v_fc = nn.Linear(self.h_size, self.h_size)
@@ -475,7 +386,7 @@ class AVSCNDecoder(nn.Module):
 
         return x.masked_fill(mask == 0, 0) * (1.0 / keep_prob)
 
-    def __adaptive_attn(self, v, s, v_attn, rnn_h, semantic_h, visual_h):
+    def __adaptive_attn(self, v_attn, rnn_h, semantic_h, visual_h):
         rnn_h = self.__dropout(rnn_h, 0.8, "rnn_h")
         v_attn = self.__dropout(v_attn, 0.5, "v_attn")
         beta = torch.sigmoid(self.merge1(torch.cat((rnn_h, v_attn), dim=1)))
@@ -489,70 +400,58 @@ class AVSCNDecoder(nn.Module):
         h = torch.cat((v_h, s_h), dim=1)
         return torch.relu(self.merge2(h))
 
-    def forward_fn(
-        self,
-        v_feats,
-        v_pool,
-        s_tags,
-        teacher_forcing_p=0.5,
-        gt_captions=None,
-        max_words=None,
-    ):
-        batch_size = v_pool.size(0)
+    def reset_internals(self, batch_size):
+        self.dropM = {}
 
         # (batch_size x embedding_size)
-        decoder_input = torch.zeros(batch_size, self.embedding_size).to(self.device)
+        self.decoder_input = torch.zeros(batch_size, self.embedding_size).to(self.device)
 
-        # if type(encoder_h) is tuple:
-        #     # (encoder_n_layers * encoder_num_directions x batch_size x h_size) -> (encoder_n_layers x encoder_num_directions x batch_size x h_size)
-        #     rnn_h = encoder_h[0].view(self.encoder_num_layers, self.encoder_num_directions, batch_size, self.h_size)
-        #     rnn_c = encoder_h[1].view(self.encoder_num_layers, self.encoder_num_directions, batch_size, self.h_size)
+        self.semantic_h = torch.zeros(batch_size, self.h_size).to(self.device)
+        self.semantic_c = torch.zeros(batch_size, self.h_size).to(self.device)
 
-        # semantic_h = Variable(torch.cat([rnn_h[-i,0,:,:] for i in range(self.num_layers, 0, -1)], dim=0)).to(self.device)
-        # semantic_c = Variable(torch.cat([rnn_c[-i,0,:,:] for i in range(self.num_layers, 0, -1)], dim=0)).to(self.device)
+        self.visual_h = torch.zeros(batch_size, self.h_size).to(self.device)
+        self.visual_c = torch.zeros(batch_size, self.h_size).to(self.device)
 
-        # visual_h = Variable(torch.cat([rnn_h[-i,0,:,:] for i in range(self.num_layers, 0, -1)], dim=0)).to(self.device)
-        # visual_c = Variable(torch.cat([rnn_c[-i,0,:,:] for i in range(self.num_layers, 0, -1)], dim=0)).to(self.device)
-
-        # rnn_h = Variable(torch.cat([rnn_h[-i,0,:,:] for i in range(self.num_layers, 0, -1)], dim=0)).to(self.device)
-
-        semantic_h = torch.zeros(batch_size, self.h_size).to(self.device)
-        semantic_c = torch.zeros(batch_size, self.h_size).to(self.device)
-
-        visual_h = torch.zeros(batch_size, self.h_size).to(self.device)
-        visual_c = torch.zeros(batch_size, self.h_size).to(self.device)
-
-        rnn_h = torch.zeros(batch_size, self.h_size).to(self.device)
+        self.rnn_h = torch.zeros(batch_size, self.h_size).to(self.device)
         # rnn_c = torch.zeros(batch_size, self.h_size)
 
-        outputs, embedds = [], []
-
+    def precompute_mats(self, v_pool, s_tags):
         s = self.in_s_drop(s_tags)
         v = self.in_v_drop(v_pool)
 
         self.semantic_layer.precompute_mats(v, s)
         self.visual_layer.precompute_mats(s, v)
 
-        self.dropM = {}
+    def step(self, v_feats):
+        self.visual_h, self.visual_c = self.visual_layer.step(self.visual_h, self.visual_c, self.decoder_input)
+        self.semantic_h, self.semantic_c = self.semantic_layer.step(
+            self.semantic_h, self.semantic_c, self.decoder_input
+        )
+        visual_attn1 = self.attn1(v_feats, self.visual_h)
+        visual_attn2 = self.attn2(v_feats, self.semantic_h)
+        self.rnn_h = self.__adaptive_attn(
+            (visual_attn1 + visual_attn2) / 2, self.rnn_h, self.semantic_h, self.visual_h
+        )
+
+        # compute word_logits
+        # (batch_size x output_size)
+        word_logits = self.out(self.rnn_h)
+
+        return word_logits
+
+    def forward_fn(
+        self, v_feats, v_pool, s_tags, teacher_forcing_p=0.5, gt_captions=None, max_words=None,
+    ):
+        bs = v_pool.size(0)
+        self.reset_internals(bs)
+        self.precompute_mats(v_pool, s_tags)
+
+        outputs, embedds = [], []
 
         if not self.training:
             words = []
             for step in range(max_words):
-                visual_h, visual_c = self.visual_layer.step(
-                    visual_h, visual_c, decoder_input
-                )
-                semantic_h, semantic_c = self.semantic_layer.step(
-                    semantic_h, semantic_c, decoder_input
-                )
-                visual_attn1 = self.attn1(v_feats, visual_h)
-                visual_attn2 = self.attn2(v_feats, semantic_h)
-                rnn_h = self.__adaptive_attn(
-                    v, s, (visual_attn1 + visual_attn2) / 2, rnn_h, semantic_h, visual_h
-                )
-
-                # compute word_logits
-                # (batch_size x output_size)
-                word_logits = self.out(rnn_h)
+                word_logits = self.step(v_feats)
 
                 # compute word probs
                 if self.test_sample_max:
@@ -562,9 +461,7 @@ class AVSCNDecoder(nn.Module):
                 else:
                     # sample from distribution
                     # (batch_size)
-                    word_id = torch.multinomial(
-                        torch.softmax(word_logits, dim=1), 1
-                    ).squeeze(1)
+                    word_id = torch.multinomial(torch.softmax(word_logits, dim=1), 1).squeeze(1)
 
                 # (batch_size) -> (batch_size x embedding_size)
                 decoder_input = self.embedding(word_id).squeeze(1)
@@ -582,21 +479,7 @@ class AVSCNDecoder(nn.Module):
             )
         else:
             for seq_pos in range(gt_captions.size(1)):
-                visual_h, visual_c = self.visual_layer.step(
-                    visual_h, visual_c, decoder_input
-                )
-                semantic_h, semantic_c = self.semantic_layer.step(
-                    semantic_h, semantic_c, decoder_input
-                )
-                visual_attn1 = self.attn1(v_feats, visual_h)
-                visual_attn2 = self.attn2(v_feats, semantic_h)
-                rnn_h = self.__adaptive_attn(
-                    v, s, (visual_attn1 + visual_attn2) / 2, rnn_h, semantic_h, visual_h
-                )
-
-                # compute word_logits
-                # (batch_size x output_size)
-                word_logits = self.out(rnn_h)
+                word_logits = self.step(v_feats)
 
                 use_teacher_forcing = random.random() < teacher_forcing_p or seq_pos == 0
                 if use_teacher_forcing:
@@ -610,9 +493,7 @@ class AVSCNDecoder(nn.Module):
                 else:
                     # sample words from probability distribution
                     # (batch_size)
-                    decoder_input = torch.multinomial(
-                        torch.softmax(word_logits, dim=1), 1
-                    ).squeeze(1)
+                    decoder_input = torch.multinomial(torch.softmax(word_logits, dim=1), 1).squeeze(1)
 
                 # (batch_size) -> (batch_size x embedding_size)
                 decoder_input = self.embedding(decoder_input).squeeze(1)
@@ -629,9 +510,7 @@ class AVSCNDecoder(nn.Module):
                 torch.cat([e.unsqueeze(1) for e in embedds], dim=1).contiguous(),
             )
 
-    def forward(
-        self, encoding, teacher_forcing_p=0.5, gt_captions=None, max_words=None
-    ):
+    def forward(self, encoding, teacher_forcing_p=0.5, gt_captions=None, max_words=None):
         return self.forward_fn(
             v_feats=encoding[0],
             v_pool=encoding[1],

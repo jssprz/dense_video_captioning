@@ -1,3 +1,5 @@
+import random
+
 import torch
 import torch.nn as nn
 
@@ -47,7 +49,9 @@ class ClipEncoder(nn.Module):
     ):
         v_feats_cat = torch.cat(v_feats, dim=-1)
 
-        v_enc = self.visual_model(cnn_feats=v_feats[0], c3d_feats=v_feats[1], video_global_feat=v_global, lengths=feats_count)
+        v_enc = self.visual_model(
+            cnn_feats=v_feats[0], c3d_feats=v_feats[1], video_global_feat=v_global, lengths=feats_count
+        )
 
         # sem_enc = self.sem_model(v_global)
         sem_enc = self.sem_model(v_feats=v_feats, v_global=v_global, feats_count=feats_count)
@@ -67,6 +71,134 @@ class ClipEncoder(nn.Module):
         return [v_feats_cat, v_enc, sem_enc, syn_enc, syn_enc_mean, sem_enc_no_grad, syn_enc_no_grad]
 
 
+class EnsembleDecoder(nn.Module):
+    def __init__(
+        self,
+        config,
+        avscn_dec_config,
+        semsynan_dec_config,
+        caps_vocab,
+        with_embedding_layer=True,
+        pretrained_we=None,
+        device=None,
+    ):
+        super(EnsembleDecoder, self).__init__()
+
+        self.out_size = len(caps_vocab)
+        self.train_sample_max = config.train_sample_max
+        self.test_sample_max = config.test_sample_max
+
+        if with_embedding_layer:
+            if pretrained_we is not None:
+                self.embedding = nn.Embedding.from_pretrained(pretrained_we)
+            else:
+                self.embedding = nn.Embedding(self.output_size, self.embedding_size)
+            self.embedd_drop = nn.Dropout(config.drop_p)
+
+        self.avscn_dec = AVSCNDecoder(
+            config=avscn_dec_config,
+            vocab=caps_vocab,
+            with_embedding_layer=False,
+            pretrained_we=pretrained_we,
+            device=device,
+        )
+
+        self.semsynan_dec = SemSynANDecoder(
+            config=semsynan_dec_config,
+            vocab=caps_vocab,
+            with_embedding_layer=False,
+            pretrained_we=pretrained_we,
+            device=device,
+            dataset_name="MSVD",
+        )
+
+    def reset_internals(self, batch_size):
+        self.avscn_dec.reset_internals(batch_size)
+        self.semsynan_dec.reset_internals(batch_size)
+
+    def precompute_mats(self, v_pool, s_tags, pos_emb):
+        self.avscn_dec.precompute_mats(v_pool, s_tags)
+        self.semsynan_dec.precompute_mats(v_pool, s_tags, pos_emb)
+
+    def step(self, v_feats, s_tags, pos_emb):
+        ls1 = self.avscn_dec.step(v_feats)
+        ls2 = self.semsynan_dec.step(v_feats, s_tags, pos_emb)
+
+        return (ls1 + ls2) / 2
+
+    def forward_fn(self, v_feats, v_pool, s_tags, pos_emb, gt_captions, tf_p, max_words):
+        bs = v_pool.size(0)
+        self.reset_internals(bs)
+        self.precompute_mats(v_pool, s_tags, pos_emb)
+
+        outputs, embedds, words = [], [], []
+
+        if not self.training:
+            for _ in range(max_words):
+                word_logits = self.step(v_feats, s_tags, pos_emb)
+
+                # compute word probs
+                if self.test_sample_max:
+                    # sample max probailities
+                    # (batch_size)
+                    word_id = word_logits.max(dim=1)[1]
+                else:
+                    # sample from distribution
+                    # (batch_size)
+                    word_id = torch.multinomial(torch.softmax(word_logits, dim=1), 1).squeeze(1)
+
+                # (batch_size) -> (batch_size x embedding_size)
+                decoder_input = self.embedding(word_id).squeeze(1)
+                # decoder_input = self.embedd_drop(decoder_input)
+
+                embedds.append(decoder_input)
+                outputs.append(word_logits)
+                words.append(word_id)
+        else:
+            for seq_pos in range(gt_captions.size(1)):
+                word_logits = self.step(v_feats, s_tags, pos_emb)
+
+                use_teacher_forcing = random.random() < tf_p or seq_pos == 0
+                if use_teacher_forcing:
+                    # use the correct words,
+                    # (batch_size)
+                    word_id = gt_captions[:, seq_pos]
+                elif self.train_sample_max:
+                    # select the words ids with the max probability,
+                    # (batch_size)
+                    word_id = word_logits.max(1)[1]
+                else:
+                    # sample words from probability distribution
+                    # (batch_size)
+                    word_id = torch.multinomial(torch.softmax(word_logits, dim=1), 1).squeeze(1)
+
+                # (batch_size) -> (batch_size x embedding_size)
+                decoder_input = self.embedding(word_id).squeeze(1)
+                embedds.append(decoder_input)
+
+                decoder_input = self.embedd_drop(decoder_input)
+
+                outputs.append(word_logits)
+                words.append(word_id)
+
+        return (
+            torch.cat([o.unsqueeze(1) for o in outputs], dim=1).contiguous(),
+            torch.cat([w.unsqueeze(1) for w in words], dim=1).contiguous(),
+            torch.cat([e.unsqueeze(1) for e in embedds], dim=1).contiguous(),
+        )
+
+    def forward(self, encoding, teacher_forcing_p, gt_captions, max_words):
+        return self.forward_fn(
+            v_feats=encoding[0],
+            v_pool=encoding[1],
+            s_tags=encoding[2],
+            pos_emb=encoding[3],
+            tf_p=teacher_forcing_p,
+            gt_captions=gt_captions,
+            max_words=max_words,
+        )
+
+
 class Ensemble(nn.Module):
     def __init__(
         self,
@@ -74,6 +206,7 @@ class Ensemble(nn.Module):
         visual_enc_config,
         sem_tagger_config,
         syn_tagger_config,
+        ensemble_dec_config,
         avscn_dec_config,
         semsynan_dec_config,
         caps_vocab,
@@ -96,28 +229,24 @@ class Ensemble(nn.Module):
             device=device,
         )
 
-        self.avscn_dec = AVSCNDecoder(
-            config=avscn_dec_config, vocab=caps_vocab, pretrained_we=pretrained_we, device=device,
-        )
-
-        self.semsynan_dec = SemSynANDecoder(
-            config=semsynan_dec_config,
-            vocab=caps_vocab,
+        self.decoder = EnsembleDecoder(
+            config=ensemble_dec_config,
+            avscn_dec_config=avscn_dec_config,
+            semsynan_dec_config=semsynan_dec_config,
+            caps_vocab=caps_vocab,
+            with_embedding_layer=True,
             pretrained_we=pretrained_we,
             device=device,
-            dataset_name="MSVD",
         )
 
-        self.decoders = [self.avscn_dec, self.semsynan_dec]
-
     def forward(
-        self, v_feats, feats_count, v_global, teacher_forcing_p=0.5, gt_captions=None, gt_pos=None, max_words=None,
+        self, v_feats, feats_count, v_global, tf_ratios, gt_captions=None, gt_pos=None, max_words=None,
     ):
         # get encodings from v_feats and v_global
         encoding = self.encoder(
             v_feats=v_feats,
             v_global=v_global,
-            teacher_forcing_p=teacher_forcing_p,
+            teacher_forcing_p=tf_ratios["syn_enc"],
             gt_pos=gt_pos,
             max_words=max_words,
             feats_count=feats_count,
@@ -130,23 +259,14 @@ class Ensemble(nn.Module):
         # use the semantic encoding without gradients
         encoding[2] = encoding[5]
 
-        # syntactic encoding 
+        # syntactic encoding
         # encoding[3] = encoding[4]  # with gradients
         encoding[3] = encoding[6]  # without gradients
 
         # TODO: evaluate the use of POS tagger as a global controler
 
-        # ensemble decoders
-        if self.training:
-            logits = torch.zeros(v_global.size(0), gt_captions.size(1), self.out_size).to(v_feats[0].device)
-        else:
-            logits = torch.zeros(v_global.size(0), max_words, self.out_size).to(v_feats[0].device)
+        logits, cap, _ = self.decoder(
+            encoding=encoding, teacher_forcing_p=tf_ratios["cap_dec"], gt_captions=gt_captions, max_words=max_words,
+        )
 
-        for dec in self.decoders:
-            ls, _, _ = dec(
-                encoding=encoding, teacher_forcing_p=teacher_forcing_p, gt_captions=gt_captions, max_words=max_words,
-            )
-            logits += ls
-        logits /= len(self.decoders)
-
-        return logits, sem_enc, pos_tag_seq_logits
+        return logits, cap, sem_enc, pos_tag_seq_logits
