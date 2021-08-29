@@ -403,7 +403,6 @@ class DenseVideo2TextTrainer(Trainer):
         for i, c in enumerate(caps_count):
             aux[i, c:] = -1
 
-
         # determine cluster of each interval
         result = torch.full_like(aux, -1, dtype=torch.int)
         result[(aux >= 0) * (aux < proposals[0])] = 0
@@ -412,8 +411,11 @@ class DenseVideo2TextTrainer(Trainer):
         result[aux >= proposals[-1]] = len(proposals)
 
         clusters_sizes = [(result == i).sum().item() for i in range(len(proposals) + 1)]
-        import ipdb; ipdb.set_trace()
-        assert clusters_sizes == filter_proposals_count
+
+        if "filter_proposals_count" in dir():
+            # check results was costructed correctly
+            assert clusters_sizes == filter_proposals_count
+
         self.logger.info(f"PROPOSALS: Count of intervals per cluster: {clusters_sizes}")
         self.logger.info(f"PROPOSALS: Total intervals grouped: {sum(clusters_sizes)}")
         print("PROPOSALS: Count of intervals per cluster: ", clusters_sizes)
