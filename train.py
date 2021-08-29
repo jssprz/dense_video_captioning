@@ -365,7 +365,6 @@ class DenseVideo2TextTrainer(Trainer):
             self.logger.info(f"PROPOSALS: Number of event-proposals: {len(proposals)}")
             self.logger.info(f"PROPOSALS: Event-proposals: {proposals}")
             print(f"PROPOSALS: Number of event-proposals: {len(proposals)}")
-            print(f"PROPOSALS: Event-proposals: {proposals}")
 
             # discard proposals with less than min_count_per_proposal of events
             filter_proposals = [proposals[0]] if (data < proposals[0]).sum() >= min_count_per_proposal else []
@@ -379,7 +378,6 @@ class DenseVideo2TextTrainer(Trainer):
             self.logger.info(f"PROPOSALS: Number of event-proposals (filtered): {len(proposals)}")
             self.logger.info(f"PROPOSALS: Event-proposals (filtered): {proposals}")
             print(f"PROPOSALS: Number of event-proposals (filtered): {len(proposals)}")
-            print(f"PROPOSALS: Event-proposals (filtered): {proposals}")
 
         # padding legths using -1
         for i, c in enumerate(caps_count):
@@ -393,8 +391,10 @@ class DenseVideo2TextTrainer(Trainer):
         result[aux >= proposals[-1]] = len(proposals)
 
         clusters_sizes = [(result == i).sum().item() for i in range(len(proposals) + 1)]
-        print("count of intervals per cluster: ", clusters_sizes)
-        print("total intervals grouped: ", sum(clusters_sizes))
+        self.logger.info("PROPOSALS: Count of intervals per cluster: ", clusters_sizes)
+        self.logger.info("PROPOSALS: Total intervals grouped: ", sum(clusters_sizes))
+        print("PROPOSALS: Count of intervals per cluster: ", clusters_sizes)
+        print("PROPOSALS: Total intervals grouped: ", sum(clusters_sizes))
 
         # compute mask for complete intervals
         # mask = torch.zeros(intervals.size(0), max_num_chunks, len(proposals) + 1)
@@ -432,8 +432,10 @@ class DenseVideo2TextTrainer(Trainer):
         # determine the number of positive examples per cluster
         s_pos_samples = s_mask.sum(dim=1).sum(dim=0)  # (len(proposals) + 1, )
         e_pos_samples = e_mask.sum(dim=1).sum(dim=0)  # (len(proposals) + 1, )
-        print("count of positive examples per cluster (start positions): ", s_pos_samples)
-        print("count of positive examples per cluster (end positions): ", e_pos_samples)
+        self.logger.info(f"PROPOSALS: Count of positive examples per cluster (start positions): {s_pos_samples}")
+        self.logger.info(f"PROPOSALS: Count of positive examples per cluster (end positions): {e_pos_samples}")
+        print("PROPOSALS: Count of positive examples per cluster (start positions): ", s_pos_samples)
+        print("PROPOSALS: Count of positive examples per cluster (end positions): ", e_pos_samples)
 
         # determine the number of negative examples per cluster, descarding the frames where we will not classify
         s_neg_mask = 1 - s_mask
@@ -446,8 +448,10 @@ class DenseVideo2TextTrainer(Trainer):
         e_frame_mask = (e_neg_mask.sum(dim=-1, keepdim=True) != (len(proposals) + 1)).repeat(1, 1, len(proposals) + 1)
         e_neg_samples = (e_neg_mask * e_frame_mask).sum(dim=1).sum(dim=0)  # (len(proposals) + 1, )
 
-        print("count of negative examples per cluster (start positions): ", s_neg_samples)
-        print("count of negative examples per cluster (end positions): ", e_neg_samples)
+        self.logger.info(f"PROPOSALS: Count of negative examples per cluster (start positions): {s_neg_samples}")
+        self.logger.info(f"PROPOSALS: Count of negative examples per cluster (end positions): {e_neg_samples}")
+        print("PROPOSALS: Count of negative examples per cluster (start positions): ", s_neg_samples)
+        print("PROPOSALS: Count of negative examples per cluster (end positions): ", e_neg_samples)
 
         s_prop_pos_weights = s_neg_samples / s_pos_samples
         e_prop_pos_weights = e_neg_samples / e_pos_samples
