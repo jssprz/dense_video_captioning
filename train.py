@@ -345,7 +345,7 @@ class DenseVideo2TextTrainer(Trainer):
         return X, pos_weights
 
     def __get_interval_mask(
-        self, intervals, caps_count, max_num_chunks, proposals=None, num_estimates=128, min_count_per_proposal=10
+        self, intervals, caps_count, max_num_chunks, proposals=None, num_estimates=128, min_count_per_proposal=20
     ):
         # compute the length of all intervals, including padding region
         aux = intervals[:, :, 1] - intervals[:, :, 0]
