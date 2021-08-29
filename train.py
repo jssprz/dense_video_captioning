@@ -368,6 +368,7 @@ class DenseVideo2TextTrainer(Trainer):
 
             # filter proposals with less than min_count_per_proposal of events
             filter_proposals, filter_proposals_count = [], []
+            import ipdb; ipdb.set_trace()
 
             def append_porposal(p, count):
                 filter_proposals.append(p)
@@ -378,7 +379,7 @@ class DenseVideo2TextTrainer(Trainer):
                 append_porposal(proposals[0], current_sum)
                 current_sum = 0
 
-            for i, p in enumerate(proposals[1:]):
+            for i, p in enumerate(proposals[1:], start=1):
                 current_sum += ((data >= proposals[i - 1]) * (data < p)).sum()
                 if current_sum >= min_count_per_proposal:
                     append_porposal(p, current_sum)
