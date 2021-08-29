@@ -350,6 +350,9 @@ class DenseVideo2TextTrainer(Trainer):
         # compute the length of all intervals, including padding region
         aux = intervals[:, :, 1] - intervals[:, :, 0]
 
+        # sanity: replace negative interval durations by zero
+        aux[aux<0] = 0
+
         # filter the length of real intervals only, discarding the padding region that can affect clustering
         data = torch.cat([aux[i, :c] for i, c in enumerate(caps_count)])
         # data = (aux[aux>0]).view(-1)
@@ -371,7 +374,7 @@ class DenseVideo2TextTrainer(Trainer):
 
             def append_porposal(p, count):
                 filter_proposals.append(p)
-                filter_proposals_count.append(count)
+                filter_proposals_count.append(count.item())
 
             current_sum = (data < proposals[0]).sum()
             if current_sum >= min_count_per_proposal:
@@ -385,13 +388,11 @@ class DenseVideo2TextTrainer(Trainer):
                     current_sum = 0
 
             current_sum += (data >= proposals[-1]).sum()
-            if current_sum >= min_count_per_proposal:
-                append_porposal(proposals[-1], current_sum)
-                current_sum = 0
-
-            if (data < proposals[0]).sum() >= min_count_per_proposal:
-                filter_proposals.append(proposals[0])
-                filter_proposals_count.append((data < proposals[0]).sum())
+            if current_sum < min_count_per_proposal:
+                filter_proposals.pop()
+                filter_proposals_count[-1] += current_sum
+            else:
+                filter_proposals_count.append(current_sum.item())
 
             proposals = filter_proposals
             self.logger.info(f"PROPOSALS: Number of event-proposals (filtered): {len(proposals)}")
@@ -402,6 +403,7 @@ class DenseVideo2TextTrainer(Trainer):
         for i, c in enumerate(caps_count):
             aux[i, c:] = -1
 
+
         # determine cluster of each interval
         result = torch.full_like(aux, -1, dtype=torch.int)
         result[(aux >= 0) * (aux < proposals[0])] = 0
@@ -410,6 +412,8 @@ class DenseVideo2TextTrainer(Trainer):
         result[aux >= proposals[-1]] = len(proposals)
 
         clusters_sizes = [(result == i).sum().item() for i in range(len(proposals) + 1)]
+        import ipdb; ipdb.set_trace()
+        assert clusters_sizes == filter_proposals_count
         self.logger.info(f"PROPOSALS: Count of intervals per cluster: {clusters_sizes}")
         self.logger.info(f"PROPOSALS: Total intervals grouped: {sum(clusters_sizes)}")
         print("PROPOSALS: Count of intervals per cluster: ", clusters_sizes)
