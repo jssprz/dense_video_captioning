@@ -366,14 +366,33 @@ class DenseVideo2TextTrainer(Trainer):
             self.logger.info(f"PROPOSALS: Event-proposals: {proposals}")
             print(f"PROPOSALS: Number of event-proposals: {len(proposals)}")
 
-            # discard proposals with less than min_count_per_proposal of events
-            filter_proposals = [proposals[0]] if (data < proposals[0]).sum() >= min_count_per_proposal else []
-            filter_proposals += [
-                p
-                for i, p in enumerate(proposals[1:])
-                if ((data >= proposals[i - 1]) * (data < p)).sum() >= min_count_per_proposal
-            ]
-            filter_proposals += [proposals[-1]] if (data >= proposals[-1]).sum() >= min_count_per_proposal else []
+            # filter proposals with less than min_count_per_proposal of events
+            filter_proposals, filter_proposals_count = [], []
+
+            def append_porposal(p, count):
+                filter_proposals.append(p)
+                filter_proposals_count.append(count)
+
+            current_sum = (data < proposals[0]).sum()
+            if current_sum >= min_count_per_proposal:
+                append_porposal(proposals[0], current_sum)
+                current_sum = 0
+
+            for i, p in enumerate(proposals[1:]):
+                current_sum += ((data >= proposals[i - 1]) * (data < p)).sum()
+                if current_sum >= min_count_per_proposal:
+                    append_porposal(p, current_sum)
+                    current_sum = 0
+
+            current_sum += (data >= proposals[-1]).sum()
+            if current_sum >= min_count_per_proposal:
+                append_porposal(proposals[-1], current_sum)
+                current_sum = 0
+
+            if (data < proposals[0]).sum() >= min_count_per_proposal:
+                filter_proposals.append(proposals[0])
+                filter_proposals_count.append((data < proposals[0]).sum())
+
             proposals = filter_proposals
             self.logger.info(f"PROPOSALS: Number of event-proposals (filtered): {len(proposals)}")
             self.logger.info(f"PROPOSALS: Event-proposals (filtered): {proposals}")
