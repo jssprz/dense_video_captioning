@@ -494,6 +494,7 @@ class DenseVideo2TextTrainer(Trainer):
             caps_count_t,
             max_num_chunks=self.trainer_config.max_num_chunks,
             num_estimates=self.modules_config["proposals_tagger_config"].num_estimates,
+            min_count_per_proposal=self.modules_config["proposals_tagger_config"].min_count_per_proposal,
         )
         self.s_prop_pos_weights = s_prop_pos_weights.to(self.device)
         self.e_prop_pos_weights = e_prop_pos_weights.to(self.device)
@@ -573,7 +574,7 @@ class DenseVideo2TextTrainer(Trainer):
             prog_lens=prog_lens,
             event_proposals_s=event_s_mask_t,
             event_proposals_e=event_e_mask_t,
-            batch_size=self.trainer_config.batch_size * 6,
+            batch_size=self.trainer_config.batch_size * 8,
             train=False,
             num_workers=trainer_config.loader_num_workers,
             pin_memory=trainer_config.loader_pin_memory,
