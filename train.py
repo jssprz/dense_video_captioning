@@ -578,7 +578,7 @@ class DenseVideo2TextTrainer(Trainer):
             prog_lens=prog_lens,
             event_proposals_s=event_s_mask_t,
             event_proposals_e=event_e_mask_t,
-            batch_size=self.trainer_config.batch_size * 8,
+            batch_size=self.trainer_config.batch_size * 10,
             train=False,
             num_workers=trainer_config.loader_num_workers,
             pin_memory=trainer_config.loader_pin_memory,
