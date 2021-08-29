@@ -391,8 +391,8 @@ class DenseVideo2TextTrainer(Trainer):
         result[aux >= proposals[-1]] = len(proposals)
 
         clusters_sizes = [(result == i).sum().item() for i in range(len(proposals) + 1)]
-        self.logger.info("PROPOSALS: Count of intervals per cluster: ", clusters_sizes)
-        self.logger.info("PROPOSALS: Total intervals grouped: ", sum(clusters_sizes))
+        self.logger.info(f"PROPOSALS: Count of intervals per cluster: {clusters_sizes}")
+        self.logger.info(f"PROPOSALS: Total intervals grouped: {sum(clusters_sizes)}")
         print("PROPOSALS: Count of intervals per cluster: ", clusters_sizes)
         print("PROPOSALS: Total intervals grouped: ", sum(clusters_sizes))
 
