@@ -6,29 +6,18 @@ from utils import get_init_weights
 
 
 class Attention(nn.Module):
-    def __init__(
-        self,
-        seq_len,
-        embedding_size,
-        hidden_size,
-        n_layers,
-        num_directions,
-        mode="basic",
-    ):
+    def __init__(self, seq_len, hidden_size, mode="basic", embedding_size=None, num_directions=None, n_layers=None):
         super(Attention, self).__init__()
         self.mode = mode
 
         if mode == "basic":
-            self.fc = nn.Linear(
-                embedding_size + hidden_size * n_layers * num_directions,
-                seq_len,
-                bias=False,
-            )
+            self.fc = nn.Linear(embedding_size + hidden_size * n_layers * num_directions, seq_len, bias=False,)
         elif mode == "soft":
             self.W1 = get_init_weights((hidden_size, hidden_size))
-            #             self.W2 = get_init_weights((embedding_size, hidden_size))
+            self.b1 = Parameter(torch.zeros(hidden_size))
+
+            # self.W2 = get_init_weights((embedding_size, hidden_size))
             self.W3 = get_init_weights((hidden_size, seq_len))
-            self.b = Parameter(torch.zeros(hidden_size))
 
         self.__init_layers()
 
@@ -58,10 +47,17 @@ class Attention(nn.Module):
         return attn_applied.squeeze(1)
 
     def __soft_fn(self, inputs, hiddens):
-        attn_weights = torch.softmax(
-            (hiddens @ self.W1 + self.b) @ self.W3, dim=1
-        ).unsqueeze(1)
-        return (torch.bmm(attn_weights, inputs) / attn_weights.size(2)).squeeze(1)
+        # (batch_size x hidden_size)
+        h = hiddens @ self.W1 + self.b1
+
+        # (batch_size x 1 x seq_len)
+        attn_weights = torch.softmax(h @ self.W3, dim=1).unsqueeze(1)
+
+        # (batch_size x 1 x n_feats)
+        attn_applied = torch.bmm(attn_weights, inputs) / attn_weights.size(2)
+
+        # (batch_size x n_feats)
+        return attn_applied.squeeze(1)
 
     def forward(self, inputs, hiddens, embeddings=None):
         if self.mode == "basic":

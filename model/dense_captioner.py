@@ -6,6 +6,7 @@ from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence, pad_se
 from torch.nn.parameter import Parameter
 
 from utils import get_init_weights, bow_vectors
+from model.captioning.attention import Attention
 from model.captioning.ensemble import Ensemble
 from model.embeddings.visual_semantic import MultiModal
 from model.tagging.semantic import TaggerMLP
@@ -391,6 +392,14 @@ class DenseCaptioner(nn.Module):
 
         # self.prop_fc = nn.Linear(in_features=config.cnn_feats_size+config.c3d_feats_size, out_features=num_proposals)
 
+        # temporal attention modules
+        self.v_p_attn = Attention(
+            seq_len=self.future_steps, hidden_size=proposals_tagger_config.rnn_h_size, mode="soft"
+        )
+        self.v_q_attn = Attention(
+            seq_len=self.future_steps, hidden_size=proposals_tagger_config.rnn_h_size, mode="soft"
+        )
+
         # start proposals module
         self.prop_s_rnn_0 = nn.LSTMCell(
             input_size=config.cnn_feats_size + config.c3d_feats_size, hidden_size=proposals_tagger_config.rnn_h_size,
@@ -567,14 +576,15 @@ class DenseCaptioner(nn.Module):
         # self.x = torch.zeros(bs, self.embedding_size).to(device)
 
         v_fcat = torch.cat(v_feats, dim=-1)
-        v_p = v_fcat[:, 0, :]
-        v_q = v_fcat[:, 1, :]
+        v_p = v_fcat[:, : self.future_steps, :].mean(dim=1)
+        v_q = v_fcat[:, 1 : 1 + self.future_steps, :].mean(dim=1)
 
         # self.h = torch.zeros(bs, self.h_size).to(device)
         # self.c = torch.zeros(bs, self.h_size).to(device)
         # self.prev_match = torch.zeros(bs, self.mm_size).to(device)
         prop_s_h_0 = torch.zeros(bs, self.prop_rnn_h_size).to(device)
         prop_s_c_0 = torch.zeros(bs, self.prop_rnn_h_size).to(device)
+
         idxs = list(range(bs))
         prop_s_h_0[idxs, :], prop_s_c_0[idxs, :] = self.prop_s_rnn_0(v_p, (prop_s_h_0[idxs, :], prop_s_c_0[idxs, :]))
 
@@ -649,11 +659,14 @@ class DenseCaptioner(nn.Module):
 
             vix_2_adv = (a_id == 1).nonzero(as_tuple=True)[0]
             self.q[vix_2_adv] += 1
-            vix_2_adv = list(
-                set(
-                    vix_2_skip[(self.q[vix_2_skip] > prop_e_0_pos[vix_2_skip]).nonzero(as_tuple=True)[0]].tolist()
-                    + vix_2_adv[(self.q[vix_2_adv] > prop_e_0_pos[vix_2_adv]).nonzero(as_tuple=True)[0]].tolist()
-                )
+            vix_2_adv = torch.tensor(
+                list(
+                    set(
+                        vix_2_skip[(self.q[vix_2_skip] > prop_e_0_pos[vix_2_skip]).nonzero(as_tuple=True)[0]].tolist()
+                        + vix_2_adv[(self.q[vix_2_adv] > prop_e_0_pos[vix_2_adv]).nonzero(as_tuple=True)[0]].tolist()
+                    )
+                ),
+                dtype=torch.long,
             )
 
             vix_2_dscr = (a_id == 2).nonzero(as_tuple=True)[0]
@@ -679,23 +692,67 @@ class DenseCaptioner(nn.Module):
             #         # intervals[i, caps_count[i], 1] = self.q[i]
 
             if len(vix_2_skip) > 0:
-                fidx = torch.min(self.p[vix_2_skip], feats_count[vix_2_skip])
-                v_p = v_fcat[vix_2_skip, fidx, :]
+                # fidx = torch.min(self.p[vix_2_skip], feats_count[vix_2_skip])
+                # v_p = v_fcat[vix_2_skip, fidx, :]
+                fidx_from = torch.min(self.p[vix_2_skip], feats_count[vix_2_skip] - self.future_steps)
+                fidx_to = torch.min(self.p[vix_2_skip] + self.future_steps, feats_count[vix_2_skip])
+
+                v_p = torch.zeros(len(vix_2_skip), v_fcat.size(-1))
+
+                # the videos with at least the minimum num of features to compute attention
+                attn_mask = (fidx_from >= 0).nonzero(as_tuple=True)[0]
+                if len(attn_mask):
+                    vix_2_attn = vix_2_skip[attn_mask]
+                    v_p[attn_mask] = self.v_p_attn(
+                        torch.stack(
+                            [
+                                v_fcat[vix, ff:ft, :]
+                                for vix, ff, ft in zip(vix_2_attn, fidx_from[attn_mask], fidx_to[attn_mask])
+                            ]
+                        ),
+                        prop_s_h_0[vix_2_attn, :],
+                    )
+
+                # the videos with less than the minimum num of features to compute attention
+                fill_mask = (fidx_from < 0).nonzero(as_tuple=True)[0]
+                if len(fill_mask):
+                    vix_2_fill = vix_2_skip[fill_mask]
+                    v_p[fill_mask] = v_fcat[vix_2_fill, torch.min(self.p[vix_2_fill], feats_count[vix_2_fill]), :]
+
                 prop_s_h_0[vix_2_skip, :], prop_s_c_0[vix_2_skip, :] = self.prop_s_rnn_0(
                     v_p, (prop_s_h_0[vix_2_skip, :], prop_s_c_0[vix_2_skip, :])
                 )
-                # with torch.no_grad():
-                #     v_p = torch.cat([f[vix_2_skip, self.p[vix_2_skip], :] for f in v_feats], dim=1)
-                #     proposals = self.prop_enc(v_p)[0]
-                #     self.current_proposals = torch.clone(self.current_proposals)
-                #     self.current_proposals[vix_2_skip, :] = proposals
-                # # proposals_logits[vix_2_skip, self.p[vix_2_skip], :] = proposals
 
             if len(vix_2_adv) > 0:
                 prop_e_0_pos[vix_2_adv] = self.q[vix_2_adv]
 
-                fidx = torch.min(self.q[vix_2_adv], feats_count[vix_2_adv])
-                v_q = v_fcat[vix_2_adv, fidx, :]
+                # fidx = torch.min(self.q[vix_2_adv], feats_count[vix_2_adv])
+                # v_q = v_fcat[vix_2_adv, fidx, :]
+                fidx_from = torch.min(self.q[vix_2_adv], feats_count[vix_2_adv] - self.future_steps)
+                fidx_to = torch.min(self.q[vix_2_adv] + self.future_steps, feats_count[vix_2_adv])
+
+                v_q = torch.zeros(len(vix_2_adv), v_fcat.size(-1))
+
+                # the videos with at least the minimum num of features to compute attention
+                attn_mask = (fidx_from >= 0).nonzero(as_tuple=True)[0]
+                if len(attn_mask):
+                    vix_2_attn = vix_2_adv[attn_mask]
+                    v_q[attn_mask] = self.v_q_attn(
+                        torch.stack(
+                            [
+                                v_fcat[vix, ff:ft, :]
+                                for vix, ff, ft in zip(vix_2_attn, fidx_from[attn_mask], fidx_to[attn_mask])
+                            ]
+                        ),
+                        prop_e_h_0[vix_2_attn, :],
+                    )
+
+                # the videos with less than the minimum num of features to compute attention
+                fill_mask = (fidx_from < 0).nonzero(as_tuple=True)[0]
+                if len(fill_mask):
+                    vix_2_fill = vix_2_adv[fill_mask]
+                    v_q[fill_mask] = v_fcat[vix_2_fill, torch.min(self.q[vix_2_fill], feats_count[vix_2_fill]), :]
+
                 (prop_e_h_0[vix_2_adv, :], prop_e_c_0[vix_2_adv, :],) = self.prop_e_rnn_0(
                     v_q, (prop_e_h_0[vix_2_adv, :], prop_e_c_0[vix_2_adv, :])
                 )
