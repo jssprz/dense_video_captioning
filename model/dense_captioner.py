@@ -697,7 +697,7 @@ class DenseCaptioner(nn.Module):
                 fidx_from = torch.min(self.p[vix_2_skip], feats_count[vix_2_skip] - self.future_steps)
                 fidx_to = torch.min(self.p[vix_2_skip] + self.future_steps, feats_count[vix_2_skip])
 
-                v_p = torch.zeros(len(vix_2_skip), v_fcat.size(-1))
+                v_p = torch.zeros(len(vix_2_skip), v_fcat.size(-1)).to(device)
 
                 # the videos with at least the minimum num of features to compute attention
                 attn_mask = (fidx_from >= 0).nonzero(as_tuple=True)[0]
@@ -731,7 +731,7 @@ class DenseCaptioner(nn.Module):
                 fidx_from = torch.min(self.q[vix_2_adv], feats_count[vix_2_adv] - self.future_steps)
                 fidx_to = torch.min(self.q[vix_2_adv] + self.future_steps, feats_count[vix_2_adv])
 
-                v_q = torch.zeros(len(vix_2_adv), v_fcat.size(-1))
+                v_q = torch.zeros(len(vix_2_adv), v_fcat.size(-1)).to(device)
 
                 # the videos with at least the minimum num of features to compute attention
                 attn_mask = (fidx_from >= 0).nonzero(as_tuple=True)[0]
