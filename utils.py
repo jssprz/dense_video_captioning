@@ -2,6 +2,7 @@ import sys
 import os
 
 import torch
+from torch._C import device
 import torch.nn as nn
 import numpy as np
 from sklearn.metrics import recall_score, precision_score, roc_auc_score, f1_score
@@ -13,25 +14,25 @@ from video_description_eval.densecap_eval import densecap_score
 
 def get_freer_gpu():
     if os.name == "posix":
-        os.system("nvidia-smi -q -d Memory |grep -A4 GPU|grep Free >tmp")
-        memory_available = [int(x.split()[2]) for x in open("tmp", "r").readlines()]
+        os.system("nvidia-smi -q -d Memory |grep -A4 GPU|grep Free >tmp_gpu_freem")
+        memory_available = [int(x.split()[2]) for x in open("tmp_gpu_freem", "r").readlines()]
     else:
         import subprocess
-        subprocess.run(["powershell", "-Command", "nvidia-smi -q -d Memory | Select-String -Pattern GPU -Context 0,4 > tmp2"], capture_output=True)
-        subprocess.run(["powershell", "-Command", "cat tmp2 | Select-String -Pattern Free -Context 0,0  > tmp"], capture_output=True)
-        memory_available = [int(x.split()[2]) for x in open("tmp", "r", encoding="utf-16").readlines() if x != "\n"]
+        subprocess.run(["powershell", "-Command", "nvidia-smi -q -d Memory | Select-String -Pattern GPU -Context 0,4 > tmp_gpu_freem_aux"], capture_output=True)
+        subprocess.run(["powershell", "-Command", "cat tmp_free_mem_aux | Select-String -Pattern Free -Context 0,0  > tmp_freem"], capture_output=True)
+        memory_available = [int(x.split()[2]) for x in open("tmp_free_mem", "r", encoding="utf-16").readlines() if x != "\n"]
     return np.argmax(memory_available)
 
 
 def get_gpu_temps(device=None):
     if os.name == "posix":
-        os.system("nvidia-smi -q -d Temperature |grep -A4 GPU|grep 'GPU Current Temp' >tmp")
-        temps = [int(x.split()[-2]) for x in open("tmp", "r").readlines()]
+        os.system(f"nvidia-smi -q -d Temperature |grep -A4 GPU|grep 'GPU Current Temp' >tmp_gpu_temps_{device}")
+        temps = [int(x.split()[-2]) for x in open(f"tmp_gpu_temps_{device}", "r").readlines()]
     else:
         import subprocess
-        subprocess.run(["powershell", "-Command", "nvidia-smi -q -d Temperature | Select-String -Pattern GPU -Context 0,4 > tmp2"], capture_output=True)
-        subprocess.run(["powershell", "-Command", "cat tmp2 | Select-String -Pattern 'GPU Current Temp' -Context 0,0  > tmp"], capture_output=True)
-        temps = [int(x.split()[-2]) for x in open("tmp", "r", encoding="utf-16").readlines() if x != "\n"]
+        subprocess.run(["powershell", "-Command", f"nvidia-smi -q -d Temperature | Select-String -Pattern GPU -Context 0,4 > tmp_gpu_temp_{device}_aux"], capture_output=True)
+        subprocess.run(["powershell", "-Command", f"cat tmp_gpu_temp_{device}_aux | Select-String -Pattern 'GPU Current Temp' -Context 0,0  > tmp_gpu_temp_{device}"], capture_output=True)
+        temps = [int(x.split()[-2]) for x in open(f"tmp_gpu_temp_{device}", "r", encoding="utf-16").readlines() if x != "\n"]
     return temps if device is None else (temps[device.index] if "cuda" == device.type else temps[0])
     
 
