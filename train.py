@@ -12,7 +12,6 @@ import heapq
 from shutil import copyfile
 
 import numpy as np
-from numpy import linspace
 from scipy.signal import argrelextrema
 from sklearn.neighbors import KernelDensity
 import torch
@@ -362,7 +361,7 @@ class DenseVideo2TextTrainer(Trainer):
             # determine clusters according to intervals length
             print("computing event-proposals by the KernelDensity algorithm ")
             kde = KernelDensity(kernel="gaussian", bandwidth=1.0).fit(data.unsqueeze(1).numpy())
-            s = linspace(0, self.max_interval, num=num_estimates)
+            s = np.linspace(0, self.max_interval, num=num_estimates)
             e = kde.score_samples(s.reshape(-1, 1))
             proposals = s[argrelextrema(e, np.less)[0]]
             self.logger.info(f"PROPOSALS: Number of event-proposals: {len(proposals)}")
