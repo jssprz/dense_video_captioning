@@ -981,7 +981,7 @@ class DenseVideo2TextTrainer(Trainer):
         lambda_decoder = lambda _: opt_conf.lr_decay_factor ** (self.trained_epochs["cap_dec"] // 8)
         lambda_v_enc = lambda _: opt_conf.lr_decay_factor ** (self.trained_epochs["cap_dec"] // 8)
         lambda_sem_enc = lambda _: opt_conf.lr_decay_factor ** (self.trained_epochs["sem_enc"] // 2)
-        lambda_syn_enc = lambda _: opt_conf.lr_decay_factor ** (self.trained_epochs["syn_enc"] // 3)
+        lambda_syn_enc = lambda _: opt_conf.lr_decay_factor ** (self.trained_epochs["syn_enc"] // 5)
 
         self.lr_scheduler = optim.lr_scheduler.LambdaLR(
             optimizer=self.optimizer, lr_lambda=[lambda_decoder, lambda_v_enc, lambda_sem_enc, lambda_syn_enc,],
