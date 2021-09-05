@@ -978,10 +978,10 @@ class DenseVideo2TextTrainer(Trainer):
             m: DenseVideo2TextTrainer.trained_epochs_per_module(begin_epoch, self.change_after, m)
             for m in ["cap_dec", "sem_enc", "syn_enc"]
         }
-        lambda_decoder = lambda _: opt_conf.lr_decay_factor ** (self.trained_epochs["cap_dec"] // 8)
-        lambda_v_enc = lambda _: opt_conf.lr_decay_factor ** (self.trained_epochs["cap_dec"] // 8)
+        lambda_decoder = lambda _: opt_conf.lr_decay_factor ** (self.trained_epochs["cap_dec"] // 10)
+        lambda_v_enc = lambda _: opt_conf.lr_decay_factor ** (self.trained_epochs["cap_dec"] // 10)
         lambda_sem_enc = lambda _: opt_conf.lr_decay_factor ** (self.trained_epochs["sem_enc"] // 2)
-        lambda_syn_enc = lambda _: opt_conf.lr_decay_factor ** (self.trained_epochs["syn_enc"] // 5)
+        lambda_syn_enc = lambda _: opt_conf.lr_decay_factor ** (self.trained_epochs["syn_enc"] // 10)
 
         self.lr_scheduler = optim.lr_scheduler.LambdaLR(
             optimizer=self.optimizer, lr_lambda=[lambda_decoder, lambda_v_enc, lambda_sem_enc, lambda_syn_enc,],
