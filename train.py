@@ -266,22 +266,6 @@ class DenseVideo2TextTrainer(Trainer):
         # lambda_sem_enc = lambda epoch: opt_conf.lr_decay_factor ** (epoch // 40)
         # lambda_syn_enc = lambda epoch: opt_conf.lr_decay_factor ** (epoch // 40)
 
-        self.change_after = 5
-        epochs_f = DenseVideo2TextTrainer.trained_epochs_per_module
-        lambda_decoder = lambda epoch: opt_conf.lr_decay_factor ** (
-            epochs_f(epoch, self.change_after, "cap_dec") // 8
-        )
-        lambda_v_enc = lambda epoch: opt_conf.lr_decay_factor ** (
-            epochs_f(epoch, self.change_after, "cap_dec") // 8
-        )
-        lambda_sem_enc = lambda epoch: opt_conf.lr_decay_factor ** (epochs_f(epoch, self.change_after, "sem_enc") // 2)
-        lambda_syn_enc = lambda epoch: opt_conf.lr_decay_factor ** (epochs_f(epoch, self.change_after, "syn_enc") // 3)
-
-        self.lr_scheduler = optim.lr_scheduler.LambdaLR(
-            optimizer=self.optimizer,
-            lr_lambda=[lambda_decoder, lambda_v_enc, lambda_sem_enc, lambda_syn_enc,],
-        )
-
         # Loss function
         self.criterion = DenseCaptioningLoss(
             config=trainer_config.criterion_config,
@@ -539,13 +523,21 @@ class DenseVideo2TextTrainer(Trainer):
 
         self.loaders = {"train": train_loader, "val_1": val_loader}
 
-    def freeze_modules(self, phase="val_1"):
+    def freeze_modules(self, phase="val_1", early_stop_limit=3):
         if self.sem_loss_phase[phase] > self.best_sem_loss_phase[phase]:
-            self.freezed_modules["sem_enc"] = True
+            self.sem_early_stop[phase] += 1
+            if self.sem_early_stop[phase] == early_stop_limit:
+                self.freezed_modules["sem_enc"] = True
         if self.pos_loss_phase[phase] > self.best_pos_loss_phase[phase]:
-            self.freezed_modules["syn_enc"] = True
+            self.pos_early_stop[phase] += 1
+            if self.pos_early_stop[phase] == early_stop_limit:
+                self.freezed_modules["syn_enc"] = True
         if self.cap_loss_phase[phase] > self.best_cap_loss_phase[phase]:
-            self.freezed_modules["cap_dec"] = True
+            self.cap_early_stop[phase] += 1
+            if self.cap_early_stop[phase] == early_stop_limit:
+                self.freezed_modules["cap_dec"] = True
+
+        return self.freezed_modules["sem_enc"] and self.freezed_modules["syn_enc"] and self.freezed_modules["cap_dec"]
 
     @staticmethod
     def trained_epochs_per_module(epoch, change_after, module):
@@ -567,21 +559,56 @@ class DenseVideo2TextTrainer(Trainer):
         module_epochs = DenseVideo2TextTrainer.trained_epochs_per_module(epoch, change_after, module)
         return get_tf_ratio(tf_config, module_epochs)
 
-    def dynamic_backward(self, epoch, loss1, loss2, loss3, change_after=5):
-        stage = (epoch // change_after) % 3
+    def dynamic_backward(self, epoch, loss1, loss2, loss3, change_after=5, stage=None):
+        unfreezed = [m for m in ["sem_enc", "syn_enc", "cap_dec"] if not self.freezed_modules[m]]
 
-        training_yet = False
-        if not self.freezed_modules["sem_enc"]:
+        if (stage is not None) and len(unfreezed) > 0:
+            stage = (epoch // change_after) % len(unfreezed)
+
+        if len(unfreezed) == 3:
             loss1.backward()
-            training_yet = True
-        if not self.freezed_modules["syn_enc"] and stage in [1, 2]:
-            loss2.backward()
-            training_yet = True
-        if not self.freezed_modules["cap_dec"] and stage == 2:
+            if stage in [1, 2]:
+                loss2.backward()
+            if stage == 2:
+                loss3.backward()
+        elif len(unfreezed) == 2:
+            if "sem_enc" in unfreezed:
+                # sem module is always trained
+                loss1.backward()
+            elif "syn_enc" in unfreezed:
+                # syn module is always trained
+                loss2.backward()
+            if stage == 1:
+                # I am assuming the decoder is always unfreezed
+                loss3.backward()
+        elif len(unfreezed) == 1:
+            # I am assuming the decoder is always unfreezed and is the only mosule to be trained
             loss3.backward()
-            training_yet = True
 
-        return training_yet
+    def update_trained_epochs(self, epoch, change_after=5, stage=None):
+        unfreezed = [m for m in ["sem_enc", "syn_enc", "cap_dec"] if not self.freezed_modules[m]]
+
+        if (stage is not None) and len(unfreezed) > 0:
+            stage = (epoch // change_after) % len(unfreezed)
+
+        if len(unfreezed) == 3:
+            self.trained_epochs["sem_enc"] += 1
+            if stage in [1, 2]:
+                self.trained_epochs["syn_enc"] += 1
+            if stage == 2:
+                self.trained_epochs["cap_dec"] += 1
+        elif len(unfreezed) == 2:
+            if "sem_enc" in unfreezed:
+                # sem module is always trained
+                self.trained_epochs["sem_enc"] += 1
+            elif "syn_enc" in unfreezed:
+                # syn module is always trained
+                self.trained_epochs["syn_enc"] += 1
+            if stage == 1:
+                # I am assuming the decoder is always unfreezed
+                self.trained_epochs["cap_dec"] += 1
+        elif len(unfreezed) == 1:
+            self.trained_epochs["cap_dec"] += 1
 
     def __process_batch(
         self,
@@ -749,6 +776,7 @@ class DenseVideo2TextTrainer(Trainer):
             self.dynamic_backward(
                 epoch=epoch, loss1=sem_enc_loss, loss2=pos_loss, loss3=cap_loss, change_after=self.change_after
             )
+
             # loss.backward()
 
             # clip gradients to prevent NaNs in the prog-loss
@@ -838,7 +866,7 @@ class DenseVideo2TextTrainer(Trainer):
             ):
                 self.best_metrics[component][phase][name] = (epoch, result)
                 if name in ["Bleu_4", "METEOR", "ROUGE_L", "CIDEr", "All_Metrics"]:
-                    self.early_stop = 0
+                    self.early_stop_count = 0
                     if not output_saved:
                         with open(
                             os.path.join(save_checkpoints_dir, f"chkpt_{epoch}_{component}_output.json"), "w"
@@ -941,7 +969,20 @@ class DenseVideo2TextTrainer(Trainer):
                 self.best_metrics["captioning"][p] = {m: (0, 0) for m in cap_metrics}
                 self.best_metrics["densecap"][p] = {m: (0, 0) for m in densecap_metrics}
 
-        self.last_best_saved_epoch = {"programmer": {}, "sem_enc": {}, "captioning": {}, "densecap": {}}
+        # initialize lr schedulers
+        self.change_after = 5
+        opt_conf = self.trainer_config.optimizer_config
+        self.trained_epochs = {m: 0 for m in ["cap_dec", "sem_enc", "syn_enc"]}
+        lambda_decoder = lambda _: opt_conf.lr_decay_factor ** (self.trained_epochs["cap_dec"] // 8)
+        lambda_v_enc = lambda _: opt_conf.lr_decay_factor ** (self.trained_epochs["cap_dec"] // 8)
+        lambda_sem_enc = lambda _: opt_conf.lr_decay_factor ** (self.trained_epochs["sem_enc"] // 2)
+        lambda_syn_enc = lambda _: opt_conf.lr_decay_factor ** (self.trained_epochs["syn_enc"] // 3)
+
+        self.lr_scheduler = optim.lr_scheduler.LambdaLR(
+            optimizer=self.optimizer, lr_lambda=[lambda_decoder, lambda_v_enc, lambda_sem_enc, lambda_syn_enc,],
+        )
+
+        self.last_best_saved_epoch = {m: {} for m in ["programmer", "sem_enc", "captioning", "densecap"]}
         for p in val_phases:
             self.last_best_saved_epoch["sem_enc"][p] = {m: -1 for m in sem_enc_metrics}
             self.last_best_saved_epoch["captioning"][p] = {m: -1 for m in cap_metrics}
@@ -955,41 +996,47 @@ class DenseVideo2TextTrainer(Trainer):
         print(" total size: ", (total_size * 8) / (1024 ** 3), "\n")
 
         # Start training process
-        self.early_stop, self.last_saved_epoch = 0, -1
+        self.early_stop_count, self.last_saved_epoch = 0, -1
         time_phase = {p: 0 for p in ["train"] + val_phases}
         prog_metrics_results, cap_metrics_results, densecap_metrics_results = None, None, None
         self.freezed_modules = {"sem_enc": False, "syn_enc": False, "cap_dec": False}
+        self.best_loss_phase = {p: float("inf") for p in ["train"] + val_phases}
+        self.best_sem_loss_phase, self.sem_early_stop = (
+            {p: float("inf") for p in ["train"] + val_phases},
+            {p: 0 for p in ["train"] + val_phases},
+        )
+        self.best_pos_loss_phase, self.pos_early_stop = (
+            {p: float("inf") for p in ["train"] + val_phases},
+            {p: 0 for p in ["train"] + val_phases},
+        )
+        self.best_cap_loss_phase, self.cap_early_stop = (
+            {p: float("inf") for p in ["train"] + val_phases},
+            {p: 0 for p in ["train"] + val_phases},
+        )
         for epoch in range(begin_epoch, 1000):
             # unfreeze the freezed part of the model if needed
             if epoch == self.trainer_config.resume_config.unfreeze_at:
                 self.dense_captioner.unfreeze()
 
-            syn_enc_tf_ratio = DenseVideo2TextTrainer.tf_ratio_per_module(self.trainer_config.tf_config, epoch, self.change_after, "syn_enc")
-            cap_dec_tf_ratio = DenseVideo2TextTrainer.tf_ratio_per_module(self.trainer_config.tf_config, epoch, self.change_after, "cap_dec")
+            syn_enc_tf_ratio = DenseVideo2TextTrainer.tf_ratio_per_module(
+                self.trainer_config.tf_config, epoch, self.change_after, "syn_enc"
+            )
+            cap_dec_tf_ratio = DenseVideo2TextTrainer.tf_ratio_per_module(
+                self.trainer_config.tf_config, epoch, self.change_after, "cap_dec"
+            )
             self.writer.add_scalar("captioning/tf_ratio_syn_enc", syn_enc_tf_ratio, epoch)
             self.writer.add_scalar("captioning/tf_ratio_cap_dec", cap_dec_tf_ratio, epoch)
             tf_ratios = {"syn_enc": syn_enc_tf_ratio, "cap_dec": cap_dec_tf_ratio}
 
-            self.writer.add_scalar("captioning/lr_cap_dec", self.optimizer.param_groups[0]["lr"], epoch)
-            self.writer.add_scalar("captioning/lr_sem_enc", self.optimizer.param_groups[2]["lr"], epoch)
-            self.writer.add_scalar("captioning/lr_syn_enc", self.optimizer.param_groups[3]["lr"], epoch)
+            lrs = self.lr_scheduler.get_last_lr()
+            self.writer.add_scalar("captioning/lr_cap_dec", lrs[0], epoch)
+            self.writer.add_scalar("captioning/lr_sem_enc", lrs[2], epoch)
+            self.writer.add_scalar("captioning/lr_syn_enc", lrs[3], epoch)
 
-            self.loss_phase, self.best_loss_phase = (
-                {p: 0 for p in ["train"] + val_phases},
-                {p: float("inf") for p in ["train"] + val_phases},
-            )
-            self.sem_loss_phase, self.best_sem_loss_phase = (
-                {p: 0 for p in ["train"] + val_phases},
-                {p: float("inf") for p in ["train"] + val_phases},
-            )
-            self.pos_loss_phase, self.best_pos_loss_phase = (
-                {p: 0 for p in ["train"] + val_phases},
-                {p: float("inf") for p in ["train"] + val_phases},
-            )
-            self.cap_loss_phase, self.best_cap_loss_phase = (
-                {p: 0 for p in ["train"] + val_phases},
-                {p: float("inf") for p in ["train"] + val_phases},
-            )
+            self.loss_phase = {p: 0 for p in ["train"] + val_phases}
+            self.sem_loss_phase = {p: 0 for p in ["train"] + val_phases}
+            self.pos_loss_phase = {p: 0 for p in ["train"] + val_phases}
+            self.cap_loss_phase = {p: 0 for p in ["train"] + val_phases}
             for phase in ["train"] + val_phases:
                 # prepare gradients of the model according to the phase to be performed
                 if phase == "train":
@@ -1092,7 +1139,6 @@ class DenseVideo2TextTrainer(Trainer):
                     self.writer.add_scalar(f"captioning/{phase}-iters-pos_tag_loss", pos_loss, iteration)
 
                     total_time_iters += time.perf_counter() - time_start_iter
-                    lrs = self.lr_scheduler.get_last_lr()
                     gpu_temp = get_gpu_temps(self.device)
                     log_msg = (
                         "\rEpoch:{0:03d} Phase:{1:6s} Iter:{2:04d}/{3:04d} avg-Time:{4:.1f}s lr:{5:.6f} gpu-temp:{6:02d} Loss:{7:9.4f} "
@@ -1197,9 +1243,9 @@ class DenseVideo2TextTrainer(Trainer):
 
                 if phase != "train":
                     # freeze modules without improvement in validation loss
-                    # loss_early_stop = self.freeze_modules(phase=phase)
+                    loss_early_stop = self.freeze_modules(phase=phase)
 
-                    self.early_stop += 1
+                    self.early_stop_count += 1
                     # predicted_sentences = pool.apply_async(self.__get_sentences, [all_outputs, all_video_ids])
 
                     # if cap_metrics_results is not None:
@@ -1237,7 +1283,7 @@ class DenseVideo2TextTrainer(Trainer):
                     )
 
                     # report results if any improvement occurs
-                    if self.early_stop == 0:
+                    if self.early_stop_count == 0:
                         log_msg = f"\n IMPROVEMENT ON {phase} at epoch {epoch} !"
 
                         # log_msg += '\n Programmer metrics: \n   '
@@ -1262,12 +1308,14 @@ class DenseVideo2TextTrainer(Trainer):
 
                 time_phase[phase] += time.perf_counter() - time_start_epoch
 
+            self.update_trained_epochs(epoch, self.change_after)
+
             log_msg = "\n"
             for k, v in self.loss_phase.items():
-                log_msg += " {0}-avg-loss:{1:9.4f}".format(k, v)
+                log_msg += " {0}-avg-loss:{1:3.4f}".format(k, v)
             for k, v in time_phase.items():
-                log_msg += " {0}-avg-time:{1:9.3f}h".format(k, (v / 3600) / (epoch + 1))
-            log_msg += " tf_ratios:{0} enc-lr:{1:.6f} dec-lr:{1:.6f}".format(tf_ratios, lrs[0], lrs[1])
+                log_msg += " {0}-avg-time:{1:3.3f}h".format(k, (v / 3600) / (epoch + 1))
+            log_msg += f" epochs:{self.trained_epochs} tf_ps:{tf_ratios} lrs:{lrs}"
             # vid = video_ids[0]
             # log_msg += '\n[vid {}]:\nWE: {}\nGT: {}'.format(vid, predicted_sentences[vid], self.ground_truth['valid'][vid])
 
@@ -1275,7 +1323,7 @@ class DenseVideo2TextTrainer(Trainer):
             sys.stdout.write(log_msg + "\n")
 
             # check if the training must be early sopped
-            if epoch >= min_num_epochs and self.early_stop >= early_stop_limit * 2:
+            if loss_early_stop or (epoch >= min_num_epochs and self.early_stop_count >= early_stop_limit * 2):
                 # get async results
                 # cap_metrics_results, pred_caps = cap_metrics_results.get()
                 # prog_metrics_results, pred_progs = prog_metrics_results.get()
@@ -1283,19 +1331,23 @@ class DenseVideo2TextTrainer(Trainer):
 
                 # self.__process_results(prog_metrics_results, pred_caps, phase, epoch-1, save_checkpoints_dir, 'programmer')
                 self.__process_results(
-                    cap_metrics_results, pred_caps, phase, epoch - 1, save_checkpoints_dir, "captioning",
+                    sem_enc_metrics_results, None, phase, epoch, save_checkpoints_dir, "sem_enc",
                 )
                 self.__process_results(
-                    densecap_metrics_results, pred_intervals, phase, epoch - 1, save_checkpoints_dir, "densecap",
+                    cap_metrics_results, pred_caps, phase, epoch, save_checkpoints_dir, "captioning",
+                )
+                self.__process_results(
+                    densecap_metrics_results, pred_intervals, phase, epoch, save_checkpoints_dir, "densecap",
                 )
 
-                msg = "----early stopped at epoch {} after {} without any improvement-----".format(
-                    epoch, early_stop_limit
-                )
+                if not loss_early_stop:
+                    msg = f"----early stopped at epoch {epoch} after {early_stop_limit} without any improvement on metrics-----"
+                else:
+                    msg = f"----early stopped at epoch {epoch} after all compnents were freezed-----"
                 self.logger.debug(msg)
                 print(msg)
                 break
-            
+
             self.lr_scheduler.step()
 
         # close h5 files
