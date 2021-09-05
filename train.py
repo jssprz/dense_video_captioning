@@ -588,7 +588,7 @@ class DenseVideo2TextTrainer(Trainer):
     def update_trained_epochs(self, epoch, change_after=5, stage=None):
         unfreezed = [m for m in ["sem_enc", "syn_enc", "cap_dec"] if not self.freezed_modules[m]]
 
-        if (stage is not None) and len(unfreezed) > 0:
+        if (stage is None) and len(unfreezed) > 0:
             stage = (epoch // change_after) % len(unfreezed)
 
         if len(unfreezed) == 3:
@@ -969,10 +969,15 @@ class DenseVideo2TextTrainer(Trainer):
                 self.best_metrics["captioning"][p] = {m: (0, 0) for m in cap_metrics}
                 self.best_metrics["densecap"][p] = {m: (0, 0) for m in densecap_metrics}
 
+        begin_epoch = 5
+
         # initialize lr schedulers
         self.change_after = 5
         opt_conf = self.trainer_config.optimizer_config
-        self.trained_epochs = {m: 0 for m in ["cap_dec", "sem_enc", "syn_enc"]}
+        self.trained_epochs = {
+            m: DenseVideo2TextTrainer.trained_epochs_per_module(begin_epoch, self.change_after, m)
+            for m in ["cap_dec", "sem_enc", "syn_enc"]
+        }
         lambda_decoder = lambda _: opt_conf.lr_decay_factor ** (self.trained_epochs["cap_dec"] // 8)
         lambda_v_enc = lambda _: opt_conf.lr_decay_factor ** (self.trained_epochs["cap_dec"] // 8)
         lambda_sem_enc = lambda _: opt_conf.lr_decay_factor ** (self.trained_epochs["sem_enc"] // 2)
@@ -1014,6 +1019,8 @@ class DenseVideo2TextTrainer(Trainer):
             {p: 0 for p in ["train"] + val_phases},
         )
         for epoch in range(begin_epoch, 1000):
+            self.update_trained_epochs(epoch, self.change_after)
+
             # unfreeze the freezed part of the model if needed
             if epoch == self.trainer_config.resume_config.unfreeze_at:
                 self.dense_captioner.unfreeze()
@@ -1307,8 +1314,6 @@ class DenseVideo2TextTrainer(Trainer):
                     # densecap_metrics_results = parallel_pool.apply_async(densecap_evaluate_from_tokens, [self.caps_vocab, all_intervals, all_captions, all_caps_ids, self.ref_densecaps[phase]])
 
                 time_phase[phase] += time.perf_counter() - time_start_epoch
-
-            self.update_trained_epochs(epoch, self.change_after)
 
             log_msg = "\n"
             for k, v in self.loss_phase.items():
