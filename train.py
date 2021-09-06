@@ -528,14 +528,22 @@ class DenseVideo2TextTrainer(Trainer):
             self.sem_early_stop[phase] += 1
             if self.sem_early_stop[phase] == early_stop_limit:
                 self.freezed_modules["sem_enc"] = True
+        else:
+            self.sem_early_stop[phase] = 0
+
         if self.pos_loss_phase[phase] > self.best_pos_loss_phase[phase]:
             self.pos_early_stop[phase] += 1
             if self.pos_early_stop[phase] == early_stop_limit:
                 self.freezed_modules["syn_enc"] = True
+        else:
+            self.pos_early_stop[phase] = 0
+
         if self.cap_loss_phase[phase] > self.best_cap_loss_phase[phase]:
             self.cap_early_stop[phase] += 1
             if self.cap_early_stop[phase] == early_stop_limit:
                 self.freezed_modules["cap_dec"] = True
+        else:
+            self.cap_early_stop[phase] = 0
 
         return self.freezed_modules["sem_enc"] and self.freezed_modules["syn_enc"] and self.freezed_modules["cap_dec"]
 
@@ -1318,7 +1326,7 @@ class DenseVideo2TextTrainer(Trainer):
                 log_msg += " {0}-avg-loss:{1:3.4f}".format(k, v)
             for k, v in time_phase.items():
                 log_msg += " {0}-avg-time:{1:3.3f}h".format(k, (v / 3600) / (epoch + 1))
-            log_msg += f" epochs:{self.trained_epochs} tf_ps:{tf_ratios} lrs:{lrs}"
+            log_msg += f" epochs:{self.trained_epochs} tf_ps:{tf_ratios} lrs:{lrs} freezed:{self.freezed_modules}"
             # vid = video_ids[0]
             # log_msg += '\n[vid {}]:\nWE: {}\nGT: {}'.format(vid, predicted_sentences[vid], self.ground_truth['valid'][vid])
 
