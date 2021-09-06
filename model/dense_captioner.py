@@ -392,6 +392,11 @@ class DenseCaptioner(nn.Module):
         )
 
     def load_state_dict(self, state_dict, resume_config):
+        if resume_config.load_cap_v_enc:
+            sub_key = "clip_captioner.encoder.visual_model."
+            self.clip_captioner.encoder.visual_model.load_state_dict(
+                {k[len(sub_key) :]: v for k, v in state_dict.items() if sub_key in k}
+            )
         if resume_config.load_cap_sem_enc:
             sub_key = "clip_captioner.encoder.sem_model."
             self.clip_captioner.encoder.sem_model.load_state_dict(
@@ -403,6 +408,10 @@ class DenseCaptioner(nn.Module):
                 {k[len(sub_key) :]: v for k, v in state_dict.items() if sub_key in k}
             )
         if resume_config.load_cap_decoder:
+            sub_key = "clip_captioner.decoder.embedding."
+            self.clip_captioner.decoder.embedding.load_state_dict(
+                {k[len(sub_key) :]: v for k, v in state_dict.items() if sub_key in k}
+            )
             sub_key = "clip_captioner.decoder.avscn_dec."
             self.clip_captioner.decoder.avscn_dec.load_state_dict(
                 {k[len(sub_key) :]: v for k, v in state_dict.items() if sub_key in k}
@@ -423,7 +432,9 @@ class DenseCaptioner(nn.Module):
                 p.requires_grad = False
             if resume_config.freeze_cap_syn_enc and "clip_captioner.encoder.syn_model." in name:
                 p.requires_grad = False
-            if resume_config.freeze_cap_decoder and ("clip_captioner.decoder.avscn_dec." in name or "clip_captioner.decoder.semsynan_dec." in name):
+            if resume_config.freeze_cap_decoder and (
+                "clip_captioner.decoder.avscn_dec." in name or "clip_captioner.decoder.semsynan_dec." in name
+            ):
                 p.requires_grad = False
         if resume_config.freeze_programmer:
             self.mm_enc.requires_grad = False
