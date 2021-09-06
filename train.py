@@ -969,8 +969,6 @@ class DenseVideo2TextTrainer(Trainer):
                 self.best_metrics["captioning"][p] = {m: (0, 0) for m in cap_metrics}
                 self.best_metrics["densecap"][p] = {m: (0, 0) for m in densecap_metrics}
 
-        begin_epoch = 5
-
         # initialize lr schedulers
         self.change_after = 5
         opt_conf = self.trainer_config.optimizer_config
