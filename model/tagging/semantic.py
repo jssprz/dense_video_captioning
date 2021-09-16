@@ -44,6 +44,10 @@ class TaggerMultilevel(nn.Module):
             pretrained_model_path=config.pretrained_model_path,
         )
 
+    def freeze(self):
+        for p in self.parameters():
+            p.requires_grad = False
+
     def forward(self, v_feats, feats_count, v_global):
         return self.ml_enc(v_feats[0], v_feats[1], v_global, lengths=feats_count)
 

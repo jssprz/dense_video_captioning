@@ -187,6 +187,10 @@ class EnsembleDecoder(nn.Module):
             torch.cat([e.unsqueeze(1) for e in embedds], dim=1).contiguous(),
         )
 
+    def freeze(self):
+        for p in self.parameters():
+            p.requires_grad = True
+
     def forward(self, encoding, teacher_forcing_p, gt_captions, max_words):
         return self.forward_fn(
             v_feats=encoding[0],

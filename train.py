@@ -274,6 +274,7 @@ class DenseVideo2TextTrainer(Trainer):
             sem_enc_pos_weights=self.sem_enc_pos_weights,
             device=self.device,
         )
+        self.use_dynamic_backward = trainer_config.criterion_config.use_dynamic_backward
 
         print("\n****We are ready to start the training process****\n")
 
@@ -447,7 +448,7 @@ class DenseVideo2TextTrainer(Trainer):
             progs=progs_t,
             prog_lens=prog_lens,
             # event_proposals=event_mask_t,
-            batch_size=self.trainer_config.batch_size,
+            batch_size=self.trainer_config.train_batch_size,
             train=True,
             num_workers=trainer_config.loader_num_workers,
             pin_memory=trainer_config.loader_pin_memory,
@@ -502,7 +503,7 @@ class DenseVideo2TextTrainer(Trainer):
             progs=progs_t,
             prog_lens=prog_lens,
             # event_proposals=event_mask_t,
-            batch_size=self.trainer_config.batch_size * 3,
+            batch_size=self.trainer_config.valid_batch_size,
             train=False,
             num_workers=trainer_config.loader_num_workers,
             pin_memory=trainer_config.loader_pin_memory,
@@ -523,100 +524,129 @@ class DenseVideo2TextTrainer(Trainer):
 
         self.loaders = {"train": train_loader, "val_1": val_loader}
 
-    def freeze_modules(self, phase="val_1", early_stop_limit=3):
+    @staticmethod
+    def trained_epochs_per_module(epoch, change_after, module, dynamic=True):
+        if dynamic:
+            prev_periods = epoch // (change_after * 3)
+            current_period_epochs = epoch % (change_after * 3)
+            if module == "sem_enc":
+                # epoch
+                return prev_periods * 3 * change_after + (epoch % (change_after * 3))
+            if module == "syn_enc":
+                return prev_periods * 2 * change_after + (
+                    (current_period_epochs - change_after) if current_period_epochs > change_after else 0
+                )
+            if module == "cap_dec":
+                return prev_periods * 1 * change_after + (
+                    (current_period_epochs - change_after * 2) if current_period_epochs > change_after * 2 else 0
+                )
+        else:
+            return epoch
+
+    def tf_ratio_per_module(self, tf_config, module):
+        return get_tf_ratio(tf_config, self.trained_epochs[module])
+
+    def get_unfreezed_modules(self):
+        return [m for m in ["sem_enc", "syn_enc", "cap_dec"] if not self.freezed_modules[m]]
+
+    def freeze_modules(self, epoch, phase="val_1", early_stop_limit=3):
+        unfreezed = self.get_unfreezed_modules()
         if self.sem_loss_phase[phase] > self.best_sem_loss_phase[phase]:
             self.sem_early_stop[phase] += 1
             if self.sem_early_stop[phase] == early_stop_limit:
                 self.freezed_modules["sem_enc"] = True
+                self.freezing_last_change = epoch
+                self.dense_captioner.freeze_dict(self.freezed_modules)
         else:
             self.sem_early_stop[phase] = 0
 
-        if self.pos_loss_phase[phase] > self.best_pos_loss_phase[phase]:
-            self.pos_early_stop[phase] += 1
-            if self.pos_early_stop[phase] == early_stop_limit:
-                self.freezed_modules["syn_enc"] = True
-        else:
-            self.pos_early_stop[phase] = 0
+        if (len(unfreezed) == 3 and self.stage in [1, 2]) or len(unfreezed):
+            if self.pos_loss_phase[phase] > self.best_pos_loss_phase[phase]:
+                self.pos_early_stop[phase] += 1
+                if self.pos_early_stop[phase] == early_stop_limit:
+                    self.freezed_modules["syn_enc"] = True
+                    self.freezing_last_change = epoch
+                    self.dense_captioner.freeze_dict(self.freezed_modules)
+            else:
+                self.pos_early_stop[phase] = 0
 
-        if self.cap_loss_phase[phase] > self.best_cap_loss_phase[phase]:
-            self.cap_early_stop[phase] += 1
-            if self.cap_early_stop[phase] == early_stop_limit:
-                self.freezed_modules["cap_dec"] = True
-        else:
-            self.cap_early_stop[phase] = 0
+        if (
+            (len(unfreezed) == 3 and self.stage == 2)
+            or (len(unfreezed) == 2 and self.stage == 1)
+            or len(unfreezed) == 1
+        ):
+            if self.cap_loss_phase[phase] > self.best_cap_loss_phase[phase]:
+                self.cap_early_stop[phase] += 1
+                if self.cap_early_stop[phase] == early_stop_limit:
+                    self.freezed_modules["cap_dec"] = True
+                    self.freezing_last_change = epoch
+                    self.dense_captioner.freeze_dict(self.freeze_modules)
+            else:
+                self.cap_early_stop[phase] = 0
 
         return self.freezed_modules["sem_enc"] and self.freezed_modules["syn_enc"] and self.freezed_modules["cap_dec"]
 
-    @staticmethod
-    def trained_epochs_per_module(epoch, change_after, module):
-        prev_periods = epoch // (change_after * 3)
-        current_period_epochs = epoch % (change_after * 3)
-        if module == "sem_enc":
-            return prev_periods * 3 * change_after + (epoch % (change_after * 3))  # epoch
-        if module == "syn_enc":
-            return prev_periods * 2 * change_after + (
-                (current_period_epochs - change_after) if current_period_epochs > change_after else 0
-            )
-        if module == "cap_dec":
-            return prev_periods * 1 * change_after + (
-                (current_period_epochs - change_after * 2) if current_period_epochs > change_after * 2 else 0
-            )
+    def determine_stage(self, epoch, change_after):
+        unfreezed = self.get_unfreezed_modules()
+        if len(unfreezed) > 0:
+            self.stage = ((epoch - self.freezing_last_change) // change_after) % len(unfreezed)
 
-    @staticmethod
-    def tf_ratio_per_module(tf_config, epoch, change_after, module):
-        module_epochs = DenseVideo2TextTrainer.trained_epochs_per_module(epoch, change_after, module)
-        return get_tf_ratio(tf_config, module_epochs)
+    def dynamic_backward(self, loss1, loss2, loss3):
+        if self.use_dynamic_backward:
+            unfreezed = self.get_unfreezed_modules()
+            if len(unfreezed) == 3:
+                loss1.backward()  # sem_enc is trained all the time
+                if self.stage in [1, 2]:
+                    loss2.backward()  # syn_enc is trained in stages 1 and 2
+                if self.stage == 2:
+                    loss3.backward()  # cap_dec is only trained in stage 2
+            elif len(unfreezed) == 2:  # will be only two training stages too
+                # only one between sem_enc and syn_enc is unfreezed and will be trained all the time
+                if "sem_enc" in unfreezed:
+                    loss1.backward()  # sem module is always trained
+                elif "syn_enc" in unfreezed:
+                    loss2.backward()  # syn module is always trained
 
-    def dynamic_backward(self, epoch, loss1, loss2, loss3, change_after=5, stage=None):
-        unfreezed = [m for m in ["sem_enc", "syn_enc", "cap_dec"] if not self.freezed_modules[m]]
-
-        if (stage is not None) and len(unfreezed) > 0:
-            stage = (epoch // change_after) % len(unfreezed)
-
-        if len(unfreezed) == 3:
-            loss1.backward()
-            if stage in [1, 2]:
-                loss2.backward()
-            if stage == 2:
+                if self.stage == 1:
+                    # I am assuming the decoder is always unfreezed, but will be trained in stage 1 only
+                    loss3.backward()
+            elif len(unfreezed) == 1:
+                # I am assuming the decoder is always unfreezed and is the only mosule to be trained
                 loss3.backward()
-        elif len(unfreezed) == 2:
-            if "sem_enc" in unfreezed:
-                # sem module is always trained
+        else:
+            if not self.freezed_modules["sem_enc"]:
                 loss1.backward()
-            elif "syn_enc" in unfreezed:
-                # syn module is always trained
+            if not self.freezed_modules["syn_enc"]:
                 loss2.backward()
-            if stage == 1:
-                # I am assuming the decoder is always unfreezed
+            if not self.freezed_modules["cap_dec"]:
                 loss3.backward()
-        elif len(unfreezed) == 1:
-            # I am assuming the decoder is always unfreezed and is the only mosule to be trained
-            loss3.backward()
 
-    def update_trained_epochs(self, epoch, change_after=5, stage=None):
-        unfreezed = [m for m in ["sem_enc", "syn_enc", "cap_dec"] if not self.freezed_modules[m]]
+    def update_trained_epochs(self):
+        if self.use_dynamic_backward:
+            unfreezed = self.get_unfreezed_modules()
 
-        if (stage is None) and len(unfreezed) > 0:
-            stage = (epoch // change_after) % len(unfreezed)
-
-        if len(unfreezed) == 3:
-            self.trained_epochs["sem_enc"] += 1
-            if stage in [1, 2]:
-                self.trained_epochs["syn_enc"] += 1
-            if stage == 2:
-                self.trained_epochs["cap_dec"] += 1
-        elif len(unfreezed) == 2:
-            if "sem_enc" in unfreezed:
-                # sem module is always trained
+            if len(unfreezed) == 3:
                 self.trained_epochs["sem_enc"] += 1
-            elif "syn_enc" in unfreezed:
-                # syn module is always trained
-                self.trained_epochs["syn_enc"] += 1
-            if stage == 1:
-                # I am assuming the decoder is always unfreezed
+                if self.stage in [1, 2]:
+                    self.trained_epochs["syn_enc"] += 1
+                if self.stage == 2:
+                    self.trained_epochs["cap_dec"] += 1
+            elif len(unfreezed) == 2:
+                if "sem_enc" in unfreezed:
+                    # sem module is always trained
+                    self.trained_epochs["sem_enc"] += 1
+                elif "syn_enc" in unfreezed:
+                    # syn module is always trained
+                    self.trained_epochs["syn_enc"] += 1
+                if self.stage == 1:
+                    # I am assuming the decoder is always unfreezed
+                    self.trained_epochs["cap_dec"] += 1
+            elif len(unfreezed) == 1:
                 self.trained_epochs["cap_dec"] += 1
-        elif len(unfreezed) == 1:
-            self.trained_epochs["cap_dec"] += 1
+        else:
+            for k, v in self.freezed_modules:
+                if not v:
+                    self.trained_epochs[k] += 1
 
     def __process_batch(
         self,
@@ -781,9 +811,7 @@ class DenseVideo2TextTrainer(Trainer):
             # compute backward pass for somputing the gradients
             self.logger.info("loss backward....")
 
-            self.dynamic_backward(
-                epoch=epoch, loss1=sem_enc_loss, loss2=pos_loss, loss3=cap_loss, change_after=self.change_after
-            )
+            self.dynamic_backward(loss1=sem_enc_loss, loss2=pos_loss, loss3=cap_loss)
 
             # loss.backward()
 
@@ -814,10 +842,8 @@ class DenseVideo2TextTrainer(Trainer):
         self, epoch, save_checkpoints_dir, phase=None, new_best=False, component=None, metric_name=None
     ):
         if new_best:
-            if "/" in metric_name:
-                # remove the "/weighted" part in multilabel metrics
-                metric_name = metric_name.split("/")[0]
-            chkpt_filename = f"best_chkpt_{epoch}_{phase}_{component}_{metric_name}.pt"
+            parsed_metric_name = metric_name.replace("/", "-")
+            chkpt_filename = f"best_chkpt_{epoch}_{phase}_{component}_{parsed_metric_name}.pt"
         else:
             chkpt_filename = f"chkpt_{epoch}.pt"
 
@@ -850,7 +876,7 @@ class DenseVideo2TextTrainer(Trainer):
             last_best_epoch = self.last_best_saved_epoch[component][phase][metric_name]
             os.remove(
                 os.path.join(
-                    save_checkpoints_dir, f"best_chkpt_{last_best_epoch}_{phase}_{component}_{metric_name}.pt",
+                    save_checkpoints_dir, f"best_chkpt_{last_best_epoch}_{phase}_{component}_{parsed_metric_name}.pt",
                 )
             )
         elif not new_best and self.last_saved_epoch != -1:
@@ -881,10 +907,9 @@ class DenseVideo2TextTrainer(Trainer):
                         ) as f:
                             json.dump(prediction, f)
                         output_saved = True
-                if component == "captioning" or (
-                    component in ["sem_enc"] and name in ["Recall/weighted", "F1/weighted", "ROC-AUC/weighted",]
-                ):
-                    print("saving best checkpoint due to improvement on {component}-{name}...")
+
+                if component in ["sem_enc", "captioning"]:
+                    print(f"saving best checkpoint due to improvement on {component}-{name}...")
                     self.__save_checkpoint(epoch, save_checkpoints_dir, phase, True, component, name)
 
     def train_model(self, resume=False, checkpoint_path=None, min_num_epochs=50, early_stop_limit=10):
@@ -898,9 +923,9 @@ class DenseVideo2TextTrainer(Trainer):
 
         val_phases = ["val_1"]
         sem_enc_metrics = [
-            "Recall",
-            "F1",
-            "ROC-AUC",
+            "Recall/weighted",
+            "F1/weighted",
+            "ROC-AUC/weighted",
         ]
         cap_metrics = [
             "Bleu_1",
@@ -938,6 +963,10 @@ class DenseVideo2TextTrainer(Trainer):
 
             log_msg = f" (epoch {begin_epoch})"
             for phase in val_phases:
+                log_msg += f"\n  SemanticEncoding metrics {phase}: \n   "
+                log_msg += "\t".join(
+                    [f"{k}:({e:03d}, {v:.3f})" for k, (e, v) in self.best_metrics["sem_enc"][phase].items()]
+                )
                 log_msg += f"\n  Captioning metrics {phase}: \n   "
                 log_msg += "\t".join(
                     [f"{k}:({e:03d}, {v:.3f})" for k, (e, v) in self.best_metrics["captioning"][phase].items()]
@@ -962,10 +991,6 @@ class DenseVideo2TextTrainer(Trainer):
             # 3. load the new state dict
             self.dense_captioner.load_state_dict(pretrained_dict, self.trainer_config.resume_config)
 
-            # 4. freeze the part of the model that was trained before
-            if self.trainer_config.resume_config.unfreeze_at > 0:
-                self.dense_captioner.freeze(resume_config=self.trainer_config.resume_config)
-
             # 5. set the begin_epoch variable for logging
             if self.trainer_config.resume_config.begin_epoch != -1:
                 begin_epoch = self.trainer_config.resume_config.begin_epoch
@@ -977,17 +1002,35 @@ class DenseVideo2TextTrainer(Trainer):
                 self.best_metrics["captioning"][p] = {m: (0, 0) for m in cap_metrics}
                 self.best_metrics["densecap"][p] = {m: (0, 0) for m in densecap_metrics}
 
+        self.dense_captioner.freeze_config(config_obj=self.trainer_config.freezing_config)
+        self.freezed_modules = {
+            "sem_enc": self.trainer_config.freezing_config.freeze_cap_sem_enc,
+            "syn_enc": self.trainer_config.freezing_config.freeze_cap_syn_enc,
+            "cap_dec": self.trainer_config.freezing_config.freeze_cap_decoder,
+        }
+        self.freezing_last_change = 0
+
         # initialize lr schedulers
         self.change_after = 5
         opt_conf = self.trainer_config.optimizer_config
         self.trained_epochs = {
-            m: DenseVideo2TextTrainer.trained_epochs_per_module(begin_epoch, self.change_after, m)
+            m: DenseVideo2TextTrainer.trained_epochs_per_module(
+                begin_epoch, self.change_after, m, self.use_dynamic_backward
+            )
             for m in ["cap_dec", "sem_enc", "syn_enc"]
         }
-        lambda_decoder = lambda _: opt_conf.lr_decay_factor ** (self.trained_epochs["cap_dec"] // 10)
-        lambda_v_enc = lambda _: opt_conf.lr_decay_factor ** (self.trained_epochs["cap_dec"] // 10)
-        lambda_sem_enc = lambda _: opt_conf.lr_decay_factor ** (self.trained_epochs["sem_enc"] // 2)
-        lambda_syn_enc = lambda _: opt_conf.lr_decay_factor ** (self.trained_epochs["syn_enc"] // 10)
+
+        def lambda_decoder(_):
+            return opt_conf.lr_decay_factor ** (self.trained_epochs["cap_dec"] // 10)
+
+        def lambda_v_enc(_):
+            return opt_conf.lr_decay_factor ** (self.trained_epochs["cap_dec"] // 10)
+
+        def lambda_sem_enc(_):
+            return opt_conf.lr_decay_factor ** (self.trained_epochs["sem_enc"] // 2)
+
+        def lambda_syn_enc(_):
+            return opt_conf.lr_decay_factor ** (self.trained_epochs["syn_enc"] // 10)
 
         self.lr_scheduler = optim.lr_scheduler.LambdaLR(
             optimizer=self.optimizer, lr_lambda=[lambda_decoder, lambda_v_enc, lambda_sem_enc, lambda_syn_enc,],
@@ -997,6 +1040,7 @@ class DenseVideo2TextTrainer(Trainer):
         for p in val_phases:
             self.last_best_saved_epoch["sem_enc"][p] = {m: -1 for m in sem_enc_metrics}
             self.last_best_saved_epoch["captioning"][p] = {m: -1 for m in cap_metrics}
+            self.last_best_saved_epoch["densecap"][p] = {m: -1 for m in densecap_metrics}
 
         self.dense_captioner.to(self.device)
         print("\nParameters of Dense Captioner model:\n")
@@ -1010,7 +1054,6 @@ class DenseVideo2TextTrainer(Trainer):
         self.early_stop_count, self.last_saved_epoch = 0, -1
         time_phase = {p: 0 for p in ["train"] + val_phases}
         prog_metrics_results, cap_metrics_results, densecap_metrics_results = None, None, None
-        self.freezed_modules = {"sem_enc": False, "syn_enc": False, "cap_dec": False}
         self.best_loss_phase = {p: float("inf") for p in ["train"] + val_phases}
         self.best_sem_loss_phase, self.sem_early_stop = (
             {p: float("inf") for p in ["train"] + val_phases},
@@ -1025,18 +1068,15 @@ class DenseVideo2TextTrainer(Trainer):
             {p: 0 for p in ["train"] + val_phases},
         )
         for epoch in range(begin_epoch, 1000):
-            self.update_trained_epochs(epoch, self.change_after)
+            self.determine_stage(epoch, change_after=self.change_after)
+            self.update_trained_epochs()
 
             # unfreeze the freezed part of the model if needed
-            if epoch == self.trainer_config.resume_config.unfreeze_at:
+            if not self.use_dynamic_backward and epoch == self.trainer_config.resume_config.unfreeze_at:
                 self.dense_captioner.unfreeze()
 
-            syn_enc_tf_ratio = DenseVideo2TextTrainer.tf_ratio_per_module(
-                self.trainer_config.tf_config, epoch, self.change_after, "syn_enc"
-            )
-            cap_dec_tf_ratio = DenseVideo2TextTrainer.tf_ratio_per_module(
-                self.trainer_config.tf_config, epoch, self.change_after, "cap_dec"
-            )
+            syn_enc_tf_ratio = self.tf_ratio_per_module(self.trainer_config.tf_config, "syn_enc")
+            cap_dec_tf_ratio = self.tf_ratio_per_module(self.trainer_config.tf_config, "cap_dec")
             self.writer.add_scalar("captioning/tf_ratio_syn_enc", syn_enc_tf_ratio, epoch)
             self.writer.add_scalar("captioning/tf_ratio_cap_dec", cap_dec_tf_ratio, epoch)
             tf_ratios = {"syn_enc": syn_enc_tf_ratio, "cap_dec": cap_dec_tf_ratio}
@@ -1256,7 +1296,7 @@ class DenseVideo2TextTrainer(Trainer):
 
                 if phase != "train":
                     # freeze modules without improvement in validation loss
-                    loss_early_stop = self.freeze_modules(phase=phase)
+                    loss_early_stop = self.freeze_modules(epoch=epoch, phase=phase)
 
                     self.early_stop_count += 1
                     # predicted_sentences = pool.apply_async(self.__get_sentences, [all_outputs, all_video_ids])

@@ -38,6 +38,10 @@ class POSTagger(nn.Module):
                 config=config.dec_config, vocab=pos_vocab, pretrained_we=pretrained_pe, device=device
             )
 
+    def freeze(self):
+        for p in self.parameters():
+            p.requires_grad = False
+
     def forward(self, encoding, v_feats, feats_count, teacher_forcing_p, gt_pos=None, max_words=None):
         multilevel_enc = self.syn_model(v_feats[0], v_feats[1], encoding[2], lengths=feats_count)
 

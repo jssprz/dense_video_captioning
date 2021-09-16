@@ -426,21 +426,29 @@ class DenseCaptioner(nn.Module):
             self.proposal_enc.load_state_dict({k: v for k, v in state_dict.items() if k.startswith("proposal_enc.")})
             self.fc.load_state_dict({k: v for k, v in state_dict.items() if k.startswith("fc.")})
 
-    def freeze(self, resume_config):
-        for name, p in self.named_parameters():
-            if resume_config.freeze_cap_sem_enc and "clip_captioner.encoder.sem_model." in name:
-                p.requires_grad = False
-            if resume_config.freeze_cap_syn_enc and "clip_captioner.encoder.syn_model." in name:
-                p.requires_grad = False
-            if resume_config.freeze_cap_decoder and (
-                "clip_captioner.decoder.avscn_dec." in name or "clip_captioner.decoder.semsynan_dec." in name
-            ):
-                p.requires_grad = False
-        if resume_config.freeze_programmer:
+    def freeze_dict(self, config_dict):
+        if "sem_enc" in config_dict and config_dict["sem_enc"]:
+            self.clip_captioner.encoder.sem_model.freeze()
+        if "syn_enc" in config_dict and config_dict["syn_enc"]:
+            self.clip_captioner.encoder.syn_model.freeze()
+        if "cap_dec" in config_dict and config_dict["cap_dec"]:
+            self.clip_captioner.encoder.visual_model.freeze()
+            self.clip_captioner.decoder.freeze()
+        if "programmer" in config_dict and config_dict["programmer"]:
             self.mm_enc.requires_grad = False
             self.rnn_cell.requires_grad = False
             self.proposal_enc.requires_grad = False
             self.fc.requires_grad = False
+
+    def freeze_config(self, config_obj):
+        self.freeze_dict( 
+            {
+                "sem_enc": config_obj.freeze_cap_sem_enc,
+                "syn_enc": config_obj.freeze_cap_syn_enc,
+                "cap_dec": config_obj.freeze_cap_decoder,
+                "programmer": config_obj.freeze_programmer,
+            }
+        )
 
     def unfreeze(self):
         for _, p in self.named_parameters():

@@ -85,10 +85,9 @@ class VisualMultiLevelEncoding(nn.Module):
     def init_weights(self):
         pass
 
-    def freeze_model(self):
-        for name, p in model.named_parameters():
-            if "visual_mapping" not in name:
-                p.requires_grad = False
+    def freeze(self):
+        for p in self.parameters():
+            p.requires_grad = True
 
     def forward(self, cnn_feats, c3d_feats, video_global_feat, lengths=None):
         # Level 1. Global Encoding by Mean Pooling

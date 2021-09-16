@@ -280,13 +280,11 @@ def get_tf_ratio(tf_config, epoch):
 def get_trainer_str(config):
     crit_config = config.criterion_config
     return (
-        f"{config.dataset_name} B{config.batch_size}.lr{config.optimizer_config.learning_rate}.{config.optimizer_config.optimizer_name}"
+        f"{config.dataset_name} B{config.train_batch_size}.lr{config.optimizer_config.learning_rate}.{config.optimizer_config.optimizer_name}"
         f".capL-{crit_config.captioning_loss}-{crit_config.captioning_loss_reduction}"
-        f".posL-{crit_config.programer_loss}-{crit_config.programer_loss_reduction}"
+        f".posL-{crit_config.pos_tag_loss}-{crit_config.pos_tag_loss_reduction}"
         f".tagL-{crit_config.tagging_loss}-{crit_config.tagging_loss_reduction}"
-        f".intL-{crit_config.intervals_loss}-{crit_config.intervals_loss_reduction}"
     )
-
 
 
 def get_tf_strategy_str(config):
