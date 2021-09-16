@@ -5,7 +5,7 @@ import re
 import torch
 import torch.nn as nn
 import numpy as np
-from sklearn.metrics import recall_score, precision_score, roc_auc_score, f1_score
+from sklearn.metrics import recall_score, precision_score, roc_auc_score, f1_score, multilabel_confusion_matrix
 
 sys.path.append("video_description_eval/coco-caption")
 from video_description_eval.evaluate import score
@@ -170,6 +170,9 @@ def multilabel_evaluate_from_logits(gt_multihots, pred_logits, cap_counts):
     f1_weighted = f1_score(y_true, y_pred_sparse, average="weighted")
     f1_samples = f1_score(y_true, y_pred_sparse, average="samples")
 
+    # confusion matrices
+    ml_conf_mat = multilabel_confusion_matrix(y_true, y_pred_sparse)
+
     # remove not represented labels
     bad_labels = np.argwhere(np.all(y_true[..., :] == 0, axis=0))
     y_true_filtered = np.delete(y_true, bad_labels, axis=1)
@@ -205,6 +208,7 @@ def multilabel_evaluate_from_logits(gt_multihots, pred_logits, cap_counts):
         "ROC-AUC/macro": roc_auc_macro,
         "ROC-AUC/weighted": roc_auc_weighted,
         "ROC-AUC/samples": roc_auc_samples,
+        "ml-conf-matrix": ml_conf_mat,
     }
 
 

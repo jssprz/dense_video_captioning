@@ -8,9 +8,10 @@ import datetime
 import logging
 import time
 import random
-from multiprocessing import Pool
+import itertools
 import heapq
 from shutil import copyfile
+from multiprocessing import Pool
 
 import numpy as np
 from numpy import linspace
@@ -19,6 +20,7 @@ from sklearn.neighbors import KernelDensity
 import torch
 import torch.optim as optim
 from tensorboardX import SummaryWriter
+import matplotlib.pyplot as plt
 
 from utils import (
     get_freer_gpu,
@@ -326,8 +328,10 @@ class DenseVideo2TextTrainer(Trainer):
             del widx2count[self.caps_vocab(w)]
 
         freq_words = heapq.nlargest(self.modules_config["sem_tagger_config"].out_size, widx2count, key=widx2count.get,)
+        self.sem_enc_keywords = [self.caps_vocab.idx_to_word(idx) for idx in freq_words]
+
         self.logger.info(f"TAGs-IDXs: {freq_words}")
-        self.logger.info(f"TAGs-words:" + " ".join([self.caps_vocab.idx_to_word(idx) for idx in freq_words]))
+        self.logger.info(f"TAGs-words: " + " ".join(self.sem_enc_keywords))
         self.logger.info(f"TAGs-freq: {[widx2count[idx] for idx in freq_words]}")
         self.logger.info(f"TAGs-total freq of tags: {sum([widx2count[idx] for idx in freq_words])}")
         self.logger.info(f"TAGs-mean freq of tags: {np.mean([widx2count[idx] for idx in freq_words])}")
@@ -893,7 +897,9 @@ class DenseVideo2TextTrainer(Trainer):
         min_metrics = []
         output_saved = False
         for name, result in metrics_results.items():
-            self.writer.add_scalar(f"captioning/{phase}-{component}-{name}", result, epoch)
+            if name != "ml-conf-matrix":
+                self.writer.add_scalar(f"captioning/{phase}-{component}-{name}", result, epoch)
+            
             if name in self.best_metrics[component][phase] and (
                 (name in min_metrics and result < self.best_metrics[component][phase][name][1])
                 or (name not in min_metrics and result > self.best_metrics[component][phase][name][1])
@@ -911,6 +917,23 @@ class DenseVideo2TextTrainer(Trainer):
                 if component in ["sem_enc", "captioning"]:
                     print(f"saving best checkpoint due to improvement on {component}-{name}...")
                     self.__save_checkpoint(epoch, save_checkpoints_dir, phase, True, component, name)
+
+        if "ml-conf-matrix" in metrics_results:
+            for i, conf_mat in enumerate(metrics_results["ml-conf-matrix"]):
+                fig = plt.figure()
+                plt.imshow(conf_mat, cmap="OrRd")
+                labels = np.around(conf_mat.astype('float') / conf_mat.sum(axis=1)[:, np.newaxis], decimals=2)
+                
+                # Use white text if squares are dark; otherwise black.
+                # threshold = conf_mat.max() / 2.
+                # for i, j in itertools.product(range(conf_mat.shape[0]), range(conf_mat.shape[1])):
+                #     color = "white" if conf_mat[i, j] > threshold else "black"
+                #     plt.text(j, i, labels[i, j], horizontalalignment="center", color=color)
+                
+                plt.ylabel('True label')
+                plt.xlabel('Predicted label')
+                plt.close(fig)
+                self.writer.add_figure(f"captioning/{phase}-{component}-confusion-matrix {self.sem_enc_keywords[i]}", fig, epoch)
 
     def train_model(self, resume=False, checkpoint_path=None, min_num_epochs=50, early_stop_limit=10):
         # parallel_pool = Pool()
