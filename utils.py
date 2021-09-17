@@ -14,25 +14,25 @@ from video_description_eval.densecap_eval import densecap_score
 
 def get_freer_gpu():
     if os.name == "posix":
-        os.system("nvidia-smi -q -d Memory |grep -A4 GPU|grep Free >tmp")
-        memory_available = [int(x.split()[2]) for x in open("tmp", "r").readlines()]
+        os.system("nvidia-smi -q -d Memory |grep -A4 GPU|grep Free >tmp_gpu_freem")
+        memory_available = [int(x.split()[2]) for x in open("tmp_gpu_freem", "r").readlines()]
     else:
         import subprocess
-        subprocess.run(["powershell", "-Command", "nvidia-smi -q -d Memory | Select-String -Pattern GPU -Context 0,4 > tmp2"], capture_output=True)
-        subprocess.run(["powershell", "-Command", "cat tmp2 | Select-String -Pattern Free -Context 0,0  > tmp"], capture_output=True)
-        memory_available = [int(x.split()[2]) for x in open("tmp", "r", encoding="utf-16").readlines() if x != "\n"]
+        subprocess.run(["powershell", "-Command", "nvidia-smi -q -d Memory | Select-String -Pattern GPU -Context 0,4 > tmp_gpu_freem_aux"], capture_output=True)
+        subprocess.run(["powershell", "-Command", "cat tmp_gpu_freem_aux | Select-String -Pattern Free -Context 0,0  > tmp_freem"], capture_output=True)
+        memory_available = [int(x.split()[2]) for x in open("tmp_freem", "r", encoding="utf-16").readlines() if x != "\n"]
     return np.argmax(memory_available)
 
 
 def get_gpu_temps(device=None):
     if os.name == "posix":
-        os.system("nvidia-smi -q -d Temperature |grep -A4 GPU|grep 'GPU Current Temp' >tmp")
-        temps = [int(x.split()[-2]) for x in open("tmp", "r").readlines()]
+        os.system(f"nvidia-smi -q -d Temperature |grep -A4 GPU|grep 'GPU Current Temp' >tmp_gpu_temps_{device}")
+        temps = [int(x.split()[-2]) for x in open(f"tmp_gpu_temps_{device}", "r").readlines()]
     else:
         import subprocess
-        subprocess.run(["powershell", "-Command", "nvidia-smi -q -d Temperature | Select-String -Pattern GPU -Context 0,4 > tmp2"], capture_output=True)
-        subprocess.run(["powershell", "-Command", "cat tmp2 | Select-String -Pattern 'GPU Current Temp' -Context 0,0  > tmp"], capture_output=True)
-        temps = [int(x.split()[-2]) for x in open("tmp", "r", encoding="utf-16").readlines() if x != "\n"]
+        subprocess.run(["powershell", "-Command", f"nvidia-smi -q -d Temperature | Select-String -Pattern GPU -Context 0,4 > tmp_gpu_temp_{device.index}_aux"], capture_output=True)
+        subprocess.run(["powershell", "-Command", f"cat tmp_gpu_temp_{device.index}_aux | Select-String -Pattern 'GPU Current Temp' -Context 0,0  > tmp_gpu_temp_{device.index}"], capture_output=True)
+        temps = [int(x.split()[-2]) for x in open(f"tmp_gpu_temp_{device.index}", "r", encoding="utf-16").readlines() if x != "\n"]
     return temps if device is None else (temps[device.index] if "cuda" == device.type else temps[0])
 
 

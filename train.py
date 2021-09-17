@@ -14,7 +14,6 @@ from shutil import copyfile
 from multiprocessing import Pool
 
 import numpy as np
-from numpy import linspace
 from scipy.signal import argrelextrema
 from sklearn.neighbors import KernelDensity
 import torch
@@ -305,7 +304,7 @@ class DenseVideo2TextTrainer(Trainer):
                     del self.ref_densecaps[phase][str(vidx)]
 
             print(
-                f" For phase {phase} were sekiped:\n  vidxs: {ref_vidxs_blacklists[phase]}\n  cidxs: {ref_cidxs_blacklists[phase]}"
+                f" For phase {phase} were skiped:\n  vidxs: {ref_vidxs_blacklists[phase]}\n  cidxs: {ref_cidxs_blacklists[phase]}"
             )
 
             # self.ref_programs[phase] = {k:self.ref_programs[phase][k] for k in range(3)}
@@ -369,13 +368,13 @@ class DenseVideo2TextTrainer(Trainer):
         if proposals is None:
             # determine clusters according to intervals length
             kde = KernelDensity(kernel="gaussian", bandwidth=1.0).fit(data.unsqueeze(1).numpy())
-            s = linspace(0, self.max_interval, num=num_estimates)
+            s = np.linspace(0, self.max_interval, num=num_estimates)
             e = kde.score_samples(s.reshape(-1, 1))
             proposals = s[argrelextrema(e, np.less)[0]]
-
             self.logger.info(f"PROPOSALS: Number of event-proposals: {len(proposals)}")
             self.logger.info(f"PROPOSALS: Event-proposals: {proposals}")
-
+            print(f"PROPOSALS: Number of event-proposals: {len(proposals)}")
+        
         # determine cluster of each interval
         result = torch.zeros_like(aux, dtype=torch.int).fill_(-1)
 
@@ -669,7 +668,6 @@ class DenseVideo2TextTrainer(Trainer):
         # gt_proposals,
         tf_ratios,
         phase="train",
-        use_rl=False,
     ):
         bsz = video_feats[0].size(0)
 
@@ -1170,7 +1168,6 @@ class DenseVideo2TextTrainer(Trainer):
                 ) in enumerate(self.loaders[phase], start=1):
                     time_start_iter = time.perf_counter()
                     video_feats = [cnn, c3d]
-                    use_rl = False
                     (
                         loss,
                         _,
@@ -1201,7 +1198,6 @@ class DenseVideo2TextTrainer(Trainer):
                         # gt_proposals,
                         tf_ratios,
                         phase,
-                        use_rl=use_rl,
                     )
                     loss_count += loss.item()
                     sem_loss_count += sem_enc_loss.item()
