@@ -1,6 +1,7 @@
 import sys
 import os
 import re
+from matplotlib.pyplot import axis
 
 import torch
 import torch.nn as nn
@@ -172,6 +173,7 @@ def multilabel_evaluate_from_logits(gt_multihots, pred_logits, cap_counts):
 
     # confusion matrices
     ml_conf_mat = multilabel_confusion_matrix(y_true, y_pred_sparse)
+    norm_ml_conf_mat = ml_conf_mat.astype('float') / ml_conf_mat.sum(axis=2)[:, :, np.newaxis]
 
     # remove not represented labels
     bad_labels = np.argwhere(np.all(y_true[..., :] == 0, axis=0))
@@ -208,7 +210,8 @@ def multilabel_evaluate_from_logits(gt_multihots, pred_logits, cap_counts):
         "ROC-AUC/macro": roc_auc_macro,
         "ROC-AUC/weighted": roc_auc_weighted,
         "ROC-AUC/samples": roc_auc_samples,
-        "ml-conf-matrix": ml_conf_mat,
+        "ml-conf-mat": ml_conf_mat,
+        "norm-ml-conf-mat": norm_ml_conf_mat,
     }
 
 

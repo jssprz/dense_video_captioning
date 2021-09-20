@@ -895,7 +895,7 @@ class DenseVideo2TextTrainer(Trainer):
         min_metrics = []
         output_saved = False
         for name, result in metrics_results.items():
-            if name != "ml-conf-matrix":
+            if not "ml-conf-mat" in name:
                 self.writer.add_scalar(f"captioning/{phase}-{component}-{name}", result, epoch)
             
             if name in self.best_metrics[component][phase] and (
@@ -916,22 +916,42 @@ class DenseVideo2TextTrainer(Trainer):
                     print(f"saving best checkpoint due to improvement on {component}-{name}...")
                     self.__save_checkpoint(epoch, save_checkpoints_dir, phase, True, component, name)
 
-        if "ml-conf-matrix" in metrics_results:
-            for i, conf_mat in enumerate(metrics_results["ml-conf-matrix"]):
-                fig = plt.figure()
-                plt.imshow(conf_mat, cmap="OrRd")
-                labels = np.around(conf_mat.astype('float') / conf_mat.sum(axis=1)[:, np.newaxis], decimals=2)
+        if "ml-conf-mat" in metrics_results:
+            cols = 8
+            rows = len(self.sem_enc_keywords) // cols
+            
+            fig = plt.figure(figsize=(int(rows*2),int(cols*2)))
+            for i, norm_conf_mat in enumerate(metrics_results["norm-ml-conf-mat"]):
+                plt.subplot(rows+1, cols, i + 1, title=self.sem_enc_keywords[i])
+                labels = np.around(norm_conf_mat, decimals=2)
                 
                 # Use white text if squares are dark; otherwise black.
-                # threshold = conf_mat.max() / 2.
-                # for i, j in itertools.product(range(conf_mat.shape[0]), range(conf_mat.shape[1])):
-                #     color = "white" if conf_mat[i, j] > threshold else "black"
-                #     plt.text(j, i, labels[i, j], horizontalalignment="center", color=color)
+                threshold = norm_conf_mat.max() / 2.
+                for i, j in itertools.product(range(norm_conf_mat.shape[0]), range(norm_conf_mat.shape[1])):
+                    color = "white" if norm_conf_mat[i, j] > threshold else "black"
+                    plt.text(j, i, labels[i, j], horizontalalignment="center", color=color)
                 
-                plt.ylabel('True label')
-                plt.xlabel('Predicted label')
-                plt.close(fig)
-                self.writer.add_figure(f"captioning/{phase}-{component}-confusion-matrix {self.sem_enc_keywords[i]}", fig, epoch)
+                # plt.ylabel('True label')
+                # plt.xlabel('Predicted label')
+                plt.imshow(norm_conf_mat, cmap="OrRd")
+            fig.tight_layout(pad=1.0)
+            self.writer.add_figure(f"captioning/{phase}-{component}-norm-confusion-matrix", fig, epoch)
+
+            fig = plt.figure(figsize=(int(rows*2),int(cols*2)))
+            for i, conf_mat in enumerate(metrics_results["ml-conf-mat"]):
+                plt.subplot(rows+1, cols, i + 1, title=self.sem_enc_keywords[i])
+                
+                # Use white text if squares are dark; otherwise black.
+                threshold = conf_mat.max() / 2.
+                for i, j in itertools.product(range(conf_mat.shape[0]), range(conf_mat.shape[1])):
+                    color = "white" if conf_mat[i, j] > threshold else "black"
+                    plt.text(j, i, conf_mat[i, j], horizontalalignment="center", color=color)
+                
+                # plt.ylabel('True label')
+                # plt.xlabel('Predicted label')
+                plt.imshow(conf_mat, cmap="OrRd")
+            fig.tight_layout(pad=1.0)
+            self.writer.add_figure(f"captioning/{phase}-{component}-confusion-matrix", fig, epoch)
 
     def train_model(self, resume=False, checkpoint_path=None, min_num_epochs=50, early_stop_limit=10):
         # parallel_pool = Pool()
