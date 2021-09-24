@@ -967,6 +967,7 @@ class DenseVideo2TextTrainer(Trainer):
             "Recall/weighted",
             "F1/weighted",
             "ROC-AUC/weighted",
+            "AP/weighted"
         ]
         cap_metrics = [
             "Bleu_1",

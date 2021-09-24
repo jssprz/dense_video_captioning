@@ -6,7 +6,14 @@ from matplotlib.pyplot import axis
 import torch
 import torch.nn as nn
 import numpy as np
-from sklearn.metrics import recall_score, precision_score, roc_auc_score, f1_score, multilabel_confusion_matrix
+from sklearn.metrics import (
+    recall_score,
+    precision_score,
+    average_precision_score,
+    roc_auc_score,
+    f1_score,
+    multilabel_confusion_matrix,
+)
 
 sys.path.append("video_description_eval/coco-caption")
 from video_description_eval.evaluate import score
@@ -19,9 +26,26 @@ def get_freer_gpu():
         memory_available = [int(x.split()[2]) for x in open("tmp_gpu_freem", "r").readlines()]
     else:
         import subprocess
-        subprocess.run(["powershell", "-Command", "nvidia-smi -q -d Memory | Select-String -Pattern GPU -Context 0,4 > tmp_gpu_freem_aux"], capture_output=True)
-        subprocess.run(["powershell", "-Command", "cat tmp_gpu_freem_aux | Select-String -Pattern Free -Context 0,0  > tmp_freem"], capture_output=True)
-        memory_available = [int(x.split()[2]) for x in open("tmp_freem", "r", encoding="utf-16").readlines() if x != "\n"]
+
+        subprocess.run(
+            [
+                "powershell",
+                "-Command",
+                "nvidia-smi -q -d Memory | Select-String -Pattern GPU -Context 0,4 > tmp_gpu_freem_aux",
+            ],
+            capture_output=True,
+        )
+        subprocess.run(
+            [
+                "powershell",
+                "-Command",
+                "cat tmp_gpu_freem_aux | Select-String -Pattern Free -Context 0,0  > tmp_freem",
+            ],
+            capture_output=True,
+        )
+        memory_available = [
+            int(x.split()[2]) for x in open("tmp_freem", "r", encoding="utf-16").readlines() if x != "\n"
+        ]
     return np.argmax(memory_available)
 
 
@@ -31,9 +55,28 @@ def get_gpu_temps(device=None):
         temps = [int(x.split()[-2]) for x in open(f"tmp_gpu_temps_{device}", "r").readlines()]
     else:
         import subprocess
-        subprocess.run(["powershell", "-Command", f"nvidia-smi -q -d Temperature | Select-String -Pattern GPU -Context 0,4 > tmp_gpu_temp_{device.index}_aux"], capture_output=True)
-        subprocess.run(["powershell", "-Command", f"cat tmp_gpu_temp_{device.index}_aux | Select-String -Pattern 'GPU Current Temp' -Context 0,0  > tmp_gpu_temp_{device.index}"], capture_output=True)
-        temps = [int(x.split()[-2]) for x in open(f"tmp_gpu_temp_{device.index}", "r", encoding="utf-16").readlines() if x != "\n"]
+
+        subprocess.run(
+            [
+                "powershell",
+                "-Command",
+                f"nvidia-smi -q -d Temperature | Select-String -Pattern GPU -Context 0,4 > tmp_gpu_temp_{device.index}_aux",
+            ],
+            capture_output=True,
+        )
+        subprocess.run(
+            [
+                "powershell",
+                "-Command",
+                f"cat tmp_gpu_temp_{device.index}_aux | Select-String -Pattern 'GPU Current Temp' -Context 0,0  > tmp_gpu_temp_{device.index}",
+            ],
+            capture_output=True,
+        )
+        temps = [
+            int(x.split()[-2])
+            for x in open(f"tmp_gpu_temp_{device.index}", "r", encoding="utf-16").readlines()
+            if x != "\n"
+        ]
     return temps if device is None else (temps[device.index] if "cuda" == device.type else temps[0])
 
 
@@ -44,7 +87,7 @@ def decode_from_tokens(vocab, tokens, until_eos=True, max_length=10000):
             break
         words.append(vocab.idx_to_word(token.item()))
     result = " ".join(words)
-    
+
     # replace unnecessary spaces before punctation
     result = re.sub(r"\s([.,;:?!'\"](?:|$))", r"\1", result)
 
@@ -100,18 +143,13 @@ def evaluate_from_tokens(vocab, outputs, gt_idxs, ground_truth, until_eos=True):
 
 def densecap_evaluate_from_tokens(vocab, vidxs, pred_tstamps, pred_caps, ground_truth_dict):
     prediction = {}
-    for batch_pred_caps, batch_vidxs, batch_tstamps in zip(
-        pred_caps, vidxs, pred_tstamps
-    ):
+    for batch_pred_caps, batch_vidxs, batch_tstamps in zip(pred_caps, vidxs, pred_tstamps):
         for v_caps, v_caps_count, vidx, v_tstamps in zip(
             batch_pred_caps[0], batch_pred_caps[1], batch_vidxs, batch_tstamps
         ):
             if v_caps_count > 0:
                 prediction[str(vidx.item())] = [
-                    {
-                        "sentence": decode_from_tokens(vocab, pred_tokens),
-                        "timestamp": [ts[0].item(), ts[1].item()],
-                    }
+                    {"sentence": decode_from_tokens(vocab, pred_tokens), "timestamp": [ts[0].item(), ts[1].item()],}
                     for ts, pred_tokens in zip(v_tstamps[:v_caps_count], v_caps[:v_caps_count])
                 ]
 
@@ -173,13 +211,18 @@ def multilabel_evaluate_from_logits(gt_multihots, pred_logits, cap_counts):
 
     # confusion matrices
     ml_conf_mat = multilabel_confusion_matrix(y_true, y_pred_sparse)
-    norm_ml_conf_mat = ml_conf_mat.astype('float') / ml_conf_mat.sum(axis=2)[:, :, np.newaxis]
+    norm_ml_conf_mat = ml_conf_mat.astype("float") / ml_conf_mat.sum(axis=2)[:, :, np.newaxis]
 
     # remove not represented labels
     bad_labels = np.argwhere(np.all(y_true[..., :] == 0, axis=0))
     y_true_filtered = np.delete(y_true, bad_labels, axis=1)
     y_pred_filtered = np.delete(y_pred, bad_labels, axis=1)
     print(f"labels without positive samples: {bad_labels}")
+
+    # average_precision_score (AP). AP summarizes a precision-recall curve
+    ap_micro = average_precision_score(y_true_filtered, y_pred_filtered, average="micro")
+    ap_macro = average_precision_score(y_true_filtered, y_pred_filtered, average="macro")
+    ap_weighted = average_precision_score(y_true_filtered, y_pred_filtered, average="weighted")
 
     # roc_auc
     roc_auc_micro = roc_auc_score(y_true_filtered, y_pred_filtered, average="micro")
@@ -191,6 +234,8 @@ def multilabel_evaluate_from_logits(gt_multihots, pred_logits, cap_counts):
     print(f"samples without positive labels: {bad_samples}")
     y_true_filtered = np.delete(y_true, bad_samples, axis=0)
     y_pred_filtered = np.delete(y_pred, bad_samples, axis=0)
+
+    ap_samples = roc_auc_score(y_true_filtered, y_pred_filtered, average="samples")
     roc_auc_samples = roc_auc_score(y_true_filtered, y_pred_filtered, average="samples")
 
     return {
@@ -206,6 +251,10 @@ def multilabel_evaluate_from_logits(gt_multihots, pred_logits, cap_counts):
         "F1/macro": f1_macro,
         "F1/weighted": f1_weighted,
         "F1/samples": f1_samples,
+        "AP/micro": ap_micro,
+        "AP/macro": ap_macro,
+        "AP/weighted": ap_weighted,
+        "AP/samples": ap_samples,
         "ROC-AUC/micro": roc_auc_micro,
         "ROC-AUC/macro": roc_auc_macro,
         "ROC-AUC/weighted": roc_auc_weighted,
