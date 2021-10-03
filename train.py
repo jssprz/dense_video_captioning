@@ -583,7 +583,7 @@ class DenseVideo2TextTrainer(Trainer):
                 if self.cap_early_stop[phase] == early_stop_limit:
                     self.freezed_modules["cap_dec"] = True
                     self.freezing_last_change = epoch
-                    self.dense_captioner.freeze_dict(self.freeze_modules)
+                    self.dense_captioner.freeze_dict(self.freezed_modules)
             else:
                 self.cap_early_stop[phase] = 0
 

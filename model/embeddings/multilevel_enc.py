@@ -15,21 +15,21 @@ class VisualMultiLevelEncoding(nn.Module):
         global_feat_size,
         out_size,
         norm=True,
+        pool_channels=512,
         rnn_size=1024,
+        conv_channels=8,
+        conv_kernel_sizes=[2, 3, 4],
         drop_p=0.5,
         mapping_h_sizes=[1024, 512],
         mapping_in_drop_p=0.5,
         mapping_h_drop_ps=[0.5, 0.5],
-        concate=["bow", "gru", "cnn"],
-        cnn_out_channels=8,
-        cnn_kernel_sizes=[2, 3, 4],
+        concate=["bow", "cnn_pool", "c3d_pool", "gru", "cnn"],
         have_last_bn=False,
         pretrained_model_path="",
     ):
         super(VisualMultiLevelEncoding, self).__init__()
         self.norm = norm
 
-        pool_channels = 512
         # self.cnn_conv = nn.Conv1d(
         #     in_channels=1, out_channels=pool_channels, kernel_size=3 * cnn_feats_size, stride=cnn_feats_size,
         # )
@@ -42,29 +42,35 @@ class VisualMultiLevelEncoding(nn.Module):
         self.c3d_conv = nn.Conv2d(1, pool_channels, (3, c3d_feats_size), padding=(0, 0),)
 
         # visual bidirectional rnn encoder
-        self.rnn = nn.GRU(cnn_feats_size, rnn_size, batch_first=True, bidirectional=True)
-        # self.rnn = nn.LSTM(word_dim, rnn_size, batch_first=True, bidirectional=True)
-        # self.gru_drop = nn.Dropout(p=drop_p)
+        self.rnn = nn.GRU(cnn_feats_size, rnn_size, batch_first=True, bidirectional=True, dropout=drop_p)
+        # self.rnn = nn.LSTM(word_dim, rnn_size, batch_first=True, bidirectional=True, dropout=drop_p)
         self.rnn_output_size = rnn_size * 2
 
         # visual 1-d convolutional network
         self.convs1 = nn.ModuleList(
             [
-                nn.Conv2d(1, cnn_out_channels, (window_size, self.rnn_output_size), padding=(window_size - 1, 0),)
-                for window_size in cnn_kernel_sizes
+                nn.Conv2d(1, conv_channels, (window_size, self.rnn_output_size), padding=(window_size - 1, 0),)
+                for window_size in conv_kernel_sizes
             ]
         )
 
-        mapping_in_size = 0
         self.concat_bow = "bow" in concate
+        self.concat_cnn_pool = "cnn_pool" in concate
+        self.concat_c3d_pool = "c3d_pool" in concate
         self.concat_rnn = "gru" in concate
         self.concat_cnn = "cnn" in concate
+        
+        mapping_in_size = 0
         if self.concat_bow:
-            mapping_in_size += pool_channels * 2 + global_feat_size
+            mapping_in_size += global_feat_size
+        if self.concat_cnn_pool:
+            mapping_in_size += pool_channels
+        if self.concat_c3d_pool:
+            mapping_in_size += pool_channels
         if self.concat_rnn:
             mapping_in_size += self.rnn_output_size
         if self.concat_cnn:
-            mapping_in_size += cnn_out_channels * len(cnn_kernel_sizes)
+            mapping_in_size += conv_channels * len(conv_kernel_sizes)
 
         # multi fc layers
         self.visual_mapping = MLP(
@@ -91,15 +97,7 @@ class VisualMultiLevelEncoding(nn.Module):
 
     def forward(self, cnn_feats, c3d_feats, video_global_feat, lengths=None):
         # Level 1. Global Encoding by Mean Pooling
-        # cnn_pool = torch.stack([feats[:l, :].flatten() for feats, l in zip(cnn_feats, lengths)]).unsqueeze(1)
         max_len = min(lengths.max() + 2, cnn_feats.size(1))
-        # cnn_pool = cnn_feats[:, :max_len, :].view(cnn_feats.shape[0], 1, -1)
-        # cnn_pool = torch.relu(self.cnn_conv(cnn_pool))
-        # cnn_pool = cnn_pool.mean(dim=2)
-
-        # c3d_pool = c3d_feats[:, :max_len, :].view(c3d_feats.shape[0], 1, -1)
-        # c3d_pool = torch.relu(self.c3d_conv(c3d_pool))
-        # c3d_pool = c3d_pool.mean(dim=2)
 
         cnn_pool = cnn_feats[:, :max_len, :].unsqueeze(1)
         cnn_pool = torch.relu(self.cnn_conv(cnn_pool)).squeeze(3)
@@ -108,8 +106,6 @@ class VisualMultiLevelEncoding(nn.Module):
         c3d_pool = c3d_feats[:, :max_len, :].unsqueeze(1)
         c3d_pool = torch.relu(self.c3d_conv(c3d_pool)).squeeze(3)
         c3d_pool = torch.avg_pool1d(c3d_pool, c3d_pool.size(-1)).squeeze(2)
-
-        org_out = torch.cat((cnn_pool, c3d_pool, video_global_feat), dim=1)
 
         # Level 2. Temporal-Aware Encoding by biGRU
         cnn_feats_padded = pad_sequence([feats[:l, :] for feats, l in zip(cnn_feats, lengths)], batch_first=True,)
@@ -137,7 +133,11 @@ class VisualMultiLevelEncoding(nn.Module):
         # Levels' outputs concatenation
         features = []
         if self.concat_bow:
-            features.append(org_out)
+            features.append(video_global_feat)
+        if self.concat_cnn_pool:
+            features.append(cnn_pool)
+        if self.concat_c3d_pool:
+            features.append(c3d_pool)
         if self.concat_rnn:
             features.append(rnn_h)
         if self.concat_cnn:
