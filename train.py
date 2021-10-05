@@ -929,7 +929,7 @@ class DenseVideo2TextTrainer(Trainer):
                 labels = np.around(norm_conf_mat, decimals=2)
 
                 # Use white text if squares are dark; otherwise black.
-                threshold = norm_conf_mat.max() / 2.0
+                threshold = norm_conf_mat.max() / 1.5
                 for i, j in itertools.product(range(norm_conf_mat.shape[0]), range(norm_conf_mat.shape[1])):
                     color = "white" if norm_conf_mat[i, j] > threshold else "black"
                     plt.text(j, i, labels[i, j], horizontalalignment="center", color=color)
