@@ -554,7 +554,10 @@ class DenseVideo2TextTrainer(Trainer):
 
     def freeze_modules(self, epoch, phase="val_1", early_stop_limits={"sem_enc": 3, "syn_enc": 3, "cap_dec": 10}):
         unfreezed = self.get_unfreezed_modules()
-        if self.sem_loss_phase[phase] > self.best_sem_loss_phase[phase]:
+        if (
+            self.sem_loss_phase[phase] > self.best_sem_loss_phase[phase]
+            and self.sem_enc_metrics_results["AP/weighted"] < self.best_metrics["sem_enc"][phase]["AP/weighted"]
+        ):
             self.sem_early_stop[phase] += 1
             if self.sem_early_stop[phase] == early_stop_limits["sem_enc"]:
                 self.freezed_modules["sem_enc"] = True
@@ -580,7 +583,7 @@ class DenseVideo2TextTrainer(Trainer):
         ):
             if (
                 self.cap_loss_phase[phase] > self.best_cap_loss_phase[phase]
-                and self.cap_metrics_results["METEOR"] > self.best_metrics["captioning"][phase]["METEOR"]
+                and self.cap_metrics_results["METEOR"] < self.best_metrics["captioning"][phase]["METEOR"]
             ):
                 self.cap_early_stop[phase] += 1
                 if self.cap_early_stop[phase] == early_stop_limits["cap_dec"]:
