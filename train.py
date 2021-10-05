@@ -374,7 +374,7 @@ class DenseVideo2TextTrainer(Trainer):
             self.logger.info(f"PROPOSALS: Number of event-proposals: {len(proposals)}")
             self.logger.info(f"PROPOSALS: Event-proposals: {proposals}")
             print(f"PROPOSALS: Number of event-proposals: {len(proposals)}")
-        
+
         # determine cluster of each interval
         result = torch.zeros_like(aux, dtype=torch.int).fill_(-1)
 
@@ -552,11 +552,11 @@ class DenseVideo2TextTrainer(Trainer):
     def get_unfreezed_modules(self):
         return [m for m in ["sem_enc", "syn_enc", "cap_dec"] if not self.freezed_modules[m]]
 
-    def freeze_modules(self, epoch, phase="val_1", early_stop_limit=3):
+    def freeze_modules(self, epoch, phase="val_1", early_stop_limits={"sem_enc": 3, "syn_enc": 3, "cap_dec": 10}):
         unfreezed = self.get_unfreezed_modules()
         if self.sem_loss_phase[phase] > self.best_sem_loss_phase[phase]:
             self.sem_early_stop[phase] += 1
-            if self.sem_early_stop[phase] == early_stop_limit:
+            if self.sem_early_stop[phase] == early_stop_limits["sem_enc"]:
                 self.freezed_modules["sem_enc"] = True
                 self.freezing_last_change = epoch
                 self.dense_captioner.freeze_dict(self.freezed_modules)
@@ -566,7 +566,7 @@ class DenseVideo2TextTrainer(Trainer):
         if (len(unfreezed) == 3 and self.stage in [1, 2]) or len(unfreezed):
             if self.pos_loss_phase[phase] > self.best_pos_loss_phase[phase]:
                 self.pos_early_stop[phase] += 1
-                if self.pos_early_stop[phase] == early_stop_limit:
+                if self.pos_early_stop[phase] == early_stop_limits["syn_enc"]:
                     self.freezed_modules["syn_enc"] = True
                     self.freezing_last_change = epoch
                     self.dense_captioner.freeze_dict(self.freezed_modules)
@@ -578,9 +578,12 @@ class DenseVideo2TextTrainer(Trainer):
             or (len(unfreezed) == 2 and self.stage == 1)
             or len(unfreezed) == 1
         ):
-            if self.cap_loss_phase[phase] > self.best_cap_loss_phase[phase]:
+            if (
+                self.cap_loss_phase[phase] > self.best_cap_loss_phase[phase]
+                and self.cap_metrics_results["METEOR"] > self.best_metrics["captioning"][phase]["METEOR"]
+            ):
                 self.cap_early_stop[phase] += 1
-                if self.cap_early_stop[phase] == early_stop_limit:
+                if self.cap_early_stop[phase] == early_stop_limits["cap_dec"]:
                     self.freezed_modules["cap_dec"] = True
                     self.freezing_last_change = epoch
                     self.dense_captioner.freeze_dict(self.freezed_modules)
@@ -897,7 +900,7 @@ class DenseVideo2TextTrainer(Trainer):
         for name, result in metrics_results.items():
             if not "ml-conf-mat" in name:
                 self.writer.add_scalar(f"captioning/{phase}-{component}-{name}", result, epoch)
-            
+
             if name in self.best_metrics[component][phase] and (
                 (name in min_metrics and result < self.best_metrics[component][phase][name][1])
                 or (name not in min_metrics and result > self.best_metrics[component][phase][name][1])
@@ -919,34 +922,34 @@ class DenseVideo2TextTrainer(Trainer):
         if "ml-conf-mat" in metrics_results:
             cols = 8
             rows = len(self.sem_enc_keywords) // cols
-            
-            fig = plt.figure(figsize=(int(rows*2),int(cols*2)))
+
+            fig = plt.figure(figsize=(int(rows * 2), int(cols * 2)))
             for i, norm_conf_mat in enumerate(metrics_results["norm-ml-conf-mat"]):
-                plt.subplot(rows+1, cols, i + 1, title=self.sem_enc_keywords[i])
+                plt.subplot(rows + 1, cols, i + 1, title=self.sem_enc_keywords[i])
                 labels = np.around(norm_conf_mat, decimals=2)
-                
+
                 # Use white text if squares are dark; otherwise black.
-                threshold = norm_conf_mat.max() / 2.
+                threshold = norm_conf_mat.max() / 2.0
                 for i, j in itertools.product(range(norm_conf_mat.shape[0]), range(norm_conf_mat.shape[1])):
                     color = "white" if norm_conf_mat[i, j] > threshold else "black"
                     plt.text(j, i, labels[i, j], horizontalalignment="center", color=color)
-                
+
                 # plt.ylabel('True label')
                 # plt.xlabel('Predicted label')
                 plt.imshow(norm_conf_mat, cmap="OrRd")
             fig.tight_layout(pad=1.0)
             self.writer.add_figure(f"captioning/{phase}-{component}-norm-confusion-matrix", fig, epoch)
 
-            fig = plt.figure(figsize=(int(rows*2),int(cols*2)))
+            fig = plt.figure(figsize=(int(rows * 2), int(cols * 2)))
             for i, conf_mat in enumerate(metrics_results["ml-conf-mat"]):
-                plt.subplot(rows+1, cols, i + 1, title=self.sem_enc_keywords[i])
-                
+                plt.subplot(rows + 1, cols, i + 1, title=self.sem_enc_keywords[i])
+
                 # Use white text if squares are dark; otherwise black.
-                threshold = conf_mat.max() / 2.
+                threshold = conf_mat.max() / 2.0
                 for i, j in itertools.product(range(conf_mat.shape[0]), range(conf_mat.shape[1])):
                     color = "white" if conf_mat[i, j] > threshold else "black"
                     plt.text(j, i, conf_mat[i, j], horizontalalignment="center", color=color)
-                
+
                 # plt.ylabel('True label')
                 # plt.xlabel('Predicted label')
                 plt.imshow(conf_mat, cmap="OrRd")
@@ -963,12 +966,7 @@ class DenseVideo2TextTrainer(Trainer):
             os.makedirs(save_checkpoints_dir)
 
         val_phases = ["val_1"]
-        sem_enc_metrics = [
-            "Recall/weighted",
-            "F1/weighted",
-            "ROC-AUC/weighted",
-            "AP/weighted"
-        ]
+        sem_enc_metrics = ["Recall/weighted", "F1/weighted", "ROC-AUC/weighted", "AP/weighted"]
         cap_metrics = [
             "Bleu_1",
             "Bleu_2",
@@ -1095,7 +1093,7 @@ class DenseVideo2TextTrainer(Trainer):
         # Start training process
         self.early_stop_count, self.last_saved_epoch = 0, -1
         time_phase = {p: 0 for p in ["train"] + val_phases}
-        prog_metrics_results, cap_metrics_results, densecap_metrics_results = None, None, None
+        self.prog_metrics_results, self.cap_metrics_results, self.densecap_metrics_results = None, None, None
         self.best_loss_phase = {p: float("inf") for p in ["train"] + val_phases}
         self.best_sem_loss_phase, self.sem_early_stop = (
             {p: float("inf") for p in ["train"] + val_phases},
@@ -1335,9 +1333,6 @@ class DenseVideo2TextTrainer(Trainer):
                 self.writer.add_scalar("captioning/{}-epochs-avg-cap_loss".format(phase), avg_cap_loss, epoch)
 
                 if phase != "train":
-                    # freeze modules without improvement in validation loss
-                    loss_early_stop = self.freeze_modules(epoch=epoch, phase=phase)
-
                     self.early_stop_count += 1
                     # predicted_sentences = pool.apply_async(self.__get_sentences, [all_outputs, all_video_ids])
 
@@ -1351,29 +1346,32 @@ class DenseVideo2TextTrainer(Trainer):
                     # prog_metrics_results, pred_progs = evaluate_from_tokens(self.programs_vocab, all_programs, all_prog_ids, self.ref_programs[phase], False)
 
                     print("evaluating semanctic tagging...")
-                    sem_enc_metrics_results = multilabel_evaluate_from_logits(
+                    self.sem_enc_metrics_results = multilabel_evaluate_from_logits(
                         all_gt_sem_enc, all_sem_enc, all_cap_counts
                     )
                     print("evaluating captions (basic)...")
-                    cap_metrics_results, pred_caps = evaluate_from_tokens(
+                    self.cap_metrics_results, pred_caps = evaluate_from_tokens(
                         self.caps_vocab, all_captions, all_caps_ids, self.ref_captions[phase],
                     )
                     print("evaluating captions (dense)...")
-                    (densecap_metrics_results, pred_intervals,) = densecap_evaluate_from_tokens(
+                    (self.densecap_metrics_results, pred_intervals,) = densecap_evaluate_from_tokens(
                         self.caps_vocab, all_prog_ids, all_tstamps, all_captions, self.ref_densecaps[phase],
                     )
 
                     # process results, saving the checkpoint if any improvement occurs
                     # self.__process_results(prog_metrics_results, pred_progs, phase, epoch-1, save_checkpoints_dir, 'programmer')
                     self.__process_results(
-                        sem_enc_metrics_results, None, phase, epoch, save_checkpoints_dir, "sem_enc",
+                        self.sem_enc_metrics_results, None, phase, epoch, save_checkpoints_dir, "sem_enc",
                     )
                     self.__process_results(
-                        cap_metrics_results, pred_caps, phase, epoch, save_checkpoints_dir, "captioning",
+                        self.cap_metrics_results, pred_caps, phase, epoch, save_checkpoints_dir, "captioning",
                     )
                     self.__process_results(
-                        densecap_metrics_results, pred_intervals, phase, epoch, save_checkpoints_dir, "densecap",
+                        self.densecap_metrics_results, pred_intervals, phase, epoch, save_checkpoints_dir, "densecap",
                     )
+
+                    # freeze modules without improvement in validation loss or metrics
+                    loss_early_stop = self.freeze_modules(epoch=epoch, phase=phase)
 
                     # report results if any improvement occurs
                     if self.early_stop_count == 0:
@@ -1422,13 +1420,13 @@ class DenseVideo2TextTrainer(Trainer):
 
                 # self.__process_results(prog_metrics_results, pred_caps, phase, epoch-1, save_checkpoints_dir, 'programmer')
                 self.__process_results(
-                    sem_enc_metrics_results, None, phase, epoch, save_checkpoints_dir, "sem_enc",
+                    self.sem_enc_metrics_results, None, phase, epoch, save_checkpoints_dir, "sem_enc",
                 )
                 self.__process_results(
-                    cap_metrics_results, pred_caps, phase, epoch, save_checkpoints_dir, "captioning",
+                    self.cap_metrics_results, pred_caps, phase, epoch, save_checkpoints_dir, "captioning",
                 )
                 self.__process_results(
-                    densecap_metrics_results, pred_intervals, phase, epoch, save_checkpoints_dir, "densecap",
+                    self.densecap_metrics_results, pred_intervals, phase, epoch, save_checkpoints_dir, "densecap",
                 )
 
                 if not loss_early_stop:
