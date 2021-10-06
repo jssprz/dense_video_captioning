@@ -630,9 +630,6 @@ class SemSynANDecoder(nn.Module):
         return beta2 * aa1 + (1 - beta2) * sem_syn_h
 
     def reset_internals(self, batch_size):
-        # (batch_size x embedding_size)
-        self.decoder_input = torch.zeros(batch_size, self.embedding_size).to(self.device)
-
         self.v_sem_h = torch.zeros(batch_size, self.h_size).to(self.device)
         self.v_sem_c = torch.zeros(batch_size, self.h_size).to(self.device)
 
@@ -649,15 +646,15 @@ class SemSynANDecoder(nn.Module):
         self.v_syn_layer.precompute_mats(v_pool, pos_emb, var_drop_p)
         self.se_sy_layer.precompute_mats(s_tags, pos_emb, var_drop_p)
 
-    def step(self, v_feats, s_tags, pos_emb):
+    def step(self, v_feats, s_tags, pos_emb, decoder_input):
         self.v_sem_h, self.v_sem_c = self.v_sem_layer.step(
-            s_tags, self.v_sem_h, self.v_sem_c, self.decoder_input, var_drop_p=0.1
+            s_tags, self.v_sem_h, self.v_sem_c, decoder_input, var_drop_p=0.1
         )
         self.v_syn_h, self.v_syn_c = self.v_syn_layer.step(
-            pos_emb, self.v_syn_h, self.v_syn_c, self.decoder_input, var_drop_p=0.1
+            pos_emb, self.v_syn_h, self.v_syn_c, decoder_input, var_drop_p=0.1
         )
         self.se_sy_h, self.se_sy_c = self.se_sy_layer.step(
-            pos_emb, self.se_sy_h, self.se_sy_c, self.decoder_input, var_drop_p=0.1
+            pos_emb, self.se_sy_h, self.se_sy_c, decoder_input, var_drop_p=0.1
         )
 
         if self.dataset_name == "MSVD":
@@ -693,10 +690,13 @@ class SemSynANDecoder(nn.Module):
 
         outputs, embedds = [], []
 
+        # (batch_size x embedding_size)
+        decoder_input = torch.zeros(bs, self.embedding_size).to(self.device)
+
         if not self.training:
             words = []
-            for step in range(max_words):
-                word_logits = self.step(v_feats, s_tags, pos_emb)
+            for _ in range(max_words):
+                word_logits = self.step(v_feats, s_tags, pos_emb, decoder_input)
 
                 # compute word probs
                 if self.test_sample_max:
@@ -726,7 +726,7 @@ class SemSynANDecoder(nn.Module):
         else:
             words = []
             for seq_pos in range(gt_captions.size(1)):
-                word_logits = self.step(v_feats, s_tags, pos_emb)
+                word_logits = self.step(v_feats, s_tags, pos_emb, decoder_input)
 
                 use_teacher_forcing = random.random() < teacher_forcing_p or seq_pos == 0
                 if use_teacher_forcing:

@@ -91,6 +91,8 @@ class EnsembleDecoder(nn.Module):
         self.out_size = len(caps_vocab)
         self.train_sample_max = config.train_sample_max
         self.test_sample_max = config.test_sample_max
+        self.embedding_size = config.embedding_size
+        self.output_size = len(caps_vocab)
 
         if with_embedding_layer:
             if pretrained_we is not None:
@@ -124,9 +126,9 @@ class EnsembleDecoder(nn.Module):
         self.avscn_dec.precompute_mats(v_pool, s_tags)
         self.semsynan_dec.precompute_mats(v_pool, s_tags, pos_emb)
 
-    def step(self, v_feats, s_tags, pos_emb):
-        ls1 = self.avscn_dec.step(v_feats)
-        ls2 = self.semsynan_dec.step(v_feats, s_tags, pos_emb)
+    def step(self, v_feats, s_tags, pos_emb, decoder_input):
+        ls1 = self.avscn_dec.step(v_feats, decoder_input)
+        ls2 = self.semsynan_dec.step(v_feats, s_tags, pos_emb, decoder_input)
 
         return (ls1 + ls2) / 2
 
@@ -137,9 +139,12 @@ class EnsembleDecoder(nn.Module):
 
         outputs, embedds, words = [], [], []
 
+        # (batch_size x embedding_size)
+        decoder_input = torch.zeros(bs, self.embedding_size).to(v_pool.device)
+
         if not self.training:
             for _ in range(max_words):
-                word_logits = self.step(v_feats, s_tags, pos_emb)
+                word_logits = self.step(v_feats, s_tags, pos_emb, decoder_input)
 
                 # compute word probs
                 if self.test_sample_max:
@@ -160,7 +165,7 @@ class EnsembleDecoder(nn.Module):
                 words.append(word_id)
         else:
             for seq_pos in range(gt_captions.size(1)):
-                word_logits = self.step(v_feats, s_tags, pos_emb)
+                word_logits = self.step(v_feats, s_tags, pos_emb, decoder_input)
 
                 use_teacher_forcing = random.random() < tf_p or seq_pos == 0
                 if use_teacher_forcing:

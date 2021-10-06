@@ -403,9 +403,6 @@ class AVSCNDecoder(nn.Module):
     def reset_internals(self, batch_size):
         self.dropM = {}
 
-        # (batch_size x embedding_size)
-        self.decoder_input = torch.zeros(batch_size, self.embedding_size).to(self.device)
-
         self.semantic_h = torch.zeros(batch_size, self.h_size).to(self.device)
         self.semantic_c = torch.zeros(batch_size, self.h_size).to(self.device)
 
@@ -422,10 +419,10 @@ class AVSCNDecoder(nn.Module):
         self.semantic_layer.precompute_mats(v, s)
         self.visual_layer.precompute_mats(s, v)
 
-    def step(self, v_feats):
-        self.visual_h, self.visual_c = self.visual_layer.step(self.visual_h, self.visual_c, self.decoder_input)
+    def step(self, v_feats, decoder_input):
+        self.visual_h, self.visual_c = self.visual_layer.step(self.visual_h, self.visual_c, decoder_input)
         self.semantic_h, self.semantic_c = self.semantic_layer.step(
-            self.semantic_h, self.semantic_c, self.decoder_input
+            self.semantic_h, self.semantic_c, decoder_input
         )
         visual_attn1 = self.attn1(v_feats, self.visual_h)
         visual_attn2 = self.attn2(v_feats, self.semantic_h)
@@ -448,10 +445,13 @@ class AVSCNDecoder(nn.Module):
 
         outputs, embedds = [], []
 
+        # (batch_size x embedding_size)
+        decoder_input = torch.zeros(bs, self.embedding_size).to(self.device)
+
         if not self.training:
             words = []
-            for step in range(max_words):
-                word_logits = self.step(v_feats)
+            for _ in range(max_words):
+                word_logits = self.step(v_feats, decoder_input)
 
                 # compute word probs
                 if self.test_sample_max:
@@ -479,7 +479,7 @@ class AVSCNDecoder(nn.Module):
             )
         else:
             for seq_pos in range(gt_captions.size(1)):
-                word_logits = self.step(v_feats)
+                word_logits = self.step(v_feats, decoder_input)
 
                 use_teacher_forcing = random.random() < teacher_forcing_p or seq_pos == 0
                 if use_teacher_forcing:
