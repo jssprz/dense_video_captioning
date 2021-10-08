@@ -356,10 +356,10 @@ class DenseVideo2TextTrainer(Trainer):
         neg_samples = torch.tensor(total_num_caps).repeat(len(freq_words)) - pos_samples
 
         # For maximizing Recall
-        # pos_weights = neg_samples / pos_samples
+        pos_weights = neg_samples / pos_samples
 
         # For maximizing Precision
-        pos_weights = pos_samples / neg_samples
+        # pos_weights = pos_samples / neg_samples
 
         return X, pos_weights
 
