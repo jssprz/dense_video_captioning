@@ -557,10 +557,9 @@ class DenseVideo2TextTrainer(Trainer):
         return [m for m in ["sem_enc", "syn_enc", "cap_dec"] if not self.freezed_modules[m]]
 
     def freeze_modules(self, epoch, phase="val_1", early_stop_limits={"sem_enc": 3, "syn_enc": 3, "cap_dec": 10}):
-        unfreezed = self.get_unfreezed_modules()
         if (
             self.sem_loss_phase[phase] > self.best_sem_loss_phase[phase]
-            and self.sem_enc_metrics_results["AP/weighted"] < self.best_metrics["sem_enc"][phase]["AP/weighted"]
+            and self.sem_enc_metrics_results["AP/weighted"] < self.best_metrics["sem_enc"][phase]["AP/weighted"][1]
         ):
             self.sem_early_stop[phase] += 1
             if self.sem_early_stop[phase] == early_stop_limits["sem_enc"]:
@@ -570,6 +569,8 @@ class DenseVideo2TextTrainer(Trainer):
         else:
             self.sem_early_stop[phase] = 0
 
+        unfreezed = self.get_unfreezed_modules()
+        
         if (len(unfreezed) == 3 and self.stage in [1, 2]) or len(unfreezed):
             if self.pos_loss_phase[phase] > self.best_pos_loss_phase[phase]:
                 self.pos_early_stop[phase] += 1
@@ -587,7 +588,7 @@ class DenseVideo2TextTrainer(Trainer):
         ):
             if (
                 self.cap_loss_phase[phase] > self.best_cap_loss_phase[phase]
-                and self.cap_metrics_results["METEOR"] < self.best_metrics["captioning"][phase]["METEOR"]
+                and self.cap_metrics_results["METEOR"] < self.best_metrics["captioning"][phase]["METEOR"][1]
             ):
                 self.cap_early_stop[phase] += 1
                 if self.cap_early_stop[phase] == early_stop_limits["cap_dec"]:

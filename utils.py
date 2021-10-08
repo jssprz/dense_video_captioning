@@ -9,9 +9,11 @@ import numpy as np
 from sklearn.metrics import (
     recall_score,
     precision_score,
+    f1_score,
     average_precision_score,
     roc_auc_score,
-    f1_score,
+    precision_recall_curve,
+    auc,
     multilabel_confusion_matrix,
 )
 
@@ -229,6 +231,10 @@ def multilabel_evaluate_from_logits(gt_multihots, pred_logits, cap_counts):
     roc_auc_macro = roc_auc_score(y_true_filtered, y_pred_filtered, average="macro")
     roc_auc_weighted = roc_auc_score(y_true_filtered, y_pred_filtered, average="weighted")
 
+    # precision-recall-curve_auc
+    # p,r,_ = precision_recall_curve(y_true, y_pred)
+    # prc_auc = auc(p, r)
+
     # remove samples with only one class (without positive samples)
     bad_samples = np.argwhere(np.all(y_true[:, ...] == 0, axis=1))
     print(f"samples without positive labels: {bad_samples}")
@@ -259,6 +265,7 @@ def multilabel_evaluate_from_logits(gt_multihots, pred_logits, cap_counts):
         "ROC-AUC/macro": roc_auc_macro,
         "ROC-AUC/weighted": roc_auc_weighted,
         "ROC-AUC/samples": roc_auc_samples,
+        # "PRC-AUC": prc_auc,
         "ml-conf-mat": ml_conf_mat,
         "norm-ml-conf-mat": norm_ml_conf_mat,
     }
