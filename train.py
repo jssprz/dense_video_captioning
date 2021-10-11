@@ -1,4 +1,3 @@
-from operator import neg
 import os
 import sys
 import argparse
@@ -556,27 +555,30 @@ class DenseVideo2TextTrainer(Trainer):
     def get_unfreezed_modules(self):
         return [m for m in ["sem_enc", "syn_enc", "cap_dec"] if not self.freezed_modules[m]]
 
-    def freeze_modules(self, epoch, phase="val_1", early_stop_limits={"sem_enc": 3, "syn_enc": 3, "cap_dec": 10}):
+    def freeze_modules(self, epoch, phase="val_1", early_stop_limits={"sem_enc": 2, "syn_enc": 3, "cap_dec": 10}):
         if (
             self.sem_loss_phase[phase] > self.best_sem_loss_phase[phase]
             and self.sem_enc_metrics_results["AP/weighted"] < self.best_metrics["sem_enc"][phase]["AP/weighted"][1]
         ):
             self.sem_early_stop[phase] += 1
             if self.sem_early_stop[phase] == early_stop_limits["sem_enc"]:
-                self.freezed_modules["sem_enc"] = True
                 self.freezing_last_change = epoch
+                self.freezed_modules["sem_enc"] = True
                 self.dense_captioner.freeze_dict(self.freezed_modules)
+
+                # TODO: reload weights for the best saved checkpoint, for evaluation only
+                # this can affect the others models because the semantic representations can change
         else:
             self.sem_early_stop[phase] = 0
 
         unfreezed = self.get_unfreezed_modules()
-        
-        if (len(unfreezed) == 3 and self.stage in [1, 2]) or len(unfreezed):
+
+        if (len(unfreezed) == 3 and self.stage in [1, 2]) or len(unfreezed) == 2:
             if self.pos_loss_phase[phase] > self.best_pos_loss_phase[phase]:
                 self.pos_early_stop[phase] += 1
                 if self.pos_early_stop[phase] == early_stop_limits["syn_enc"]:
-                    self.freezed_modules["syn_enc"] = True
                     self.freezing_last_change = epoch
+                    self.freezed_modules["syn_enc"] = True
                     self.dense_captioner.freeze_dict(self.freezed_modules)
             else:
                 self.pos_early_stop[phase] = 0
@@ -592,8 +594,8 @@ class DenseVideo2TextTrainer(Trainer):
             ):
                 self.cap_early_stop[phase] += 1
                 if self.cap_early_stop[phase] == early_stop_limits["cap_dec"]:
-                    self.freezed_modules["cap_dec"] = True
                     self.freezing_last_change = epoch
+                    self.freezed_modules["cap_dec"] = True
                     self.dense_captioner.freeze_dict(self.freezed_modules)
             else:
                 self.cap_early_stop[phase] = 0
