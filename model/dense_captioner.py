@@ -517,7 +517,7 @@ class DenseCaptioner(nn.Module):
         gt_p = torch.cat(gt_p, dim=0)
 
         # TODO:compute captioning
-        cap_logits, cap, cap_sem_enc, pos_tag_seq_logits = self.clip_captioner(
+        cap_logits, cap, cap_sem_enc, pos, pos_tag_seq_logits = self.clip_captioner(
             v_feats=clip_feats,
             v_global=clip_global,
             tf_ratios=tf_ratios,
@@ -527,7 +527,7 @@ class DenseCaptioner(nn.Module):
             feats_count=clip_len,
         )
 
-        return cap, cap_logits, cap_sem_enc, pos_tag_seq_logits
+        return cap, cap_logits, cap_sem_enc, pos, pos_tag_seq_logits
 
     def forward(
         self,
@@ -574,6 +574,7 @@ class DenseCaptioner(nn.Module):
 
         # initialize result tensors according to the sizes of ground truth
         captions = torch.zeros_like(gt_captions)
+        pos_tags = torch.zeros_like(gt_pos)
         caps_sem_enc = torch.zeros_like(gt_sem_enc)
         pos_tags = torch.zeros_like(gt_pos)
         intervals = torch.zeros_like(gt_intervals, dtype=torch.float)
@@ -654,7 +655,7 @@ class DenseCaptioner(nn.Module):
 
                 if len(vixs) >= captioning_batch:
                     # compute captioning for batch, considering teacher forcing strategy for cap tensor
-                    cap, cap_logits, cap_sem_enc, pos_tag_seq_logits = self.compute_captioning_batch(
+                    cap, cap_logits, cap_sem_enc, pos, pos_tag_seq_logits = self.compute_captioning_batch(
                         clip_feats=clip_feats,
                         clip_len=clip_lens,
                         clip_global=clip_global,
@@ -667,6 +668,7 @@ class DenseCaptioner(nn.Module):
                     # fill the result tensors according to caps_count and vixs lists
                     for i, vix in enumerate(vixs):
                         captions[vix, caps_count[vix], :] = cap[i]
+                        pos_tags[vix, caps_count[vix], :] = pos[i]
                         caps_logits[vix, caps_count[vix], :, :] = cap_logits[i]
                         pos_tag_logits[vix, caps_count[vix], :, :] = pos_tag_seq_logits[i]
                         caps_sem_enc[vix, caps_count[vix], :] = cap_sem_enc[i]
@@ -683,7 +685,7 @@ class DenseCaptioner(nn.Module):
 
         # compute captioning of last batch
         if len(vixs):
-            cap, cap_logits, cap_sem_enc, pos_tag_seq_logits = self.compute_captioning_batch(
+            cap, cap_logits, cap_sem_enc, pos, pos_tag_seq_logits = self.compute_captioning_batch(
                 clip_feats=clip_feats,
                 clip_len=clip_lens,
                 clip_global=clip_global,
@@ -696,6 +698,7 @@ class DenseCaptioner(nn.Module):
             # fill the result tensors according to caps_count and vixs lists
             for i, vix in enumerate(vixs):
                 captions[vix, caps_count[vix], :] = cap[i]
+                pos_tags[vix, caps_count[vix], :] = pos[i]
                 caps_logits[vix, caps_count[vix], :, :] = cap_logits[i]
                 pos_tag_logits[vix, caps_count[vix], :, :] = pos_tag_seq_logits[i]
                 caps_sem_enc[vix, caps_count[vix], :] = cap_sem_enc[i]
@@ -709,6 +712,7 @@ class DenseCaptioner(nn.Module):
             None,  # program,
             caps_logits,
             caps_sem_enc,
+            pos_tags,
             pos_tag_logits,
             captions,
             intervals,

@@ -261,11 +261,11 @@ class SCNAttnDecoder(nn.Module):
 
     def forward(self, encoding, teacher_forcing_p=0.5, gt_captions=None):
         return self.forward_fn(
-            v_pool=videos_encodes[3],
-            s_tags=videos_encodes[2],
-            encoder_h=videos_encodes[1],
-            encoder_outputs=videos_encodes[0],
-            captions=captions,
+            v_pool=encoding[3],
+            s_tags=encoding[2],
+            encoder_h=encoding[1],
+            encoder_outputs=encoding[0],
+            captions=gt_captions,
             teacher_forcing_p=teacher_forcing_p,
         )
 
@@ -443,13 +443,12 @@ class AVSCNDecoder(nn.Module):
         self.reset_internals(bs)
         self.precompute_mats(v_pool, s_tags)
 
-        outputs, embedds = [], []
+        outputs, embedds, words = [], [], []
 
         # (batch_size x embedding_size)
         decoder_input = torch.zeros(bs, self.embedding_size).to(self.device)
 
         if not self.training:
-            words = []
             for _ in range(max_words):
                 word_logits = self.step(v_feats, decoder_input)
 
@@ -465,18 +464,11 @@ class AVSCNDecoder(nn.Module):
 
                 # (batch_size) -> (batch_size x embedding_size)
                 decoder_input = self.embedding(word_id).squeeze(1)
-                embedds.append(decoder_input)
-
                 # decoder_input = self.embedd_drop(decoder_input)
 
+                embedds.append(decoder_input)
                 outputs.append(word_logits)
                 words.append(word_id)
-
-            return (
-                torch.cat([o.unsqueeze(1) for o in outputs], dim=1).contiguous(),
-                torch.cat([w.unsqueeze(1) for w in words], dim=1).contiguous(),
-                torch.cat([e.unsqueeze(1) for e in embedds], dim=1).contiguous(),
-            )
         else:
             for seq_pos in range(gt_captions.size(1)):
                 word_logits = self.step(v_feats, decoder_input)
@@ -485,30 +477,29 @@ class AVSCNDecoder(nn.Module):
                 if use_teacher_forcing:
                     # use the correct words,
                     # (batch_size)
-                    decoder_input = gt_captions[:, seq_pos]
+                    word_id = gt_captions[:, seq_pos]
                 elif self.train_sample_max:
                     # select the words ids with the max probability,
                     # (batch_size)
-                    decoder_input = word_logits.max(1)[1]
+                    word_id = word_logits.max(1)[1]
                 else:
                     # sample words from probability distribution
                     # (batch_size)
-                    decoder_input = torch.multinomial(torch.softmax(word_logits, dim=1), 1).squeeze(1)
+                    word_id = torch.multinomial(torch.softmax(word_logits, dim=1), 1).squeeze(1)
 
                 # (batch_size) -> (batch_size x embedding_size)
-                decoder_input = self.embedding(decoder_input).squeeze(1)
+                decoder_input = self.embedding(word_id).squeeze(1)
+                # decoder_input = self.embedd_drop(decoder_input)
+
                 embedds.append(decoder_input)
-
-                decoder_input = self.embedd_drop(decoder_input)
-
                 outputs.append(word_logits)
+                words.append(word_id)
 
-            # (batch_size x out_seq_length x output_size), none
-            return (
-                torch.cat([o.unsqueeze(1) for o in outputs], dim=1).contiguous(),
-                None,
-                torch.cat([e.unsqueeze(1) for e in embedds], dim=1).contiguous(),
-            )
+        return (
+            torch.cat([o.unsqueeze(1) for o in outputs], dim=1).contiguous(),
+            torch.cat([w.unsqueeze(1) for w in words], dim=1).contiguous(),
+            torch.cat([e.unsqueeze(1) for e in embedds], dim=1).contiguous(),
+        )
 
     def forward(self, encoding, teacher_forcing_p=0.5, gt_captions=None, max_words=None):
         return self.forward_fn(

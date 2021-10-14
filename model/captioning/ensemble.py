@@ -264,8 +264,9 @@ class Ensemble(nn.Module):
             max_words=max_words,
             feats_count=feats_count,
         )
-        sem_enc, pos_tag_seq_logits = (
+        sem_enc, pos_tag_seq, pos_tag_seq_logits = (
             encoding[2],
+            encoding[3][1],
             encoding[3][0],
         )
 
@@ -282,4 +283,4 @@ class Ensemble(nn.Module):
             encoding=encoding, teacher_forcing_p=tf_ratios["cap_dec"], gt_captions=gt_captions, max_words=max_words,
         )
 
-        return logits, cap, sem_enc, pos_tag_seq_logits
+        return logits, cap, sem_enc, pos_tag_seq, pos_tag_seq_logits

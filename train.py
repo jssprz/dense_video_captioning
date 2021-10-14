@@ -20,6 +20,11 @@ import torch.optim as optim
 from tensorboardX import SummaryWriter
 import matplotlib.pyplot as plt
 
+import nltk
+
+nltk.download("punkt")
+nltk.download("averaged_perceptron_tagger")
+
 from utils import (
     get_freer_gpu,
     get_gpu_temps,
@@ -279,7 +284,7 @@ class DenseVideo2TextTrainer(Trainer):
         print("\n****We are ready to start the training process****\n")
 
     def __load_ground_truth(self):
-        self.ref_programs, self.ref_captions, self.ref_densecaps = {}, {}, {}
+        self.ref_programs, self.ref_captions, self.ref_pos, self.ref_densecaps = {}, {}, {}, {}
 
         ref_progams_txt_path = {"val_1": os.path.join(self.dataset_folder, "val_1_ref_programs.txt")}
         ref_captions_txt_path = {"val_1": os.path.join(self.dataset_folder, "val_1_ref_captions.txt")}
@@ -297,6 +302,11 @@ class DenseVideo2TextTrainer(Trainer):
         for phase in ["val_1"]:
             self.ref_programs[phase] = load_texts(ref_progams_txt_path[phase], blacklist=ref_vidxs_blacklists[phase])
             self.ref_captions[phase] = load_texts(ref_captions_txt_path[phase], blacklist=ref_cidxs_blacklists[phase])
+            self.ref_pos[phase] = {
+                k: [" ".join([t[1] for t in nltk.pos_tag(nltk.word_tokenize(cap.lower()))]) for cap in caps]
+                for k, caps in self.ref_captions[phase].items()
+            }
+
             with open(ref_densecap_json_path[phase], "r") as f:
                 self.ref_densecaps[phase] = json.load(f)
                 for vidx in ref_vidxs_blacklists[phase]:
@@ -573,8 +583,11 @@ class DenseVideo2TextTrainer(Trainer):
 
         unfreezed = self.get_unfreezed_modules()
 
-        if (len(unfreezed) == 3 and self.stage in [1, 2]) or len(unfreezed) == 2:
-            if self.pos_loss_phase[phase] > self.best_pos_loss_phase[phase]:
+        if (len(unfreezed) == 3 and self.stage in [1, 2]) or len(unfreezed) in [1, 2]:
+            if (
+                self.pos_loss_phase[phase] > self.best_pos_loss_phase[phase]
+                and self.syn_enc_metrics_results["BLEU_4"] < self.best_metrics["syn_enc"][phase]["BLEU_4"][1]
+            ):
                 self.pos_early_stop[phase] += 1
                 if self.pos_early_stop[phase] == early_stop_limits["syn_enc"]:
                     self.freezing_last_change = epoch
@@ -770,6 +783,7 @@ class DenseVideo2TextTrainer(Trainer):
                 _,
                 caps_logits,
                 caps_sem_enc,
+                caps_pos_tags,
                 pos_tags_logits,
                 captions,
                 intervals,
@@ -849,6 +863,7 @@ class DenseVideo2TextTrainer(Trainer):
             captions,
             intervals,
             caps_sem_enc,
+            caps_pos_tags,
             caps_count,
             None,  # truncate_prog_at,
         )
@@ -925,7 +940,7 @@ class DenseVideo2TextTrainer(Trainer):
                             json.dump(prediction, f)
                         output_saved = True
 
-                if component in ["sem_enc", "captioning"]:
+                if component in ["sem_enc", "syn_enc", "captioning"]:
                     print(f"saving best checkpoint due to improvement on {component}-{name}...")
                     self.__save_checkpoint(epoch, save_checkpoints_dir, phase, True, component, name)
 
@@ -977,10 +992,13 @@ class DenseVideo2TextTrainer(Trainer):
 
         val_phases = ["val_1"]
         sem_enc_metrics = ["Recall/weighted", "F1/weighted", "ROC-AUC/weighted", "AP/weighted"]
+        syn_enc_metrics = [
+            "Bleu_4",
+            "METEOR",
+            "ROUGE_L",
+            "All_Metrics",
+        ]
         cap_metrics = [
-            "Bleu_1",
-            "Bleu_2",
-            "Bleu_3",
             "Bleu_4",
             "METEOR",
             "ROUGE_L",
@@ -1017,6 +1035,10 @@ class DenseVideo2TextTrainer(Trainer):
                 log_msg += "\t".join(
                     [f"{k}:({e:03d}, {v:.3f})" for k, (e, v) in self.best_metrics["sem_enc"][phase].items()]
                 )
+                log_msg += f"\n  SyntacticEncoding metrics {phase}: \n   "
+                log_msg += "\t".join(
+                    [f"{k}:({e:03d}, {v:.3f})" for k, (e, v) in self.best_metrics["syn_enc"][phase].items()]
+                )
                 log_msg += f"\n  Captioning metrics {phase}: \n   "
                 log_msg += "\t".join(
                     [f"{k}:({e:03d}, {v:.3f})" for k, (e, v) in self.best_metrics["captioning"][phase].items()]
@@ -1046,9 +1068,10 @@ class DenseVideo2TextTrainer(Trainer):
                 begin_epoch = self.trainer_config.resume_config.begin_epoch
         else:
             begin_epoch = 0
-            self.best_metrics = {"programmer": {}, "sem_enc": {}, "captioning": {}, "densecap": {}}
+            self.best_metrics = {"programmer": {}, "sem_enc": {}, "syn_enc": {}, "captioning": {}, "densecap": {}}
             for p in val_phases:
                 self.best_metrics["sem_enc"][p] = {m: (0, 0) for m in sem_enc_metrics}
+                self.best_metrics["syn_enc"][p] = {m: (0, 0) for m in syn_enc_metrics}
                 self.best_metrics["captioning"][p] = {m: (0, 0) for m in cap_metrics}
                 self.best_metrics["densecap"][p] = {m: (0, 0) for m in densecap_metrics}
 
@@ -1086,9 +1109,10 @@ class DenseVideo2TextTrainer(Trainer):
             optimizer=self.optimizer, lr_lambda=[lambda_decoder, lambda_v_enc, lambda_sem_enc, lambda_syn_enc,],
         )
 
-        self.last_best_saved_epoch = {m: {} for m in ["programmer", "sem_enc", "captioning", "densecap"]}
+        self.last_best_saved_epoch = {m: {} for m in ["programmer", "sem_enc", "syn_enc", "captioning", "densecap"]}
         for p in val_phases:
             self.last_best_saved_epoch["sem_enc"][p] = {m: -1 for m in sem_enc_metrics}
+            self.last_best_saved_epoch["syn_enc"][p] = {m: -1 for m in syn_enc_metrics}
             self.last_best_saved_epoch["captioning"][p] = {m: -1 for m in cap_metrics}
             self.last_best_saved_epoch["densecap"][p] = {m: -1 for m in densecap_metrics}
 
@@ -1167,11 +1191,12 @@ class DenseVideo2TextTrainer(Trainer):
                 pos_loss_count = 0
                 cap_loss_count = 0
                 all_captions = []
+                all_syn_enc = []
+                all_sem_enc, all_gt_sem_enc = [], []
                 all_prog_ids = []
                 all_caps_ids = []
                 all_tstamps = []
                 all_f_counts = []
-                all_sem_enc, all_gt_sem_enc = [], []
                 all_cap_counts = []
                 for (
                     i,
@@ -1209,6 +1234,7 @@ class DenseVideo2TextTrainer(Trainer):
                         captions,
                         intervals,
                         caps_sem_enc_logits,
+                        caps_pos_tags,
                         caps_count,
                         _,
                     ) = self.__process_batch(
@@ -1304,6 +1330,9 @@ class DenseVideo2TextTrainer(Trainer):
                         all_sem_enc.append(caps_sem_enc_logits.to("cpu"))
                         all_gt_sem_enc.append(gt_caps_sem_enc.to("cpu"))
 
+                        # save syntatic taggings for computing evaluation metrics
+                        all_syn_enc.append((caps_pos_tags.to("cpu"), caps_count.to("cpu"), gt_caps_count.to("cpu"),))
+
                         # save captions and the captions' idx for computing evaluation metrics (only the first caps_count captions are evaluated)
                         all_captions.append((captions.to("cpu"), caps_count.to("cpu"), gt_caps_count.to("cpu"),))
                         all_caps_ids.append(cidxs)
@@ -1359,6 +1388,10 @@ class DenseVideo2TextTrainer(Trainer):
                     self.sem_enc_metrics_results = multilabel_evaluate_from_logits(
                         all_gt_sem_enc, all_sem_enc, all_cap_counts
                     )
+                    print("evaluating syntactic tagging...")
+                    self.syn_enc_metrics_results, pred_pos_tags = evaluate_from_tokens(
+                        self.pos_vocab, all_syn_enc, all_caps_ids, self.ref_pos[phase], True, ".",
+                    )
                     print("evaluating captions (basic)...")
                     self.cap_metrics_results, pred_caps = evaluate_from_tokens(
                         self.caps_vocab, all_captions, all_caps_ids, self.ref_captions[phase],
@@ -1372,6 +1405,9 @@ class DenseVideo2TextTrainer(Trainer):
                     # self.__process_results(prog_metrics_results, pred_progs, phase, epoch-1, save_checkpoints_dir, 'programmer')
                     self.__process_results(
                         self.sem_enc_metrics_results, None, phase, epoch, save_checkpoints_dir, "sem_enc",
+                    )
+                    self.__process_results(
+                        self.syn_enc_metrics_results, pred_pos_tags, phase, epoch, save_checkpoints_dir, "syn_enc",
                     )
                     self.__process_results(
                         self.cap_metrics_results, pred_caps, phase, epoch, save_checkpoints_dir, "captioning",

@@ -82,10 +82,11 @@ def get_gpu_temps(device=None):
     return temps if device is None else (temps[device.index] if "cuda" == device.type else temps[0])
 
 
-def decode_from_tokens(vocab, tokens, until_eos=True, max_length=10000):
+def decode_from_tokens(vocab, tokens, until_eos=True, max_length=10000, eos_token="<eos>"):
     words = []
+    eos_token_id = vocab(eos_token)
     for token in tokens[:max_length]:
-        if until_eos and token.item() == vocab("<eos>"):
+        if until_eos and token.item() == eos_token_id:
             break
         words.append(vocab.idx_to_word(token.item()))
     result = " ".join(words)
@@ -96,13 +97,13 @@ def decode_from_tokens(vocab, tokens, until_eos=True, max_length=10000):
     return result
 
 
-def get_sentences(vocab, outputs, gt_idxs, until_eos=True):
+def get_sentences(vocab, outputs, gt_idxs, until_eos=True, eos_token="<eos>"):
     pred_sentences = {}
     for batch_outs, batch_gt_idxs in zip(outputs, gt_idxs):
         if torch.is_tensor(batch_outs):
             for pred_tokens, gt_idx in zip(batch_outs, batch_gt_idxs):
                 # print('tensor case', pred_tokens.size())
-                pred_sentences[gt_idx.item()] = [decode_from_tokens(vocab, pred_tokens, until_eos)]
+                pred_sentences[gt_idx.item()] = [decode_from_tokens(vocab, pred_tokens, until_eos, 1000, eos_token)]
         elif type(batch_outs) is tuple:
             for v_output, v_caps_count, v_gt_caps_count, v_cidxs in zip(
                 batch_outs[0], batch_outs[1], batch_outs[2], batch_gt_idxs
@@ -110,7 +111,7 @@ def get_sentences(vocab, outputs, gt_idxs, until_eos=True):
                 count = min(v_caps_count, v_gt_caps_count)
                 for pred_tokens, cidx in zip(v_output[:count], v_cidxs[:count]):
                     # print('tuple case', pred_tokens.size())
-                    pred_sentences[cidx.item()] = [decode_from_tokens(vocab, pred_tokens, until_eos)]
+                    pred_sentences[cidx.item()] = [decode_from_tokens(vocab, pred_tokens, until_eos, 1000, eos_token)]
         else:
             raise TypeError(f"wrong type {type(batch_outs)} for batch outputs")
     return pred_sentences
@@ -131,8 +132,8 @@ def get_scores(pred_sentences, ground_truth):
     return scores
 
 
-def evaluate_from_tokens(vocab, outputs, gt_idxs, ground_truth, until_eos=True):
-    pred_sentences = get_sentences(vocab, outputs, gt_idxs, until_eos)
+def evaluate_from_tokens(vocab, outputs, gt_idxs, ground_truth, until_eos=True, eos_token="<eos>"):
+    pred_sentences = get_sentences(vocab, outputs, gt_idxs, until_eos, eos_token)
 
     # sanity
     for idx in ground_truth.keys():
