@@ -586,7 +586,7 @@ class DenseVideo2TextTrainer(Trainer):
         if (len(unfreezed) == 3 and self.stage in [1, 2]) or len(unfreezed) in [1, 2]:
             if (
                 self.pos_loss_phase[phase] > self.best_pos_loss_phase[phase]
-                and self.syn_enc_metrics_results["BLEU_4"] < self.best_metrics["syn_enc"][phase]["BLEU_4"][1]
+                and self.syn_enc_metrics_results["Bleu_4"] < self.best_metrics["syn_enc"][phase]["Bleu_4"][1]
             ):
                 self.pos_early_stop[phase] += 1
                 if self.pos_early_stop[phase] == early_stop_limits["syn_enc"]:
