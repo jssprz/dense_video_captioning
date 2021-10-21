@@ -88,7 +88,6 @@ class EnsembleDecoder(nn.Module):
     ):
         super(EnsembleDecoder, self).__init__()
 
-        self.out_size = len(caps_vocab)
         self.train_sample_max = config.train_sample_max
         self.test_sample_max = config.test_sample_max
         self.embedding_size = config.embedding_size
@@ -118,6 +117,8 @@ class EnsembleDecoder(nn.Module):
             dataset_name="MSVD",
         )
 
+        self.out = nn.Linear(avscn_dec_config.h_size + semsynan_dec_config.h_size, self.output_size)
+
     def reset_internals(self, batch_size):
         self.avscn_dec.reset_internals(batch_size)
         self.semsynan_dec.reset_internals(batch_size)
@@ -127,10 +128,14 @@ class EnsembleDecoder(nn.Module):
         self.semsynan_dec.precompute_mats(v_pool, s_tags, pos_emb)
 
     def step(self, v_feats, s_tags, pos_emb, decoder_input):
-        ls1 = self.avscn_dec.step(v_feats, decoder_input)
-        ls2 = self.semsynan_dec.step(v_feats, s_tags, pos_emb, decoder_input)
+        avscn_h = self.avscn_dec.step(v_feats, decoder_input)
+        semsynan_h = self.semsynan_dec.step(v_feats, s_tags, pos_emb, decoder_input)
 
-        return (ls1 + ls2) / 2
+        # combine
+        h = torch.cat((avscn_h, semsynan_h), dim=1)
+        word_logits = self.out(h)
+
+        return word_logits
 
     def forward_fn(self, v_feats, v_pool, s_tags, pos_emb, gt_captions, tf_p, max_words):
         bs = v_pool.size(0)
@@ -183,10 +188,9 @@ class EnsembleDecoder(nn.Module):
 
                 # (batch_size) -> (batch_size x embedding_size)
                 decoder_input = self.embedding(word_id).squeeze(1)
+                # decoder_input = self.embedd_drop(decoder_input)
+
                 embedds.append(decoder_input)
-
-                decoder_input = self.embedd_drop(decoder_input)
-
                 outputs.append(word_logits)
                 words.append(word_id)
 

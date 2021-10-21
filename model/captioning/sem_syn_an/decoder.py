@@ -129,15 +129,9 @@ class SCNDecoder(nn.Module):
         # if mask_for in self.dropM:
         #     mask = self.dropM[mask_for]
         # else:
-        #     # op1
         #     # mask = Binomial(probs=keep_prob).sample(x.size()).to(x.device)  # máscara de acuerdo a keep_prob
-
-        #     # op2
         #     mask = x.new_empty(x.size(), requires_grad=False).bernoulli_(keep_prob)
-
         #     self.dropM[mask_for] = mask
-
-        # assert x.device == mask.device, 'mask and x must be in the same device'
 
         # return x.masked_fill(mask==0, 0) * (1.0 / keep_prob)
         return x
@@ -622,7 +616,25 @@ class SemSynANDecoder(nn.Module):
             if type(m) == nn.Linear:
                 nn.init.xavier_normal_(m.weight)
 
+    def __dropout(self, x, keep_prob, mask_for):
+        if not self.training or keep_prob >= 1.0:
+            return x
+
+        if mask_for in self.dropM:
+            mask = self.dropM[mask_for]
+        else:
+            mask = x.new_empty(x.size(), requires_grad=False).bernoulli_(keep_prob)
+            self.dropM[mask_for] = mask
+
+        return x.masked_fill(mask == 0, 0) * (1.0 / keep_prob)
+
     def __adaptive_merge(self, rnn_h, v_attn, v_sem_h, v_syn_h, sem_syn_h):
+        rnn_h = self.__dropout(rnn_h, 0.8, "rnn_h")
+        v_attn = self.__dropout(v_attn, 0.5, "v_attn")
+        v_sem_h = self.__dropout(v_sem_h, 0.8, "v_sem_h")
+        v_syn_h = self.__dropout(v_syn_h, 0.8, "v_syn_h")
+        sem_syn_h = self.__dropout(sem_syn_h, 0.8, "sem_syn_h")
+
         h = torch.cat((rnn_h, v_attn), dim=1)
         beta1 = torch.sigmoid(self.merge1(h))
         beta2 = torch.sigmoid(self.merge2(h))
@@ -630,6 +642,8 @@ class SemSynANDecoder(nn.Module):
         return beta2 * aa1 + (1 - beta2) * sem_syn_h
 
     def reset_internals(self, batch_size):
+        self.dropM = {}
+
         self.v_sem_h = torch.zeros(batch_size, self.h_size).to(self.device)
         self.v_sem_c = torch.zeros(batch_size, self.h_size).to(self.device)
 
@@ -668,11 +682,7 @@ class SemSynANDecoder(nn.Module):
 
         self.rnn_h = self.__adaptive_merge(self.rnn_h, v_attn, self.v_sem_h, self.v_syn_h, self.se_sy_h)
 
-        # compute word_logits
-        # (batch_size x output_size)
-        word_logits = self.out(self.rnn_h)
-
-        return word_logits
+        return self.rnn_h
 
     def forward_fn(
         self,
@@ -695,7 +705,11 @@ class SemSynANDecoder(nn.Module):
 
         if not self.training:
             for _ in range(max_words):
-                word_logits = self.step(v_feats, s_tags, pos_emb, decoder_input)
+                self.step(v_feats, s_tags, pos_emb, decoder_input)
+
+                # compute word_logits
+                # (batch_size x output_size)
+                word_logits = self.out(self.rnn_h)
 
                 # compute word probs
                 if self.test_sample_max:
@@ -718,7 +732,11 @@ class SemSynANDecoder(nn.Module):
                 words.append(word_id)
         else:
             for seq_pos in range(gt_captions.size(1)):
-                word_logits = self.step(v_feats, s_tags, pos_emb, decoder_input)
+                self.step(v_feats, s_tags, pos_emb, decoder_input)
+
+                # compute word_logits
+                # (batch_size x output_size)
+                word_logits = self.out(self.rnn_h)
 
                 use_teacher_forcing = random.random() < teacher_forcing_p or seq_pos == 0
                 if use_teacher_forcing:

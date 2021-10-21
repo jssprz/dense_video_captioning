@@ -389,14 +389,12 @@ class AVSCNDecoder(nn.Module):
     def __adaptive_attn(self, v_attn, rnn_h, semantic_h, visual_h):
         rnn_h = self.__dropout(rnn_h, 0.8, "rnn_h")
         v_attn = self.__dropout(v_attn, 0.5, "v_attn")
-        beta = torch.sigmoid(self.merge1(torch.cat((rnn_h, v_attn), dim=1)))
-
         visual_h = self.__dropout(visual_h, 0.8, "visual_h")
-        semantic_h = self.__dropout(semantic_h, 0.8, "semantic_h")
-
+        semantic_h = self.__dropout(semantic_h, 0.8, "semantic_h")        
+        
+        beta = torch.sigmoid(self.merge1(torch.cat((rnn_h, v_attn), dim=1)))
         v_h = (torch.relu(self.v_fc(visual_h)) * semantic_h) + (beta * visual_h)
         s_h = (torch.relu(self.s_fc(semantic_h)) * visual_h) + ((1 - beta) * semantic_h)
-
         h = torch.cat((v_h, s_h), dim=1)
         return torch.relu(self.merge2(h))
 
@@ -430,11 +428,7 @@ class AVSCNDecoder(nn.Module):
             (visual_attn1 + visual_attn2) / 2, self.rnn_h, self.semantic_h, self.visual_h
         )
 
-        # compute word_logits
-        # (batch_size x output_size)
-        word_logits = self.out(self.rnn_h)
-
-        return word_logits
+        return self.rnn_h
 
     def forward_fn(
         self, v_feats, v_pool, s_tags, teacher_forcing_p=0.5, gt_captions=None, max_words=None,
@@ -450,7 +444,11 @@ class AVSCNDecoder(nn.Module):
 
         if not self.training:
             for _ in range(max_words):
-                word_logits = self.step(v_feats, decoder_input)
+                self.step(v_feats, decoder_input)
+                
+                # compute word_logits
+                # (batch_size x output_size)
+                word_logits = self.out(self.rnn_h)
 
                 # compute word probs
                 if self.test_sample_max:
@@ -471,7 +469,11 @@ class AVSCNDecoder(nn.Module):
                 words.append(word_id)
         else:
             for seq_pos in range(gt_captions.size(1)):
-                word_logits = self.step(v_feats, decoder_input)
+                self.step(v_feats, decoder_input)
+
+                # compute word_logits
+                # (batch_size x output_size)
+                word_logits = self.out(self.rnn_h)
 
                 use_teacher_forcing = random.random() < teacher_forcing_p or seq_pos == 0
                 if use_teacher_forcing:
