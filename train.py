@@ -367,10 +367,10 @@ class DenseVideo2TextTrainer(Trainer):
         # For maximizing Recall
         pos_weights = neg_samples / pos_samples
 
-        # For maximizing Precision
+        # For maximizing Precision (diden't work)
         # pos_weights = pos_samples / neg_samples
 
-        return X, pos_weights
+        return X, pos_weights, total_num_caps
 
     def __get_interval_mask(self, intervals, caps_count, max_num_chunks, proposals=None, num_estimates=128):
         aux = intervals[:, :, 1] - intervals[:, :, 0]
@@ -438,8 +438,10 @@ class DenseVideo2TextTrainer(Trainer):
         )
 
         # determine the ground truth for semantic enconding
-        caps_sem_enc_t, sem_enc_pos_weights = self.__get_sem_enc(freq_words, caps, upos)
+        caps_sem_enc_t, sem_enc_pos_weights, total_num_caps = self.__get_sem_enc(freq_words, caps, upos)
         self.sem_enc_pos_weights = sem_enc_pos_weights.to(self.device)
+
+        self.logger.info(f"Train split TAGs-percent: {caps_sem_enc_t.sum(dim=0).sum(dim=0) / total_num_caps}")
 
         # determine the ground truth for event masking
         # event_mask_t, event_proposals = self.__get_interval_mask(
@@ -495,7 +497,9 @@ class DenseVideo2TextTrainer(Trainer):
         # self.last_interval_end = max(self.last_interval_end, torch.max(intervals_t.view(-1, 2)[:,1]))
 
         # determine the ground truth for semantic enconding
-        caps_sem_enc_t, _ = self.__get_sem_enc(freq_words, caps, upos)
+        caps_sem_enc_t, _, total_num_caps = self.__get_sem_enc(freq_words, caps, upos)
+
+        self.logger.info(f"Validation split TAGs-percent: {caps_sem_enc_t.sum(dim=0).sum(dim=0) / total_num_caps}")
 
         # determine the ground truth for event masking
         # event_mask_t, _ = self.__get_interval_mask(
@@ -1094,16 +1098,16 @@ class DenseVideo2TextTrainer(Trainer):
         }
 
         def lambda_decoder(_):
-            return opt_conf.lr_decay_factor ** (self.trained_epochs["cap_dec"] // 10)
+            return max(opt_conf.lr_decay_factor ** (self.trained_epochs["cap_dec"] // 10), 1e-6)
 
         def lambda_v_enc(_):
-            return opt_conf.lr_decay_factor ** (self.trained_epochs["cap_dec"] // 10)
+            return max(opt_conf.lr_decay_factor ** (self.trained_epochs["cap_dec"] // 10), 1e-6)
 
         def lambda_sem_enc(_):
-            return opt_conf.lr_decay_factor ** (self.trained_epochs["sem_enc"] // 2)
+            return max(opt_conf.lr_decay_factor ** (self.trained_epochs["sem_enc"] // 2), 1e-6)
 
         def lambda_syn_enc(_):
-            return opt_conf.lr_decay_factor ** (self.trained_epochs["syn_enc"] // 10)
+            return max(opt_conf.lr_decay_factor ** (self.trained_epochs["syn_enc"] // 10), 1e-6)
 
         self.lr_scheduler = optim.lr_scheduler.LambdaLR(
             optimizer=self.optimizer, lr_lambda=[lambda_decoder, lambda_v_enc, lambda_sem_enc, lambda_syn_enc,],
