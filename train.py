@@ -1,4 +1,3 @@
-from operator import mul
 import os
 import sys
 import argparse
@@ -7,9 +6,11 @@ import json
 import datetime
 import logging
 import time
-from multiprocessing import Pool
+import random
+import itertools
 import heapq
 from shutil import copyfile
+from multiprocessing import Pool
 
 import numpy as np
 from scipy.signal import argrelextrema
@@ -17,6 +18,12 @@ from sklearn.neighbors import KernelDensity
 import torch
 import torch.optim as optim
 from tensorboardX import SummaryWriter
+import matplotlib.pyplot as plt
+
+import nltk
+
+nltk.download("punkt")
+nltk.download("averaged_perceptron_tagger")
 
 from utils import (
     get_freer_gpu,
@@ -29,9 +36,10 @@ from utils import (
     get_tf_ratio,
     get_trainer_str,
     get_dense_captioner_str,
+    get_visual_enc_str,
     get_sem_tagger_str,
-    get_syn_embedd_str,
     get_syn_tagger_str,
+    get_ensemble_decoder_str,
     get_avscn_decoder_str,
     get_semsynan_decoder_str,
     get_mm_str,
@@ -180,9 +188,10 @@ class DenseVideo2TextTrainer(Trainer):
         print("\nInitializing the Model...")
         self.dense_captioner = DenseCaptioner(
             self.modules_config["dense_captioner_config"],
+            self.modules_config["visual_enc_config"],
             self.modules_config["sem_tagger_config"],
-            self.modules_config["syn_embedd_config"],
             self.modules_config["syn_tagger_config"],
+            self.modules_config["ensemble_dec_config"],
             self.modules_config["avscn_dec_config"],
             self.modules_config["semsynan_dec_config"],
             self.modules_config["mm_config"],
@@ -266,7 +275,7 @@ class DenseVideo2TextTrainer(Trainer):
         print("\n****We are ready to start the training process****\n")
 
     def __load_ground_truth(self):
-        self.ref_programs, self.ref_captions, self.ref_densecaps = {}, {}, {}
+        self.ref_programs, self.ref_captions, self.ref_pos, self.ref_densecaps = {}, {}, {}, {}
 
         ref_progams_txt_path = {"val_1": os.path.join(self.dataset_folder, "val_1_ref_programs.txt")}
         ref_captions_txt_path = {"val_1": os.path.join(self.dataset_folder, "val_1_ref_captions.txt")}
@@ -284,6 +293,11 @@ class DenseVideo2TextTrainer(Trainer):
         for phase in ["val_1"]:
             self.ref_programs[phase] = load_texts(ref_progams_txt_path[phase], blacklist=ref_vidxs_blacklists[phase])
             self.ref_captions[phase] = load_texts(ref_captions_txt_path[phase], blacklist=ref_cidxs_blacklists[phase])
+            self.ref_pos[phase] = {
+                k: [" ".join([t[1] for t in nltk.pos_tag(nltk.word_tokenize(cap.lower()))]) for cap in caps]
+                for k, caps in self.ref_captions[phase].items()
+            }
+
             with open(ref_densecap_json_path[phase], "r") as f:
                 self.ref_densecaps[phase] = json.load(f)
                 for vidx in ref_vidxs_blacklists[phase]:
@@ -313,8 +327,10 @@ class DenseVideo2TextTrainer(Trainer):
             del widx2count[self.caps_vocab(w)]
 
         freq_words = heapq.nlargest(self.modules_config["sem_tagger_config"].out_size, widx2count, key=widx2count.get,)
+        self.sem_enc_keywords = [self.caps_vocab.idx_to_word(idx) for idx in freq_words]
+
         self.logger.info(f"TAGs-IDXs: {freq_words}")
-        self.logger.info(f"TAGs-words:" + " ".join([self.caps_vocab.idx_to_word(idx) for idx in freq_words]))
+        self.logger.info(f"TAGs-words: " + " ".join(self.sem_enc_keywords))
         self.logger.info(f"TAGs-freq: {[widx2count[idx] for idx in freq_words]}")
         self.logger.info(f"TAGs-total freq of tags: {sum([widx2count[idx] for idx in freq_words])}")
         self.logger.info(f"TAGs-mean freq of tags: {np.mean([widx2count[idx] for idx in freq_words])}")
@@ -339,9 +355,13 @@ class DenseVideo2TextTrainer(Trainer):
         # total number of deactivations for each tag
         neg_samples = torch.tensor(total_num_caps).repeat(len(freq_words)) - pos_samples
 
+        # For maximizing Recall
         pos_weights = neg_samples / pos_samples
 
-        return X, pos_weights
+        # For maximizing Precision (diden't work)
+        # pos_weights = pos_samples / neg_samples
+
+        return X, pos_weights, total_num_caps
 
     def __get_interval_mask(
         self, intervals, caps_count, max_num_chunks, proposals=None, num_estimates=128, min_count_per_proposal=20

@@ -1,11 +1,21 @@
 import sys
 import os
+import re
+from matplotlib.pyplot import axis
 
 import torch
-from torch._C import device
 import torch.nn as nn
 import numpy as np
-from sklearn.metrics import recall_score, precision_score, roc_auc_score, f1_score
+from sklearn.metrics import (
+    recall_score,
+    precision_score,
+    f1_score,
+    average_precision_score,
+    roc_auc_score,
+    precision_recall_curve,
+    auc,
+    multilabel_confusion_matrix,
+)
 
 sys.path.append("video_description_eval/coco-caption")
 from video_description_eval.evaluate import score
@@ -18,9 +28,26 @@ def get_freer_gpu():
         memory_available = [int(x.split()[2]) for x in open("tmp_gpu_freem", "r").readlines()]
     else:
         import subprocess
-        subprocess.run(["powershell", "-Command", "nvidia-smi -q -d Memory | Select-String -Pattern GPU -Context 0,4 > tmp_gpu_freem_aux"], capture_output=True)
-        subprocess.run(["powershell", "-Command", "cat tmp_free_mem_aux | Select-String -Pattern Free -Context 0,0  > tmp_freem"], capture_output=True)
-        memory_available = [int(x.split()[2]) for x in open("tmp_free_mem", "r", encoding="utf-16").readlines() if x != "\n"]
+
+        subprocess.run(
+            [
+                "powershell",
+                "-Command",
+                "nvidia-smi -q -d Memory | Select-String -Pattern GPU -Context 0,4 > tmp_gpu_freem_aux",
+            ],
+            capture_output=True,
+        )
+        subprocess.run(
+            [
+                "powershell",
+                "-Command",
+                "cat tmp_gpu_freem_aux | Select-String -Pattern Free -Context 0,0  > tmp_freem",
+            ],
+            capture_output=True,
+        )
+        memory_available = [
+            int(x.split()[2]) for x in open("tmp_freem", "r", encoding="utf-16").readlines() if x != "\n"
+        ]
     return np.argmax(memory_available)
 
 
@@ -30,28 +57,53 @@ def get_gpu_temps(device=None):
         temps = [int(x.split()[-2]) for x in open(f"tmp_gpu_temps_{device}", "r").readlines()]
     else:
         import subprocess
-        subprocess.run(["powershell", "-Command", f"nvidia-smi -q -d Temperature | Select-String -Pattern GPU -Context 0,4 > tmp_gpu_temp_{device}_aux"], capture_output=True)
-        subprocess.run(["powershell", "-Command", f"cat tmp_gpu_temp_{device}_aux | Select-String -Pattern 'GPU Current Temp' -Context 0,0  > tmp_gpu_temp_{device}"], capture_output=True)
-        temps = [int(x.split()[-2]) for x in open(f"tmp_gpu_temp_{device}", "r", encoding="utf-16").readlines() if x != "\n"]
-    return temps if device is None else (temps[device.index] if "cuda" == device.type else temps[0])
-    
 
-def decode_from_tokens(vocab, tokens, until_eos=True, max_length=10000):
+        subprocess.run(
+            [
+                "powershell",
+                "-Command",
+                f"nvidia-smi -q -d Temperature | Select-String -Pattern GPU -Context 0,4 > tmp_gpu_temp_{device.index}_aux",
+            ],
+            capture_output=True,
+        )
+        subprocess.run(
+            [
+                "powershell",
+                "-Command",
+                f"cat tmp_gpu_temp_{device.index}_aux | Select-String -Pattern 'GPU Current Temp' -Context 0,0  > tmp_gpu_temp_{device.index}",
+            ],
+            capture_output=True,
+        )
+        temps = [
+            int(x.split()[-2])
+            for x in open(f"tmp_gpu_temp_{device.index}", "r", encoding="utf-16").readlines()
+            if x != "\n"
+        ]
+    return temps if device is None else (temps[device.index] if "cuda" == device.type else temps[0])
+
+
+def decode_from_tokens(vocab, tokens, until_eos=True, max_length=10000, eos_token="<eos>"):
     words = []
+    eos_token_id = vocab(eos_token)
     for token in tokens[:max_length]:
-        if until_eos and token.item() == vocab("<eos>"):
+        if until_eos and token.item() == eos_token_id:
             break
         words.append(vocab.idx_to_word(token.item()))
-    return " ".join(words)
+    result = " ".join(words)
+
+    # replace unnecessary spaces before punctation
+    result = re.sub(r"\s([.,;:?!'\"](?:|$))", r"\1", result)
+
+    return result
 
 
-def get_sentences(vocab, outputs, gt_idxs, until_eos=True):
+def get_sentences(vocab, outputs, gt_idxs, until_eos=True, eos_token="<eos>"):
     pred_sentences = {}
     for batch_outs, batch_gt_idxs in zip(outputs, gt_idxs):
         if torch.is_tensor(batch_outs):
             for pred_tokens, gt_idx in zip(batch_outs, batch_gt_idxs):
                 # print('tensor case', pred_tokens.size())
-                pred_sentences[gt_idx.item()] = [decode_from_tokens(vocab, pred_tokens, until_eos)]
+                pred_sentences[gt_idx.item()] = [decode_from_tokens(vocab, pred_tokens, until_eos, 1000, eos_token)]
         elif type(batch_outs) is tuple:
             for v_output, v_caps_count, v_gt_caps_count, v_cidxs in zip(
                 batch_outs[0], batch_outs[1], batch_outs[2], batch_gt_idxs
@@ -59,7 +111,7 @@ def get_sentences(vocab, outputs, gt_idxs, until_eos=True):
                 count = min(v_caps_count, v_gt_caps_count)
                 for pred_tokens, cidx in zip(v_output[:count], v_cidxs[:count]):
                     # print('tuple case', pred_tokens.size())
-                    pred_sentences[cidx.item()] = [decode_from_tokens(vocab, pred_tokens, until_eos)]
+                    pred_sentences[cidx.item()] = [decode_from_tokens(vocab, pred_tokens, until_eos, 1000, eos_token)]
         else:
             raise TypeError(f"wrong type {type(batch_outs)} for batch outputs")
     return pred_sentences
@@ -80,8 +132,8 @@ def get_scores(pred_sentences, ground_truth):
     return scores
 
 
-def evaluate_from_tokens(vocab, outputs, gt_idxs, ground_truth, until_eos=True):
-    pred_sentences = get_sentences(vocab, outputs, gt_idxs, until_eos)
+def evaluate_from_tokens(vocab, outputs, gt_idxs, ground_truth, until_eos=True, eos_token="<eos>"):
+    pred_sentences = get_sentences(vocab, outputs, gt_idxs, until_eos, eos_token)
 
     # sanity
     for idx in ground_truth.keys():
@@ -92,23 +144,16 @@ def evaluate_from_tokens(vocab, outputs, gt_idxs, ground_truth, until_eos=True):
     return metrics_results, pred_sentences
 
 
-def densecap_evaluate_from_tokens(vocab, vidxs, tstamps, pred_intervals, pred_caps, ground_truth_dict):
+def densecap_evaluate_from_tokens(vocab, vidxs, pred_tstamps, pred_caps, ground_truth_dict):
     prediction = {}
-    for batch_pred_intervals, batch_pred_caps, batch_vidxs, batch_tstamps in zip(
-        pred_intervals, pred_caps, vidxs, tstamps
-    ):
-        for v_intervals, v_caps, v_caps_count, vidx, v_tstamps in zip(
-            batch_pred_intervals, batch_pred_caps[0], batch_pred_caps[1], batch_vidxs, batch_tstamps,
+    for batch_pred_caps, batch_vidxs, batch_tstamps in zip(pred_caps, vidxs, pred_tstamps):
+        for v_caps, v_caps_count, vidx, v_tstamps in zip(
+            batch_pred_caps[0], batch_pred_caps[1], batch_vidxs, batch_tstamps
         ):
-            # prediction[str(vidx.item())] = [{'sentence': 'hola a todos', 'timestamp': [0., 1.]}, {'sentence': 'hello world', 'timestamp': [1., 2.]}]
-
             if v_caps_count > 0:
                 prediction[str(vidx.item())] = [
-                    {
-                        "sentence": decode_from_tokens(vocab, pred_tokens),
-                        "timestamp": [v_tstamps[int(i[0])], v_tstamps[int(i[1])]],
-                    }
-                    for i, pred_tokens in zip(v_intervals[:v_caps_count], v_caps[:v_caps_count])
+                    {"sentence": decode_from_tokens(vocab, pred_tokens), "timestamp": [ts[0].item(), ts[1].item()],}
+                    for ts, pred_tokens in zip(v_tstamps[:v_caps_count], v_caps[:v_caps_count])
                 ]
 
     scores = densecap_score(
@@ -167,22 +212,37 @@ def multilabel_evaluate_from_logits(gt_multihots, pred_logits, cap_counts):
     f1_weighted = f1_score(y_true, y_pred_sparse, average="weighted")
     f1_samples = f1_score(y_true, y_pred_sparse, average="samples")
 
+    # confusion matrices
+    ml_conf_mat = multilabel_confusion_matrix(y_true, y_pred_sparse)
+    norm_ml_conf_mat = ml_conf_mat.astype("float") / ml_conf_mat.sum(axis=2)[:, :, np.newaxis]
+
     # remove not represented labels
     bad_labels = np.argwhere(np.all(y_true[..., :] == 0, axis=0))
     y_true_filtered = np.delete(y_true, bad_labels, axis=1)
     y_pred_filtered = np.delete(y_pred, bad_labels, axis=1)
     print(f"labels without positive samples: {bad_labels}")
 
+    # average_precision_score (AP). AP summarizes a precision-recall curve
+    ap_micro = average_precision_score(y_true_filtered, y_pred_filtered, average="micro")
+    ap_macro = average_precision_score(y_true_filtered, y_pred_filtered, average="macro")
+    ap_weighted = average_precision_score(y_true_filtered, y_pred_filtered, average="weighted")
+
     # roc_auc
     roc_auc_micro = roc_auc_score(y_true_filtered, y_pred_filtered, average="micro")
     roc_auc_macro = roc_auc_score(y_true_filtered, y_pred_filtered, average="macro")
     roc_auc_weighted = roc_auc_score(y_true_filtered, y_pred_filtered, average="weighted")
+
+    # precision-recall-curve_auc
+    # p,r,_ = precision_recall_curve(y_true, y_pred)
+    # prc_auc = auc(p, r)
 
     # remove samples with only one class (without positive samples)
     bad_samples = np.argwhere(np.all(y_true[:, ...] == 0, axis=1))
     print(f"samples without positive labels: {bad_samples}")
     y_true_filtered = np.delete(y_true, bad_samples, axis=0)
     y_pred_filtered = np.delete(y_pred, bad_samples, axis=0)
+
+    ap_samples = roc_auc_score(y_true_filtered, y_pred_filtered, average="samples")
     roc_auc_samples = roc_auc_score(y_true_filtered, y_pred_filtered, average="samples")
 
     return {
@@ -198,10 +258,17 @@ def multilabel_evaluate_from_logits(gt_multihots, pred_logits, cap_counts):
         "F1/macro": f1_macro,
         "F1/weighted": f1_weighted,
         "F1/samples": f1_samples,
+        "AP/micro": ap_micro,
+        "AP/macro": ap_macro,
+        "AP/weighted": ap_weighted,
+        "AP/samples": ap_samples,
         "ROC-AUC/micro": roc_auc_micro,
         "ROC-AUC/macro": roc_auc_macro,
         "ROC-AUC/weighted": roc_auc_weighted,
         "ROC-AUC/samples": roc_auc_samples,
+        # "PRC-AUC": prc_auc,
+        "ml-conf-mat": ml_conf_mat,
+        "norm-ml-conf-mat": norm_ml_conf_mat,
     }
 
 
@@ -315,37 +382,50 @@ def get_dense_captioner_str(config):
     return f"programmer max_clip_len-{config.max_clip_len}.future_steps-{config.future_steps}.hs-{hs}.drop-{config.drop_p}.train-{train_sample}.test-{test_sample}"
 
 
+def get_visual_enc_str(config):
+    drops = str([config.mapping_in_drop_p] + config.mapping_h_drop_ps)
+    hs = str(config.mapping_h_sizes)
+    return f"v-enc hs-{hs}.out-{config.out_size}.drops-{drops}.lastbn-{config.have_last_bn}"
+
+
 def get_sem_tagger_str(config):
-    drops = str([config.in_drop_p] + config.drop_ps)
-    hs = str(config.h_sizes)
+    drops = str([config.mapping_in_drop_p] + config.mapping_h_drop_ps)
+    hs = str(config.mapping_h_sizes)
     return f"sem hs-{hs}.out-{config.out_size}.drops-{drops}.lastbn-{config.have_last_bn}"
 
 
-def get_syn_embedd_str(config):
-    hs = str(config.v_enc_config.h_sizes)
-    in_size = config.v_enc_config.cnn_feats_size + config.v_enc_config.c3d_feats_size
-    return f"syn in-{in_size}.hs-{hs}.out-{config.v_enc_config.out_size}.drop-{config.v_enc_config.drop_p}.lastbn-{config.v_enc_config.have_last_bn}.norm-{config.v_enc_config.norm}"
-
-
 def get_syn_tagger_str(config):
-    hs = str([config.h_size] + [config.rnn_h_size])
+    c = config.enc_config
+    in_size = c.cnn_feats_size + c.c3d_feats_size
+    enc = f"syn-enc in-{in_size}.out-{c.out_size}.drop-{c.drop_p}.lastbn-{c.have_last_bn}.norm-{c.norm}"
+
+    c = config.dec_config
+    hs = str([c.h_size] + [c.rnn_h_size])
+    train_sample = "max" if c.train_sample_max else "dist"
+    test_sample = "max" if c.test_sample_max else "dist"
+    dec = f"syn-dec in-{c.in_seq_length}.posemb-{c.embedding_size}.rnnin-{c.rnn_in_size}.hs-{hs}. drop-{c.drop_p}.layers-{c.num_layers}.train-{train_sample}.test-{test_sample}"
+
+    return f"{enc} {dec}"
+
+
+def get_ensemble_decoder_str(config):
     train_sample = "max" if config.train_sample_max else "dist"
     test_sample = "max" if config.test_sample_max else "dist"
-    return f"syn-dec in-{config.in_seq_length}.posemb-{config.posemb_size}.rnnin-{config.rnn_in_size}.hs-{hs}. drop-{config.drop_p}.layers-{config.num_layers}.train-{train_sample}.test-{test_sample}"
+    return f"dec in-{config.in_seq_length}.drop-{config.drop_p}.train-{train_sample}.test-{test_sample}"
 
 
 def get_avscn_decoder_str(config):
     hs = str([config.h_size] + [config.rnn_h_size])
     train_sample = "max" if config.train_sample_max else "dist"
     test_sample = "max" if config.test_sample_max else "dist"
-    return f"avscn-dec in-{config.in_seq_length}.rnnin-{config.rnn_in_size}.hs-{hs}.drop-{config.drop_p}.layers-{config.num_layers}.train-{train_sample}.test-{test_sample}"
+    return f"avscn-dec rnnin-{config.rnn_in_size}.hs-{hs}.drop-{config.drop_p}.layers-{config.num_layers}"
 
 
 def get_semsynan_decoder_str(config):
     hs = str([config.h_size] + [config.rnn_h_size])
     train_sample = "max" if config.train_sample_max else "dist"
     test_sample = "max" if config.test_sample_max else "dist"
-    return f"semsynan-dec in-{config.in_seq_length}.posemb-{config.posemb_size}.rnnin-{config.rnn_in_size}.hs-{hs}. drop-{config.drop_p}.layers-{config.num_layers}.train-{train_sample}.test-{test_sample}"
+    return f"semsynan-dec posemb-{config.syn_enc_size}.rnnin-{config.rnn_in_size}.hs-{hs}. drop-{config.drop_p}.layers-{config.num_layers}"
 
 
 def get_mm_str(config):
