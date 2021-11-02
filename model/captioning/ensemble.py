@@ -128,14 +128,13 @@ class EnsembleDecoder(nn.Module):
         self.semsynan_dec.precompute_mats(v_pool, s_tags, pos_emb)
 
     def step(self, v_feats, s_tags, pos_emb, decoder_input):
-        avscn_h = self.avscn_dec.step(v_feats, decoder_input)
-        semsynan_h = self.semsynan_dec.step(v_feats, s_tags, pos_emb, decoder_input)
+        self.avscn_dec.step(v_feats, decoder_input)
+        self.semsynan_dec.step(v_feats, s_tags, pos_emb, decoder_input)
 
         # combine
-        h = torch.cat((avscn_h, semsynan_h), dim=1)
-        word_logits = self.out(h)
+        self.rnn_h = torch.cat((self.avscn_dec.rnn_h, self.semsynan_dec.rnn_h), dim=1)
 
-        return word_logits
+        return self.rnn_h
 
     def forward_fn(self, v_feats, v_pool, s_tags, pos_emb, gt_captions, tf_p, max_words):
         bs = v_pool.size(0)
@@ -147,9 +146,18 @@ class EnsembleDecoder(nn.Module):
         # (batch_size x embedding_size)
         decoder_input = torch.zeros(bs, self.embedding_size).to(v_pool.device)
 
+        def append_temporals():
+            embedds.append(decoder_input)
+            outputs.append(word_logits)
+            words.append(word_id)
+
         if not self.training:
             for _ in range(max_words):
-                word_logits = self.step(v_feats, s_tags, pos_emb, decoder_input)
+                self.step(v_feats, s_tags, pos_emb, decoder_input)
+
+                # compute word_logits
+                # (batch_size x output_size)
+                word_logits = self.out(self.rnn_h)
 
                 # compute word probs
                 if self.test_sample_max:
@@ -165,12 +173,14 @@ class EnsembleDecoder(nn.Module):
                 decoder_input = self.embedding(word_id).squeeze(1)
                 # decoder_input = self.embedd_drop(decoder_input)
 
-                embedds.append(decoder_input)
-                outputs.append(word_logits)
-                words.append(word_id)
+                append_temporals()
         else:
             for seq_pos in range(gt_captions.size(1)):
-                word_logits = self.step(v_feats, s_tags, pos_emb, decoder_input)
+                self.step(v_feats, s_tags, pos_emb, decoder_input)
+
+                # compute word_logits
+                # (batch_size x output_size)
+                word_logits = self.out(self.rnn_h)
 
                 use_teacher_forcing = random.random() < tf_p or seq_pos == 0
                 if use_teacher_forcing:
@@ -190,9 +200,7 @@ class EnsembleDecoder(nn.Module):
                 decoder_input = self.embedding(word_id).squeeze(1)
                 # decoder_input = self.embedd_drop(decoder_input)
 
-                embedds.append(decoder_input)
-                outputs.append(word_logits)
-                words.append(word_id)
+                append_temporals()
 
         return (
             torch.cat([o.unsqueeze(1) for o in outputs], dim=1).contiguous(),

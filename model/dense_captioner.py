@@ -408,16 +408,8 @@ class DenseCaptioner(nn.Module):
                 {k[len(sub_key) :]: v for k, v in state_dict.items() if sub_key in k}
             )
         if resume_config.load_cap_decoder:
-            sub_key = "clip_captioner.decoder.embedding."
-            self.clip_captioner.decoder.embedding.load_state_dict(
-                {k[len(sub_key) :]: v for k, v in state_dict.items() if sub_key in k}
-            )
-            sub_key = "clip_captioner.decoder.avscn_dec."
-            self.clip_captioner.decoder.avscn_dec.load_state_dict(
-                {k[len(sub_key) :]: v for k, v in state_dict.items() if sub_key in k}
-            )
-            sub_key = "clip_captioner.decoder.semsynan_dec."
-            self.clip_captioner.decoder.semsynan_dec.load_state_dict(
+            sub_key = "clip_captioner.decoder."
+            self.clip_captioner.decoder.load_state_dict(
                 {k[len(sub_key) :]: v for k, v in state_dict.items() if sub_key in k}
             )
         if resume_config.load_programmer:

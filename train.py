@@ -898,6 +898,7 @@ class DenseVideo2TextTrainer(Trainer):
                     "dense_captioner": self.dense_captioner.state_dict(),
                     "optimizer": self.optimizer.state_dict(),
                     "best_metrics": self.best_metrics,
+                    "trained_epochs": self.trained_epochs,
                     "avg_tuncation": self.avg_truncation,
                     "avg_caps": self.avg_caps,
                 },
@@ -1070,6 +1071,16 @@ class DenseVideo2TextTrainer(Trainer):
             # 5. set the begin_epoch variable for logging
             if self.trainer_config.resume_config.begin_epoch != -1:
                 begin_epoch = self.trainer_config.resume_config.begin_epoch
+
+            if "trained_epochs" in checkpoint:
+                self.trained_epochs = checkpoint["trained_epochs"]
+            else:
+                self.trained_epochs = {
+                    m: DenseVideo2TextTrainer.trained_epochs_per_module(
+                        begin_epoch, self.change_after, m, self.use_dynamic_backward
+                    )
+                    for m in ["cap_dec", "sem_enc", "syn_enc"]
+                }
         else:
             begin_epoch = 0
             self.best_metrics = {"programmer": {}, "sem_enc": {}, "syn_enc": {}, "captioning": {}, "densecap": {}}
@@ -1078,6 +1089,8 @@ class DenseVideo2TextTrainer(Trainer):
                 self.best_metrics["syn_enc"][p] = {m: (0, 0) for m in syn_enc_metrics}
                 self.best_metrics["captioning"][p] = {m: (0, 0) for m in cap_metrics}
                 self.best_metrics["densecap"][p] = {m: (0, 0) for m in densecap_metrics}
+
+            self.trained_epochs = {m: 0 for m in ["cap_dec", "sem_enc", "syn_enc"]}
 
         self.dense_captioner.freeze_config(config_obj=self.trainer_config.freezing_config)
         self.freezed_modules = {
@@ -1090,18 +1103,12 @@ class DenseVideo2TextTrainer(Trainer):
         # initialize lr schedulers
         self.change_after = 5
         opt_conf = self.trainer_config.optimizer_config
-        self.trained_epochs = {
-            m: DenseVideo2TextTrainer.trained_epochs_per_module(
-                begin_epoch, self.change_after, m, self.use_dynamic_backward
-            )
-            for m in ["cap_dec", "sem_enc", "syn_enc"]
-        }
 
         def lambda_decoder(_):
-            return max(opt_conf.lr_decay_factor ** (self.trained_epochs["cap_dec"] // 10), 1e-6)
+            return max(opt_conf.lr_decay_factor ** (self.trained_epochs["cap_dec"] // 15), 1e-6)
 
         def lambda_v_enc(_):
-            return max(opt_conf.lr_decay_factor ** (self.trained_epochs["cap_dec"] // 10), 1e-6)
+            return max(opt_conf.lr_decay_factor ** (self.trained_epochs["cap_dec"] // 15), 1e-6)
 
         def lambda_sem_enc(_):
             return max(opt_conf.lr_decay_factor ** (self.trained_epochs["sem_enc"] // 2), 1e-6)

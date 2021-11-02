@@ -703,6 +703,11 @@ class SemSynANDecoder(nn.Module):
         # (batch_size x embedding_size)
         decoder_input = torch.zeros(bs, self.embedding_size).to(self.device)
 
+        def append_temporals():
+            embedds.append(decoder_input)
+            outputs.append(word_logits)
+            words.append(word_id)
+
         if not self.training:
             for _ in range(max_words):
                 self.step(v_feats, s_tags, pos_emb, decoder_input)
@@ -727,9 +732,7 @@ class SemSynANDecoder(nn.Module):
                 decoder_input = self.embedding(word_id).squeeze(1)
                 # decoder_input = self.embedd_drop(decoder_input)
 
-                embedds.append(decoder_input)
-                outputs.append(word_logits)
-                words.append(word_id)
+                append_temporals()
         else:
             for seq_pos in range(gt_captions.size(1)):
                 self.step(v_feats, s_tags, pos_emb, decoder_input)
@@ -758,9 +761,7 @@ class SemSynANDecoder(nn.Module):
                 decoder_input = self.embedding(word_id).squeeze(1)
                 # decoder_input = self.embedd_drop(decoder_input)
 
-                embedds.append(decoder_input)
-                outputs.append(word_logits)
-                words.append(word_id)
+                append_temporals()
 
         return (
             torch.cat([o.unsqueeze(1) for o in outputs], dim=1).contiguous(),
