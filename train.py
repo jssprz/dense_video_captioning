@@ -566,7 +566,7 @@ class DenseVideo2TextTrainer(Trainer):
             prog_lens=prog_lens,
             event_proposals_s=event_s_mask_t,
             event_proposals_e=event_e_mask_t,
-            batch_size=self.trainer_config.batch_size,
+            batch_size=self.trainer_config.train_batch_size,
             train=True,
             num_workers=trainer_config.loader_num_workers,
             pin_memory=trainer_config.loader_pin_memory,
@@ -622,7 +622,7 @@ class DenseVideo2TextTrainer(Trainer):
             prog_lens=prog_lens,
             event_proposals_s=event_s_mask_t,
             event_proposals_e=event_e_mask_t,
-            batch_size=self.trainer_config.batch_size * 10,
+            batch_size=self.trainer_config.valid_batch_size,
             train=False,
             num_workers=trainer_config.loader_num_workers,
             pin_memory=trainer_config.loader_pin_memory,
@@ -1423,17 +1423,21 @@ if __name__ == "__main__":
     dense_captioner_config.str = get_dense_captioner_str(dense_captioner_config)
     print(dense_captioner_config.str)
 
+    visual_enc_config = ConfigDict(config["visual_enc_config"])
+    visual_enc_config.str = get_visual_enc_str(visual_enc_config)
+    print(visual_enc_config.str)
+
     sem_tagger_config = ConfigDict(config["sem_tagger_config"])
     sem_tagger_config.str = get_sem_tagger_str(sem_tagger_config)
     print(sem_tagger_config.str)
 
-    syn_embedd_config = ConfigDict(config["syn_embedd_config"])
-    syn_embedd_config.str = get_syn_embedd_str(syn_embedd_config)
-    print(syn_embedd_config.str)
-
     syn_tagger_config = ConfigDict(config["syn_tagger_config"])
     syn_tagger_config.str = get_syn_tagger_str(syn_tagger_config)
     print(syn_tagger_config.str)
+
+    ensemble_dec_config = ConfigDict(config["ensemble_dec_config"])
+    ensemble_dec_config.str = get_ensemble_decoder_str(ensemble_dec_config)
+    print(ensemble_dec_config.str)
 
     avscn_dec_config = ConfigDict(config["avscn_decoder_config"])
     avscn_dec_config.str = get_avscn_decoder_str(avscn_dec_config)
@@ -1458,9 +1462,10 @@ if __name__ == "__main__":
     print("Initializing the experiment.......")
     modules_config = {
         "dense_captioner_config": dense_captioner_config,
+        "visual_enc_config": visual_enc_config,
         "sem_tagger_config": sem_tagger_config,
-        "syn_embedd_config": syn_embedd_config,
         "syn_tagger_config": syn_tagger_config,
+        "ensemble_dec_config": ensemble_dec_config,
         "avscn_dec_config": avscn_dec_config,
         "semsynan_dec_config": semsynan_dec_config,
         "mm_config": mm_config,

@@ -331,9 +331,10 @@ class DenseCaptioner(nn.Module):
     def __init__(
         self,
         config,
+        visual_enc_config,
         sem_tagger_config,
-        syn_embedd_config,
         syn_tagger_config,
+        ensemble_dec_config,
         avscn_dec_config,
         semsynan_dec_config,
         mm_config,
@@ -350,7 +351,6 @@ class DenseCaptioner(nn.Module):
     ):
         super(DenseCaptioner, self).__init__()
 
-        self.feats_size = config.cnn_feats_size + config.c3d_feats_size
         self.train_sample_max = config.train_sample_max
         self.test_sample_max = config.test_sample_max
         self.max_clip_len = config.max_clip_len
@@ -575,90 +575,82 @@ class DenseCaptioner(nn.Module):
         self.q = torch.ones(bs, dtype=torch.long).to(device)
         # self.x = torch.zeros(bs, self.embedding_size).to(device)
 
+        # concat visual features of frames
         v_fcat = torch.cat(v_feats, dim=-1)
+
+        # initialize the visual features of each pointer, averaging the first frames
         v_p = v_fcat[:, : self.future_steps, :].mean(dim=1)
         v_q = v_fcat[:, 1 : 1 + self.future_steps, :].mean(dim=1)
 
-        # self.h = torch.zeros(bs, self.h_size).to(device)
-        # self.c = torch.zeros(bs, self.h_size).to(device)
-        # self.prev_match = torch.zeros(bs, self.mm_size).to(device)
+        # list of indices to be used for fill-in the first step of recurrencies
+        idxs = list(range(bs))
+
+        # INITIALIZE TENSORS OF START PROPOSALS MODULE
+        # initialize the hidden and cell state of first layer (forward) of START MODULE
         prop_s_h_0 = torch.zeros(bs, self.prop_rnn_h_size).to(device)
         prop_s_c_0 = torch.zeros(bs, self.prop_rnn_h_size).to(device)
 
-        idxs = list(range(bs))
+        # compute first step of first layer (forward) of START MODULE from the v_p features
         prop_s_h_0[idxs, :], prop_s_c_0[idxs, :] = self.prop_s_rnn_0(v_p, (prop_s_h_0[idxs, :], prop_s_c_0[idxs, :]))
 
+        # initialize the hidden states of recurrent layer to compute backward of START MODULE
         prop_s_back_h_0 = torch.zeros(bs, self.prop_rnn_h_size).to(device)
-        prev_s_back_end = torch.full((bs,), -1, dtype=torch.long).to(device)
 
+        # initialize the hidden and cell state of second layer (forward) of START MODULE
         prop_s_h_1 = torch.zeros(bs, self.prop_rnn_h_size).to(device)
         prop_s_c_1 = torch.zeros(bs, self.prop_rnn_h_size).to(device)
 
+        # initialize tensor to store the logits of START PROPOSALS
+        prop_logits_s = torch.zeros_like(gt_prop_s)
+
+        # INITIALIZE TENSORS OF END PROPOSALS MODULE
+        # initialize the hidden and cell state of first layer (forward) of END MODULE
         prop_e_h_0 = torch.zeros(bs, self.prop_rnn_h_size).to(device)
         prop_e_c_0 = torch.zeros(bs, self.prop_rnn_h_size).to(device)
+
+        # compute first two steps of first layer (forward) of END MODULE from the v_p and v_q features, respectively
         prop_e_h_0[idxs, :], prop_e_c_0[idxs, :] = self.prop_e_rnn_0(v_p, (prop_e_h_0[idxs, :], prop_e_c_0[idxs, :]))
         prop_e_h_0[idxs, :], prop_e_c_0[idxs, :] = self.prop_e_rnn_0(v_q, (prop_e_h_0[idxs, :], prop_e_c_0[idxs, :]))
+
+        # set the greater positions reached by the first layer (forward) of END MODULE similar to self.q positions
+        # this tensor is used to avoid the computation of first layar step over the same visual features
         prop_e_0_pos = torch.ones(bs, dtype=torch.long).to(device)
 
+        # initialize the hidden states of recurrent layer to compute backward of END MODULE
         prop_e_back_h_0 = torch.zeros(bs, self.prop_rnn_h_size).to(device)
 
+        # initialize the hidden and cell state of second layer (forward) of END MODULE
         prop_e_h_1 = torch.zeros(bs, self.prop_rnn_h_size).to(device)
         prop_e_c_1 = torch.zeros(bs, self.prop_rnn_h_size).to(device)
 
-        # precomputing weights related to the prev_match only
-        # self.rnn_cell.precompute_dots_4_m(self.prev_match, var_drop_p=0.1)
+        # initialize tensor to store the logits of END PROPOSALS
+        prop_logits_e = torch.zeros_like(gt_prop_e)
 
-        # condition for finishing the process, according if we are training or testing
+        # STOP CONDITION, according if we are training or testing
         # if self.training:
         # iterate at least prog_len steps, generating at least a caption for each video
         condition = lambda i: i < prog_len and not torch.all(
             caps_count >= gt_caps_count
         )  # or torch.any(caps_count < 1)
 
-        # initialize result tensors according to the sizes of ground truth
-        # captions = torch.zeros_like(gt_captions)
-        # caps_sem_enc = torch.zeros_like(gt_sem_enc)
-        # pos_tags = torch.zeros_like(gt_pos)
-        # intervals = torch.zeros_like(gt_intervals, dtype=torch.float)
-        prop_logits_s = torch.zeros_like(gt_prop_s)
-        prop_logits_e = torch.zeros_like(gt_prop_e)
-        # proposals_logits = torch.zeros(bs, captions.size(1), gt_proposals.size(2))
-        # else:
-        #     # iterate until all pointers reach the end
-        #     condition = (
-        #         lambda i: i < max_prog
-        #         and not torch.all(self.p >= max_chunks - 1)
-        #         and not torch.all(caps_count >= max_caps)
-        #     )
-
-        #     # initialize result tensors according to the maximum sizes
-        #     program = torch.zeros(bs, max_prog).to(device)
-        #     captions = torch.zeros((bs, max_caps, max_cap), dtype=torch.long).to(device)
-        #     # caps_sem_enc = torch.zeros(bs, max_caps, self.sem_enc_size).to(device)
-        #     # pos_tags = torch.zeros(bs, max_caps, max_cap).to(device)
-        #     intervals = torch.zeros(bs, max_caps, 2).to(device)
-        #     proposals_logits = torch.zeros(bs, max_chunks, self.num_proposals).to(device)
-
-        # prog_logits = torch.zeros(program.size(0), program.size(1), self.progs_vocab_size).to(device)
-        # caps_logits = torch.zeros(captions.size(0), captions.size(1), captions.size(2), self.caps_vocab_size).to(
-        #     device
-        # )
-        # pos_tag_logits = torch.zeros(pos_tags.size(0), pos_tags.size(1), pos_tags.size(2), self.pos_vocab_size).to(
-        #     device
-        # )
-
         seq_pos = 0
         while condition(seq_pos):
             # self.__step__(seq_pos, v_feats)
             a_id = gt_program[:, seq_pos]
 
-            # updates the p and q positions for each video, and save sub-batch of video clips to be described
+            # get idxs of videos that require the pointers be skipped
             vix_2_skip = (a_id == 0).nonzero(as_tuple=True)[0]
+            # move pointers according to the skip instruction
             self.p[vix_2_skip] += 1
             self.q[vix_2_skip] = self.p[vix_2_skip] + 1
 
+            # get idxs of videos that require new visual features be enqueued
             vix_2_adv = (a_id == 1).nonzero(as_tuple=True)[0]
+            # move the q pointers according to the equeue instruction
             self.q[vix_2_adv] += 1
+
+            # refine the idxs of videos to be advanced according to the greated values stored in prop_e_0_pos.
+            # Here we also consider the vix_2_skip idxs because skip instuction can produce a greater q than the position stored in prop_e_0_pos
             vix_2_adv = torch.tensor(
                 list(
                     set(
@@ -669,37 +661,22 @@ class DenseCaptioner(nn.Module):
                 dtype=torch.long,
             )
 
+            # get idxs of videos that require a new caption be generated
             vix_2_dscr = (a_id == 2).nonzero(as_tuple=True)[0]
 
-            # for i, a in enumerate(a_id):
-            #     if a == 0:
-            #         # skip
-            #         self.p[i] += 1
-            #         self.q[i] = self.p[i] + 1
-            #         vix_2_skip.append(i)
-            #         if self.q[i] > self.prop_e_0_pos[i]:
-            #             vix_2_adv.append(i)
-            #     elif a == 1:
-            #         # enqueue
-            #         self.q[i] += 1
-            #         if self.q[i] > self.prop_e_0_pos[i]:
-            #             vix_2_adv.append(i)
-            #     elif a == 2:
-            #         # generate, save interval to be described. It going to be used for constructiong a captioning sub-batch
-            #         vix_2_dscr.append(i)
-            #         # intervals[i, caps_count[i], :] = torch.tensor([self.p[i], self.q[i]])
-            #         # intervals[i, caps_count[i], 0] = self.p[i]
-            #         # intervals[i, caps_count[i], 1] = self.q[i]
-
+            # advance p pointers and reset q pointers for videos that produce skip instruction
             if len(vix_2_skip) > 0:
                 # fidx = torch.min(self.p[vix_2_skip], feats_count[vix_2_skip])
                 # v_p = v_fcat[vix_2_skip, fidx, :]
+
+                # determine the initial and end frames of windows used to encode the visual features related to pointer p
                 fidx_from = torch.min(self.p[vix_2_skip], feats_count[vix_2_skip] - self.future_steps)
                 fidx_to = torch.min(self.p[vix_2_skip] + self.future_steps, feats_count[vix_2_skip])
 
+                # tensor to be filled according to the number of frames in windows
                 v_p = torch.zeros(len(vix_2_skip), v_fcat.size(-1)).to(device)
 
-                # the videos with at least the minimum num of features to compute attention
+                # videos with windows that have at least the minimum num of frames required to compute the attention
                 attn_mask = (fidx_from >= 0).nonzero(as_tuple=True)[0]
                 if len(attn_mask):
                     vix_2_attn = vix_2_skip[attn_mask]
@@ -713,27 +690,33 @@ class DenseCaptioner(nn.Module):
                         prop_s_h_0[vix_2_attn, :],
                     )
 
-                # the videos with less than the minimum num of features to compute attention
+                # videos with windows that have less than the minimum num of frames required to compute the attention
                 fill_mask = (fidx_from < 0).nonzero(as_tuple=True)[0]
                 if len(fill_mask):
                     vix_2_fill = vix_2_skip[fill_mask]
                     v_p[fill_mask] = v_fcat[vix_2_fill, torch.min(self.p[vix_2_fill], feats_count[vix_2_fill]), :]
 
+                # compute a recurrent step of the first layer (forward) of START MODULE
                 prop_s_h_0[vix_2_skip, :], prop_s_c_0[vix_2_skip, :] = self.prop_s_rnn_0(
                     v_p, (prop_s_h_0[vix_2_skip, :], prop_s_c_0[vix_2_skip, :])
                 )
 
+            # advance the q pointers for videos that produce enqueue instruction
             if len(vix_2_adv) > 0:
+                # update the gratest positions stored in prop_e_0_pos
                 prop_e_0_pos[vix_2_adv] = self.q[vix_2_adv]
 
                 # fidx = torch.min(self.q[vix_2_adv], feats_count[vix_2_adv])
                 # v_q = v_fcat[vix_2_adv, fidx, :]
+
+                # determine the initial and end frames of windows used to encode the visual features related to pointer q
                 fidx_from = torch.min(self.q[vix_2_adv], feats_count[vix_2_adv] - self.future_steps)
                 fidx_to = torch.min(self.q[vix_2_adv] + self.future_steps, feats_count[vix_2_adv])
 
+                # tensor to be filled according to the number of frames in windows
                 v_q = torch.zeros(len(vix_2_adv), v_fcat.size(-1)).to(device)
 
-                # the videos with at least the minimum num of features to compute attention
+                # videos with windows that have at least the minimum num of frames required to compute the attention
                 attn_mask = (fidx_from >= 0).nonzero(as_tuple=True)[0]
                 if len(attn_mask):
                     vix_2_attn = vix_2_adv[attn_mask]
@@ -747,13 +730,14 @@ class DenseCaptioner(nn.Module):
                         prop_e_h_0[vix_2_attn, :],
                     )
 
-                # the videos with less than the minimum num of features to compute attention
+                # videos with windows that have less than the minimum num of frames required to compute the attention
                 fill_mask = (fidx_from < 0).nonzero(as_tuple=True)[0]
                 if len(fill_mask):
                     vix_2_fill = vix_2_adv[fill_mask]
                     v_q[fill_mask] = v_fcat[vix_2_fill, torch.min(self.q[vix_2_fill], feats_count[vix_2_fill]), :]
 
-                (prop_e_h_0[vix_2_adv, :], prop_e_c_0[vix_2_adv, :],) = self.prop_e_rnn_0(
+                # compute a recurrent step of the first layer (forward) of END MODULE
+                prop_e_h_0[vix_2_adv, :], prop_e_c_0[vix_2_adv, :] = self.prop_e_rnn_0(
                     v_q, (prop_e_h_0[vix_2_adv, :], prop_e_c_0[vix_2_adv, :])
                 )
 
@@ -765,44 +749,37 @@ class DenseCaptioner(nn.Module):
                 # clip_global = self.v_p_q_pool[vix_2_dscr, :]
 
                 # START MODULE
-                # compute prop_s_back_rnn_0 from features in back direction
+                # compute the recurrency on frames previous to poiter p in backward direction
                 ends = torch.min(self.p[vix_2_dscr] + 1, feats_count[vix_2_dscr])
                 starts = (ends - max_back_steps).clamp(min=0)
-                # vix_2_back = ((starts == 0) + (starts > prev_s_back_end[vix_2_dscr])).nonzero(as_tuple=True)[0]
-                vix_2_back = torch.arange(len(vix_2_dscr))
-                if len(vix_2_back):
-                    # print("s: ", prev_s_back_end[vix_2_dscr][vix_2_back], vix_2_dscr[vix_2_back], starts, ends)
-                    prev_s_back_end[vix_2_dscr[vix_2_back]] = ends[vix_2_back]
-                    sub_v_feats_padded = pad_sequence(
-                        [
-                            v_fcat[vix_2_dscr][v, s:e, :].flip((0,))
-                            for v, s, e in zip(vix_2_back, starts[vix_2_back], ends[vix_2_back])
-                        ],
-                        batch_first=True,
-                    )
-                    sub_v_feats_packed = pack_padded_sequence(
-                        input=sub_v_feats_padded,
-                        lengths=(ends[vix_2_back] - starts[vix_2_back]).to("cpu"),
-                        batch_first=True,
-                        enforce_sorted=False,
-                    )
-                    _, (prop_s_back_h_0[vix_2_dscr[vix_2_back]], _) = self.prop_s_back_rnn_0(sub_v_feats_packed)
 
-                # compute another step of prop_s_rnn_1, considering the prop_s_h_0 as input
+                sub_v_feats_padded = pad_sequence(
+                    [v_fcat[v, s:e, :].flip((0,)) for v, s, e in zip(vix_2_dscr, starts, ends)], batch_first=True,
+                )
+                sub_v_feats_packed = pack_padded_sequence(
+                    input=sub_v_feats_padded,
+                    lengths=(ends - starts).to("cpu"),
+                    batch_first=True,
+                    enforce_sorted=False,
+                )
+                _, (prop_s_back_h_0[vix_2_dscr], _) = self.prop_s_back_rnn_0(sub_v_feats_packed)
+
+                # compute another step of the second layer (forward) of START MOUDULE
                 (prop_s_h_1[vix_2_dscr, :], prop_s_c_1[vix_2_dscr, :],) = self.prop_s_rnn_1(
                     prop_s_h_0[vix_2_dscr, :], (prop_s_h_1[vix_2_dscr, :], prop_s_c_1[vix_2_dscr, :],),
                 )
 
-                # compute the proposal encoding for start position from prop_s_h_1 and prop_s_back_h_0
+                # compute the proposal encoding for start position from the second layer (forward) and the backward on previous frames
                 prop_logits_s[vix_2_dscr, caps_count[vix_2_dscr], :] = self.prop_enc_s(
                     torch.cat((prop_s_h_1[vix_2_dscr], prop_s_back_h_0[vix_2_dscr]), dim=-1)
                 )[0]
 
                 # END MODULE
-                # compute prop_e_back_rnn_0 from features in back direction
+                # compute the recurrency on frames previous to poiter q in backward direction
                 max_fix = feats_count[vix_2_dscr] - 1
                 ends = torch.min(self.q[vix_2_dscr], max_fix) + 1
                 starts = torch.max(torch.min(self.p[vix_2_dscr], max_fix), ends - max_back_steps)
+
                 sub_v_feats_padded = pad_sequence(
                     [v_fcat[v, s:e, :].flip((0,)) for v, s, e in zip(vix_2_dscr, starts, ends)], batch_first=True,
                 )
@@ -814,101 +791,17 @@ class DenseCaptioner(nn.Module):
                 )
                 _, (prop_e_back_h_0[vix_2_dscr], _) = self.prop_e_back_rnn_0(sub_v_feats_packed)
 
-                # compute another step of prop_e_rnn_1, considering the prop_e_h_0 as input
+                # compute another step of the second layer (forward) of END MOUDULE
                 (prop_e_h_1[vix_2_dscr, :], prop_e_c_1[vix_2_dscr, :],) = self.prop_e_rnn_1(
                     prop_e_h_0[vix_2_dscr, :], (prop_e_h_1[vix_2_dscr, :], prop_e_c_1[vix_2_dscr, :],),
                 )
 
-                # compute the proposal encoding for end position from prop_e_h_1
+                # compute the proposal encoding for end position from the second layer (forward) and the backward on previous frames
                 prop_logits_e[vix_2_dscr, caps_count[vix_2_dscr], :] = self.prop_enc_e(
                     torch.cat((prop_e_h_1[vix_2_dscr], prop_e_back_h_0[vix_2_dscr]), dim=-1)
                 )[0]
 
-                # _, v_p_q_feats = self.get_clip_feats(v_feats, self.p, self.q)
-                # clip_feats = torch.cat([feats[vix_2_dscr, :, :] for feats in v_p_q_feats], dim=-1)
-                # _, (self.prop_h_e[vix_2_dscr], _) = self.e_prop_rnn(
-                #     clip_feats,
-                #     (
-                #         self.prop_h_s[vix_2_dscr, :].unsqueeze(0),
-                #         self.prop_c_s[vix_2_dscr, :].unsqueeze(0),
-                #     ),
-                # )
-                # prop_logits_e[vix_2_dscr, caps_count[vix_2_dscr], :] = self.prop_enc_e(
-                #     self.prop_h_e[vix_2_dscr]
-                # )[0]
-
-                # TODO: get ground-truth captions according to the position of p and q and the interval associated to each gt caption
-
-                # gt_c, gt_p = None, None
-                # # if self.training:
-                # # get ground-truth captions and pos-tags according to the number of captions that have been generated per video
-                # gt_c = torch.stack(
-                #     [gt_captions[i][min(gt_captions.size(1) - 1, caps_count[i])] for i in vix_2_dscr]
-                # )
-                #     # gt_p = torch.stack([gt_pos[i][min(gt_pos.size(1) - 1, caps_count[i])] for i in vix_2_dscr])
-
-                # cap = gt_c
-                # generate captions
-                # cap_logits, cap_sem_enc, pos_tag_seq_logits = self.clip_captioner(
-                #     v_feats=clip_feats,
-                #     v_global=clip_global,
-                #     teacher_forcing_p=teacher_forcing_p,
-                #     gt_captions=gt_c,
-                #     gt_pos=gt_p,
-                #     max_words=max_cap,
-                # )
-
-                # if self.training:
-                #     use_teacher_forcing = True if random.random() < teacher_forcing_p or seq_pos == 0 else False
-                #     if use_teacher_forcing:
-                #         cap = gt_c
-                #     elif self.train_sample_max:
-                #         # select the words ids with the max probability,
-                #         # (sub-batch_size x max-cap-len)
-                #         cap = cap_logits.max(2)[1]
-                #     else:
-                #         # sample words from probability distribution
-                #         # (sub-batch_size*max-cap-len x caps_vocab_size)
-                #         cap = cap_logits.view(-1, self.caps_vocab_size)
-                #         # (sub-batch_size*max-cap-len)
-                #         cap = torch.multinomial(torch.softmax(cap, dim=1), 1).squeeze(1)
-                #         # (sub-batch_size x max-cap-len)
-                #         cap = cap.view(cap_logits.size(0), cap_logits.size(1))
-                # elif self.test_sample_max:
-                #     # select the words ids with the max probability,
-                #     # (sub-batch_size x max-cap-len)
-                #     cap = cap_logits.max(2)[1]
-                # else:
-                #     # sample words from probability distribution
-                #     # (sub-batch_size*max-cap-len x caps_vocab_size)
-                #     cap = cap_logits.view(-1, self.caps_vocab_size)
-                #     # (sub-batch_size*max-cap-len)
-                #     cap = torch.multinomial(torch.softmax(cap, dim=1), 1).squeeze(1)
-                #     # (sub-batch_size x max-cap-len)
-                #     cap = cap.view(cap_logits.size(0), cap_logits.size(1))
-
-                # TODO: sort visual and textual information according to the caption's length
-
-                # TEMP: setting the same len for all captions (the maximum possible len)
-                # cap_len = torch.IntTensor(cap.size(0)).fill_(cap.size(1))
-
-                # compute caption's bow, the make_bow_vector can also compute the caption len
-                # cap_bow = bow_vectors(cap, self.caps_vocab_size)
-
-                # compute the multimodal representation
-                # match = self.mm_enc(clip_feats, clip_global, cap, cap_len, cap_bow)
-
-                # save captions in the list of each video that was described in this step
-                # self.prev_match = torch.clone(self.prev_match)
-                # captions[vix_2_dscr, caps_count[vix_2_dscr], :] = cap
-                # caps_logits[vix_2_dscr, caps_count[vix_2_dscr], :, :] = cap_logits
-                # pos_tag_logits[vix_2_dscr, caps_count[vix_2_dscr], :, :] = pos_tag_seq_logits
-                # caps_sem_enc[vix_2_dscr, caps_count[vix_2_dscr], :] = cap_sem_enc
                 caps_count[vix_2_dscr] += 1
-                # self.prev_match[vix_2_dscr, :] = match
-
-                # reset rnn_cel weights, precomputing weights related to the prev_match only
-                # self.rnn_cell.precompute_dots_4_m(self.prev_match, var_drop_p=0.1)
 
             seq_pos += 1
 

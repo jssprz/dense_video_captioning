@@ -345,7 +345,7 @@ def get_trainer_str(config):
     crit_config = config.criterion_config
     tf_config = config.tf_config
     return (
-        f"{config.dataset_name} B{config.batch_size}.lr{config.optimizer_config.learning_rate}.{config.optimizer_config.optimizer_name}"
+        f"{config.dataset_name} B{config.train_batch_size}.lr{config.optimizer_config.learning_rate}.{config.optimizer_config.optimizer_name}"
         f"{get_rl_strategy_str(crit_config)}"
         f"{get_tf_strategy_str(tf_config)}"
         f".capL-{crit_config.captioning_loss}-{crit_config.captioning_loss_reduction}"
