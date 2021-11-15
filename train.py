@@ -1016,15 +1016,15 @@ class DenseVideo2TextTrainer(Trainer):
             if self.trainer_config.resume_config.begin_epoch != -1:
                 begin_epoch = self.trainer_config.resume_config.begin_epoch
 
-            if "trained_epochs" in checkpoint:
-                self.trained_epochs = checkpoint["trained_epochs"]
-            else:
-                self.trained_epochs = {
-                    m: DenseVideo2TextTrainer.trained_epochs_per_module(
-                        begin_epoch, self.change_after, m, self.use_dynamic_backward
-                    )
-                    for m in ["cap_dec", "sem_enc", "syn_enc"]
-                }
+            # if "trained_epochs" in checkpoint:
+            #     self.trained_epochs = checkpoint["trained_epochs"]
+            # else:
+            #     self.trained_epochs = {
+            #         m: DenseVideo2TextTrainer.trained_epochs_per_module(
+            #             begin_epoch, self.change_after, m, self.use_dynamic_backward
+            #         )
+            #         for m in ["cap_dec", "sem_enc", "syn_enc"]
+            #     }
         else:
             begin_epoch = 0
             self.best_metrics = {"programmer": {}, "captioning": {}, "densecap": {}, "s_prop": {}, "e_prop": {}}
