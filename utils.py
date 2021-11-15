@@ -437,7 +437,7 @@ def get_vncl_cell_str(config):
 
 
 def get_proposals_tagger_str(config):
-    drops = str([config.in_drop_p] + config.drop_ps)
-    hs = str(config.h_sizes)
+    drops = str([config.mapping_in_drop_p] + config.mapping_drop_ps)
+    hs = str(config.mapping_h_sizes)
     return f"sem hs-{hs}.drops-{drops}.lastbn-{config.have_last_bn}"
 

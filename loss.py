@@ -71,70 +71,49 @@ def get_reinforce_strategy(criterion_config, epoch, gt_prog_len):
 
 
 class DenseCaptioningLoss(nn.Module):
-    def __init__(self, config, c_max_len, p_max_len, s_prop_pos_weights, e_prop_pos_weights, device):
+    def __init__(self, config, c_max_len, p_max_len, s_prop_pos_weights, e_prop_pos_weights, device, training_proposals, training_programmer):
         super(DenseCaptioningLoss, self).__init__()
 
         self.config = config
+        self.training_proposals = training_proposals
+        self.training_programmer = training_programmer
 
-        # captioning_loss function
-        if config.captioning_loss == "MSE":
-            self.captioning_loss = nn.MSELoss(reduction=config.captioning_loss_reduction)
-        elif config.captioning_loss == "NLL":
-            self.captioning_loss = nn.NLLLoss(reduction=config.captioning_loss_reduction)
-        elif config.captioning_loss == "LenW":
-            self.captioning_loss = SentenceLengthLoss(
-                c_max_len,
-                class_weights=None,
-                beta=config.captioning_loss_b,
-                reduction=config.captioning_loss_reduction,
-            )
-        elif config.captioning_loss == "XEnt":
-            self.captioning_loss = nn.CrossEntropyLoss(reduction=config.captioning_loss_reduction)
-        else:
-            raise ValueError(
-                f"wrong value '{config.captioning_loss}' for the captioning_loss option in Loss configuration"
-            )
+        if training_proposals:
+            # proposals_loss function
+            if config.proposals_loss == "BXE":
+                # self.proposals_loss = nn.BCELoss(reduction=config.proposals_loss_reduction)
+                self.s_prop_loss = nn.BCEWithLogitsLoss(
+                    pos_weight=s_prop_pos_weights, reduction=config.proposals_loss_reduction
+                )
+                self.e_prop_loss = nn.BCEWithLogitsLoss(
+                    pos_weight=e_prop_pos_weights, reduction=config.proposals_loss_reduction
+                )
+            else:
+                raise ValueError(
+                    f"wrong value '{config.proposals_loss}' for the proposals_loss option in Loss configuration"
+                )
 
-        # programer_loss function
-        if config.programer_loss == "MSE":
-            self.programer_loss = nn.MSELoss(reduction=config.programer_loss_reduction)
-        elif config.programer_loss == "NLL":
-            self.programer_loss = nn.NLLLoss(reduction=config.programer_loss_reduction)
-        elif config.programer_loss == "LenW":
-            class_weights = torch.tensor(config.programer_loss_weights).to(device)
-            self.programer_loss = SentenceLengthLoss(
-                p_max_len,
-                class_weights=class_weights,
-                beta=config.programer_loss_b,
-                reduction=config.programer_loss_reduction,
-            )
-        elif config.programer_loss == "XEnt":
-            class_weights = torch.tensor(config.programer_loss_weights).to(device)
-            self.programer_loss = nn.CrossEntropyLoss(weight=class_weights, reduction=config.programer_loss_reduction)
-        else:
-            raise ValueError(
-                f"wrong value '{config.programer_loss}' for the programer_loss option in Loss configuration"
-            )
-
-        # semantic_tagging_loss function
-        if config.tagging_loss == "BXE":
-            self.tagging_loss = nn.BCELoss(reduction=config.tagging_loss_reduction)
-        else:
-            raise ValueError(f"wrong value '{config.tagging_loss}' for the tagging_loss option in Loss configuration")
-
-        # proposals_loss function
-        if config.proposals_loss == "BXE":
-            # self.proposals_loss = nn.BCELoss(reduction=config.proposals_loss_reduction)
-            self.s_prop_loss = nn.BCEWithLogitsLoss(
-                pos_weight=s_prop_pos_weights, reduction=config.proposals_loss_reduction
-            )
-            self.e_prop_loss = nn.BCEWithLogitsLoss(
-                pos_weight=e_prop_pos_weights, reduction=config.proposals_loss_reduction
-            )
-        else:
-            raise ValueError(
-                f"wrong value '{config.proposals_loss}' for the proposals_loss option in Loss configuration"
-            )
+        if training_programmer:
+            # programer_loss function
+            if config.programer_loss == "MSE":
+                self.programer_loss = nn.MSELoss(reduction=config.programer_loss_reduction)
+            elif config.programer_loss == "NLL":
+                self.programer_loss = nn.NLLLoss(reduction=config.programer_loss_reduction)
+            elif config.programer_loss == "LenW":
+                class_weights = torch.tensor(config.programer_loss_weights).to(device)
+                self.programer_loss = SentenceLengthLoss(
+                    p_max_len,
+                    class_weights=class_weights,
+                    beta=config.programer_loss_b,
+                    reduction=config.programer_loss_reduction,
+                )
+            elif config.programer_loss == "XEnt":
+                class_weights = torch.tensor(config.programer_loss_weights).to(device)
+                self.programer_loss = nn.CrossEntropyLoss(weight=class_weights, reduction=config.programer_loss_reduction)
+            else:
+                raise ValueError(
+                    f"wrong value '{config.programer_loss}' for the programer_loss option in Loss configuration"
+                )
 
         # multimodal_loss function
         # if mmloss == 'MSE':
@@ -173,88 +152,62 @@ class DenseCaptioningLoss(nn.Module):
     ):
         # bs, _, _, caps_vocab_size = pred_captions.size()
         # pos_vocab_size = pred_pos_seq.size(3)
-        bs, _, _ = pred_prop_s.size()
 
         # TODO: compute gt flatten in the Dataset for removing it from here
 
-        l5, l6, l7, l8 = [], [], [], []
-        for n in range(bs):
-            # for i in range(gt_caps_count[n]):
-            #     l1.append(pred_captions[n, i, : gt_cap_lens[n, i]].reshape(-1, caps_vocab_size))
-            #     l2.append(gt_captions[n, i, : gt_cap_lens[n, i]].flatten())
+        if self.training_proposals:
+            bs = pred_prop_s.size(0)
+            l5, l6, l7, l8 = [], [], [], []
+            for n in range(bs):
+                l5.append(pred_prop_s[n, : gt_caps_count[n], :])
+                l6.append(gt_prop_s[n, : gt_caps_count[n], :])
 
-            l5.append(pred_prop_s[n, : gt_caps_count[n], :])
-            l6.append(gt_prop_s[n, : gt_caps_count[n], :])
+                l7.append(pred_prop_e[n, : gt_caps_count[n], :])
+                l8.append(gt_prop_e[n, : gt_caps_count[n], :])
 
-            l7.append(pred_prop_e[n, : gt_caps_count[n], :])
-            l8.append(gt_prop_e[n, : gt_caps_count[n], :])
+            # event proposals loss
+            s_pred_proposals = torch.cat(l5)
+            s_gt_proposals = torch.cat(l6)
+            s_prop_loss = self.s_prop_loss(s_pred_proposals, s_gt_proposals)
 
-        # if len(l1):
-        #     # captioning loss
-        #     pred_captions = torch.cat(l1)
-        #     gt_captions = torch.cat(l2)
-        #     # cap_loss = self.captioning_loss(pred_captions, gt_captions, gt_cap_lens)  # length-weighted
-        #     cap_loss = self.captioning_loss(pred_captions, gt_captions)  # CELoss
-        # else:
-        #     cap_loss = torch.tensor(float("inf"))
+            e_pred_proposals = torch.cat(l7)
+            e_gt_proposals = torch.cat(l8)
+            e_prop_loss = self.e_prop_loss(e_pred_proposals, e_gt_proposals)
 
-        # programmer loss
-        # if truncate_prog_at is not None:
-        #     # (bs*truncate_prog_at x progs_vocab_size)
-        #     pred_program = pred_program[:, :truncate_prog_at].reshape(-1, progs_vocab_size)
+            loss = s_prop_loss + e_prop_loss
 
-        #     # (bs*truncate_prog_at)
-        #     gt_program = gt_program[:, :truncate_prog_at].flatten()
+            return (
+                loss,
+                None,  # prog_loss,
+                None,  # cap_loss,
+                None,  # sem_enc_loss,
+                None,  # pos_loss,
+                s_prop_loss,
+                e_prop_loss,
+                None,  # iou_reward.mean(),
+            )
 
-        #     # (bs)
-        #     gt_prog_len = torch.tensor([truncate_prog_at] * bs)
-        # else:
-        #     # straighten the output program (removing the part of the pad) and then flatten it
-        #     # (total_len_of_programs x progs_vocab_size)
-        #     pred_program = torch.cat([pred_program[n, : gt_prog_len[n]] for n in range(bs)], dim=0)
+        if self.training_programmer:
+            bs = pred_program.size(0)
+            l1, l2 = [], []
+            for n in range(bs):
+                l1.append(pred_program[n, : gt_prog_len[n], :])
+                l2.append(gt_program[n, : gt_prog_len[n]])
 
-        #     # straighten the target captions (remove the part of the pad) and then flatten it
-        #     # (total_len_of_programs)
-        #     gt_program = torch.cat([gt_program[n, : gt_prog_len[n]] for n in range(bs)], dim=0)
+            # program instructions loss
+            pred_program = torch.cat(l1)
+            gt_program = torch.cat(l2)
+            prog_loss = self.programer_loss(pred_program, gt_program)  # CELoss
 
-        # iou_reward = temp_iou(pred_intervals, gt_intervals, gt_caps_count)
+            loss = prog_loss
 
-        # reinforce, reinforce_from = get_reinforce_strategy(self.config, epoch, gt_prog_len)
-        # if reinforce and self.config.programer_use_iou_reward:
-        #     # length-weighted + reward (mixer or not)
-        #     prog_loss = self.programer_loss(pred_program, gt_program, gt_prog_len, reinforce_from, iou_reward)
-        # else:
-        #     # length-weighted
-        #     prog_loss = self.programer_loss(pred_program, gt_program, gt_prog_len, None)
-        #     # prog_loss = self.programer_loss(pred_program, gt_program)  # CELoss
-
-        # event proposals loss
-        s_pred_proposals = torch.cat(l5)
-        s_gt_proposals = torch.cat(l6)
-        s_prop_loss = self.s_prop_loss(s_pred_proposals, s_gt_proposals)
-
-        e_pred_proposals = torch.cat(l7)
-        e_gt_proposals = torch.cat(l8)
-        e_prop_loss = self.e_prop_loss(e_pred_proposals, e_gt_proposals)
-
-        # tIoU loss of intervals
-        # iou_loss = self.intervals_loss(pred_intervals, gt_intervals)
-
-        # mm_loss = self.multimodal_loss(mm_v_encs, mm_t_encs)
-
-        # combine and return losses
-        # print(cap_loss.requires_grad, prog_loss.requires_grad, iou_loss.requires_grad)
-        # losses = torch.tensor([cap_loss, prog_loss])
-        # loss = torch.sum(self.comb_weights * losses)
-        loss = s_prop_loss + e_prop_loss
-
-        return (
-            loss,
-            None,  # prog_loss,
-            None,  # cap_loss,
-            None,  # sem_enc_loss,
-            None,  # pos_loss,
-            s_prop_loss,
-            e_prop_loss,
-            None,  # iou_reward.mean(),
-        )
+            return (
+                loss,
+                prog_loss,
+                None,  # cap_loss,
+                None,  # sem_enc_loss,
+                None,  # pos_loss,
+                None,  # s_prop_loss,
+                None,  # e_prop_loss,
+                None,  # iou_reward.mean(),
+            )
