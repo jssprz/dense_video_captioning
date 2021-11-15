@@ -998,7 +998,11 @@ class DenseVideo2TextTrainer(Trainer):
             model_dict = self.dense_captioner.state_dict()
 
             # 1. filter out unnecessary parameters (not included in the current architecture)
-            pretrained_dict = {k: v for k, v in checkpoint["dense_captioner"].items() if k in model_dict}
+            pretrained_dict = {
+                "proposals_enc." + k: v
+                for k, v in checkpoint["dense_captioner"].items()
+                if "proposals_enc." + k in model_dict
+            }
 
             # 2. include in the dictionary to be loaded the new parameters in the current architecture
             for k, v in model_dict.items():
@@ -1008,11 +1012,19 @@ class DenseVideo2TextTrainer(Trainer):
             # 3. load the new state dict
             self.dense_captioner.load_state_dict(pretrained_dict)
 
-            # 4. freeze the part of the model that was trained before
-            if self.trainer_config.resume_config.unfreeze_at > 0:
-                self.dense_captioner.freeze(resume_config=self.trainer_config.resume_config)
-                if self.trainer_config.resume_config.begin_epoch != -1:
-                    begin_epoch = self.trainer_config.resume_config.begin_epoch
+            # 5. set the begin_epoch variable for logging
+            if self.trainer_config.resume_config.begin_epoch != -1:
+                begin_epoch = self.trainer_config.resume_config.begin_epoch
+
+            if "trained_epochs" in checkpoint:
+                self.trained_epochs = checkpoint["trained_epochs"]
+            else:
+                self.trained_epochs = {
+                    m: DenseVideo2TextTrainer.trained_epochs_per_module(
+                        begin_epoch, self.change_after, m, self.use_dynamic_backward
+                    )
+                    for m in ["cap_dec", "sem_enc", "syn_enc"]
+                }
         else:
             begin_epoch = 0
             self.best_metrics = {"programmer": {}, "captioning": {}, "densecap": {}, "s_prop": {}, "e_prop": {}}
@@ -1172,7 +1184,7 @@ class DenseVideo2TextTrainer(Trainer):
                         log_msg += "\t[s-proposals-loss:{0:9.4f} e-proposals-loss:{1:9.4f}]".format(
                             s_prop_loss.item(), e_prop_loss.item()
                         )
-                        
+
                     if self.dense_captioner.training_programmer:
                         prog_loss_count += prog_loss.item()
 
@@ -1273,7 +1285,7 @@ class DenseVideo2TextTrainer(Trainer):
                         self.__process_results(
                             e_prop_metrics_results, None, phase, epoch, save_checkpoints_dir, "e_prop",
                         )
-                    
+
                     #     # predicted_sentences = pool.apply_async(self.__get_sentences, [all_outputs, all_video_ids])
 
                     #     # if cap_metrics_results is not None:
