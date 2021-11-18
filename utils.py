@@ -272,6 +272,27 @@ def multilabel_evaluate_from_logits(gt_multihots, pred_logits, cap_counts):
     }
 
 
+def multiclass_evaluate_from_logits(gt, pred_logits, lens):
+    y_true = []
+    y_pred = []
+    for v_gt, v_pred, l in zip(gt, pred_logits, lens):
+        y_true.append(v_gt[:l])
+        y_pred.append(torch.sigmoid(v_pred[:l]))
+
+    y_true = torch.cat(y_true, dim=0).numpy()
+    y_pred = torch.cat(y_pred, dim=0).numpy()
+
+    precision_weighted = precision_score(y_true, y_pred, average="weighted")
+    recall_weighted = recall_score(y_true, y_pred, average="weighted")
+    f1_weighted = f1_score(y_true, y_pred, average="weighted")
+
+    return {
+        "Precision/weighted": precision_weighted,
+        "Recall/weighted": recall_weighted,
+        "F1/weighted": f1_weighted,
+    }
+
+
 def load_ground_truth_captions(reference_txt_path):
     gt = {}
     for line in list(open(reference_txt_path, "r")):

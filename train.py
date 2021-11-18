@@ -33,6 +33,7 @@ from utils import (
     evaluate_from_tokens,
     densecap_evaluate_from_tokens,
     multilabel_evaluate_from_logits,
+    multiclass_evaluate_from_logits,
     get_tf_ratio,
     get_trainer_str,
     get_dense_captioner_str,
@@ -836,7 +837,7 @@ class DenseVideo2TextTrainer(Trainer):
             s_prop_loss,
             e_prop_loss,
             None,  # iou_reward,
-            None,  # program,
+            prog_logits,
             None,  # captions,
             None,  # intervals,
             s_prop_logits,
@@ -972,6 +973,7 @@ class DenseVideo2TextTrainer(Trainer):
         val_phases = ["val_1"]
         e_prop_metrics = ["Recall/weighted", "F1/weighted", "ROC-AUC/weighted", "AP/weighted"]
         s_prop_metrics = ["Recall/weighted", "F1/weighted", "ROC-AUC/weighted", "AP/weighted"]
+        prog_metrics = ["Precision/weighted", "Recall/weighted", "F1/weighted"]
 
         if resume and os.path.exists(checkpoint_path):
             self.logger.info(f"Resuming from checkpoint: {checkpoint_path}")
@@ -1032,10 +1034,11 @@ class DenseVideo2TextTrainer(Trainer):
                 self.best_metrics["s_prop"][p] = {m: (0, 0) for m in s_prop_metrics}
                 self.best_metrics["e_prop"][p] = {m: (0, 0) for m in e_prop_metrics}
 
-        self.last_best_saved_epoch = {m: {} for m in ["s_prop", "e_prop"]}
+        self.last_best_saved_epoch = {m: {} for m in ["s_prop", "e_prop", "prog"]}
         for p in val_phases:
             self.last_best_saved_epoch["s_prop"][p] = {m: -1 for m in s_prop_metrics}
             self.last_best_saved_epoch["e_prop"][p] = {m: -1 for m in e_prop_metrics}
+            self.last_best_saved_epoch["prog"][p] = {m: -1 for m in prog_metrics}
 
         self.dense_captioner.to(self.device)
         print("\nParameters of Dense Captioner model:\n")
@@ -1088,7 +1091,7 @@ class DenseVideo2TextTrainer(Trainer):
                 # predicted_sentences = {}
                 time_start_epoch, total_time_iters = time.perf_counter(), 0
                 loss_count, prog_loss_count, s_prop_loss_count, e_prop_loss_count = 0, 0, 0, 0
-                all_programs = []
+                all_programs, all_gt_programs = [], []
                 all_captions = []
                 all_prog_ids = []
                 all_caps_ids = []
@@ -1096,7 +1099,7 @@ class DenseVideo2TextTrainer(Trainer):
                 all_tstamps = []
                 all_props_s, all_gt_props_s = [], []
                 all_props_e, all_gt_props_e = [], []
-                all_cap_counts = []
+                all_cap_counts, all_prog_lens = [], []
                 for (
                     i,
                     (
@@ -1134,7 +1137,7 @@ class DenseVideo2TextTrainer(Trainer):
                         s_prop_loss,
                         e_prop_loss,
                         _,
-                        program,
+                        prog_logits,
                         _,
                         _,
                         s_prop_logits,
@@ -1231,6 +1234,12 @@ class DenseVideo2TextTrainer(Trainer):
                             all_props_e.append(e_prop_logits.to("cpu"))
                             all_gt_props_e.append(gt_prop_e.to("cpu"))
 
+                        if self.dense_captioner.training_programmer:
+                            # save programs for computing evaluation metrics
+                            all_programs.append(prog_logits.to("cpu"))
+                            all_gt_programs.append(gt_prog.to("cpu"))
+                            all_prog_lens.append(gt_prog_len.to("cpu"))
+
                     #     # save programs and the videos' idx for computing evaluation metrics
                     #     all_programs.append(program.to("cpu"))
                     #     all_prog_ids.append(vidx)
@@ -1284,6 +1293,15 @@ class DenseVideo2TextTrainer(Trainer):
                         )
                         self.__process_results(
                             e_prop_metrics_results, None, phase, epoch, save_checkpoints_dir, "e_prop",
+                        )
+                    
+                    if self.dense_captioner.training_programmer:
+                        print("evaluating programs...")
+                        prog_metrics_results = multiclass_evaluate_from_logits(
+                            all_gt_programs, all_programs, all_prog_lens
+                        )
+                        self.__process_results(
+                            prog_metrics_results, None, phase, epoch, save_checkpoints_dir, "prog",
                         )
 
                     #     # predicted_sentences = pool.apply_async(self.__get_sentences, [all_outputs, all_video_ids])

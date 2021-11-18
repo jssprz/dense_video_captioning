@@ -315,9 +315,9 @@ class ProposalsEncoder(nn.Module):
         self.prop_s_rnn_1_step(vix_2_enc)
 
         # START MODULE (proposals) from the 2nd layer (forward) and the back direction on previous frames
-        prop_logits_s = self.prop_enc_s(
-            torch.cat((self.prop_s_h_1[vix_2_enc], self.prop_s_back_h_0[vix_2_enc]), dim=-1)
-        )[0]
+        # prop_logits_s = self.prop_enc_s(
+        #     torch.cat((self.prop_s_h_1[vix_2_enc], self.prop_s_back_h_0[vix_2_enc]), dim=-1)
+        # )[0]
 
         # END MODULE (back direction)
         self.prop_e_back_rnn_0_enc(vix_2_enc, p, q, v_feats, feats_count, max_back_steps)
@@ -325,11 +325,12 @@ class ProposalsEncoder(nn.Module):
         self.prop_e_rnn_1_step(vix_2_enc)
 
         # END MODULE (proposals) from the 2nd layer (forward) and the back direction on previous frames
-        prop_logits_e = self.prop_enc_e(
-            torch.cat((self.prop_e_h_1[vix_2_enc], self.prop_e_back_h_0[vix_2_enc]), dim=-1)
-        )[0]
+        # prop_logits_e = self.prop_enc_e(
+        #     torch.cat((self.prop_e_h_1[vix_2_enc], self.prop_e_back_h_0[vix_2_enc]), dim=-1)
+        # )[0]
 
-        return prop_logits_s, prop_logits_e
+        # return prop_logits_s, prop_logits_e
+        return self.prop_s_h_1[vix_2_enc], self.prop_e_h_1[vix_2_enc]
 
     def forward():
         pass
