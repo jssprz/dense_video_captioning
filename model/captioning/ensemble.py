@@ -123,8 +123,8 @@ class EnsembleDecoder(nn.Module):
         self.avscn_dec.reset_internals(batch_size)
         self.semsynan_dec.reset_internals(batch_size)
 
-    def precompute_mats(self, v_pool, s_tags, pos_emb):
-        self.avscn_dec.precompute_mats(v_pool, s_tags)
+    def precompute_mats(self, v_pool, s_tags, pos_emb, context_v_enc):
+        self.avscn_dec.precompute_mats(v_pool, context_v_enc)
         self.semsynan_dec.precompute_mats(v_pool, s_tags, pos_emb)
 
     def step(self, v_feats, s_tags, pos_emb, decoder_input):
@@ -136,10 +136,10 @@ class EnsembleDecoder(nn.Module):
 
         return self.rnn_h
 
-    def forward_fn(self, v_feats, v_pool, s_tags, pos_emb, gt_captions, tf_p, max_words):
+    def forward_fn(self, v_feats, v_pool, s_tags, pos_emb, context_v_enc, gt_captions, tf_p, max_words):
         bs = v_pool.size(0)
         self.reset_internals(bs)
-        self.precompute_mats(v_pool, s_tags, pos_emb)
+        self.precompute_mats(v_pool, s_tags, pos_emb, context_v_enc)
 
         outputs, embedds, words = [], [], []
 
@@ -218,6 +218,7 @@ class EnsembleDecoder(nn.Module):
             v_pool=encoding[1],
             s_tags=encoding[2],
             pos_emb=encoding[3],
+            context_v_enc=encoding[7],
             tf_p=teacher_forcing_p,
             gt_captions=gt_captions,
             max_words=max_words,
@@ -265,7 +266,7 @@ class Ensemble(nn.Module):
         )
 
     def forward(
-        self, v_feats, feats_count, v_global, tf_ratios, gt_captions=None, gt_pos=None, max_words=None,
+        self, v_feats, feats_count, v_global, context_v_enc, tf_ratios, gt_captions=None, gt_pos=None, max_words=None,
     ):
         # get encodings from v_feats and v_global
         encoding = self.encoder(
@@ -276,7 +277,8 @@ class Ensemble(nn.Module):
             max_words=max_words,
             feats_count=feats_count,
         )
-        sem_enc, pos_tag_seq, pos_tag_seq_logits = (
+        v_enc, sem_enc, pos_tag_seq, pos_tag_seq_logits = (
+            encoding[1],
             encoding[2],
             encoding[3][1],
             encoding[3][0],
@@ -289,10 +291,17 @@ class Ensemble(nn.Module):
         # encoding[3] = encoding[4]  # with gradients
         encoding[3] = encoding[6]  # without gradients
 
+        # replace empty contextual information by current v_enc
+        mask = context_v_enc.sum(1) == 0
+        context_v_enc[mask] = v_enc[mask]
+
+        # include context_v_enc in the encoding list
+        encoding.append(context_v_enc)
+
         # TODO: evaluate the use of POS tagger as a global controler
 
         logits, cap, _ = self.decoder(
             encoding=encoding, teacher_forcing_p=tf_ratios["cap_dec"], gt_captions=gt_captions, max_words=max_words,
         )
 
-        return logits, cap, sem_enc, pos_tag_seq, pos_tag_seq_logits
+        return logits, cap, sem_enc, pos_tag_seq, pos_tag_seq_logits, v_enc

@@ -341,6 +341,7 @@ class DenseCaptioner(nn.Module):
         self.caps_vocab_size = len(caps_vocab)
         self.pos_vocab_size = len(pos_vocab)
         self.sem_enc_size = sem_tagger_config.out_size
+        self.v_enc_size = visual_enc_config.out_size
 
         # if pretrained_ope is not None:
         #     self.embedding = nn.Embedding.from_pretrained(pretrained_ope)
@@ -433,7 +434,7 @@ class DenseCaptioner(nn.Module):
             self.fc.requires_grad = False
 
     def freeze_config(self, config_obj):
-        self.freeze_dict( 
+        self.freeze_dict(
             {
                 "sem_enc": config_obj.freeze_cap_sem_enc,
                 "syn_enc": config_obj.freeze_cap_syn_enc,
@@ -500,18 +501,22 @@ class DenseCaptioner(nn.Module):
 
         # self.a_logits = self.fc(torch.cat((self.h, self.current_proposals), dim=1))
 
-    def compute_captioning_batch(self, clip_feats, clip_len, clip_global, gt_c, gt_p, max_cap, tf_ratios):
+    def compute_captioning_batch(
+        self, clip_feats, clip_len, clip_global, clip_context_v_enc, gt_c, gt_p, max_cap, tf_ratios
+    ):
         # TODO: create batch from lists
         clip_feats = [torch.cat(feats, dim=0) for feats in clip_feats]
         clip_len = torch.cat(clip_len, dim=0)
         clip_global = torch.cat(clip_global, dim=0)
+        clip_context_v_enc = torch.cat(clip_context_v_enc, dim=0)
         gt_c = torch.cat(gt_c, dim=0)
         gt_p = torch.cat(gt_p, dim=0)
 
         # TODO:compute captioning
-        cap_logits, cap, cap_sem_enc, pos, pos_tag_seq_logits = self.clip_captioner(
+        cap_logits, cap, cap_sem_enc, pos, pos_tag_seq_logits, v_enc = self.clip_captioner(
             v_feats=clip_feats,
             v_global=clip_global,
+            context_v_enc=clip_context_v_enc,
             tf_ratios=tf_ratios,
             gt_captions=gt_c,
             gt_pos=gt_p,
@@ -519,7 +524,7 @@ class DenseCaptioner(nn.Module):
             feats_count=clip_len,
         )
 
-        return cap, cap_logits, cap_sem_enc, pos, pos_tag_seq_logits
+        return cap, cap_logits, cap_sem_enc, pos, pos_tag_seq_logits, v_enc
 
     def forward(
         self,
@@ -570,6 +575,7 @@ class DenseCaptioner(nn.Module):
         caps_sem_enc = torch.zeros_like(gt_sem_enc)
         pos_tags = torch.zeros_like(gt_pos)
         intervals = torch.zeros_like(gt_intervals, dtype=torch.float)
+        context_v_enc = torch.zeros((bs, self.v_enc_size)).to(device)
         # else:
         #     # iterate until all pointers reach the end
         #     condition = (
@@ -594,6 +600,7 @@ class DenseCaptioner(nn.Module):
         clip_feats = [[] for _ in v_feats]
         clip_lens = []
         clip_global = []
+        clip_context_v_enc = []
         gt_c = []
         gt_p = []
         vixs = []
@@ -637,6 +644,7 @@ class DenseCaptioner(nn.Module):
                     feats.append(self.v_p_q_feats[i][vix_2_dscr, :, :])
                 clip_lens.append(self.clip_len[vix_2_dscr])
                 clip_global.append(self.v_p_q_pool[vix_2_dscr, :])
+                clip_context_v_enc.append(context_v_enc[vix_2_dscr, :])
                 gt_c.append(
                     torch.stack([gt_captions[i][min(gt_captions.size(1) - 1, aux_caps_count[i])] for i in vix_2_dscr])
                 )
@@ -647,10 +655,11 @@ class DenseCaptioner(nn.Module):
 
                 if len(vixs) >= captioning_batch:
                     # compute captioning for batch, considering teacher forcing strategy for cap tensor
-                    cap, cap_logits, cap_sem_enc, pos, pos_tag_seq_logits = self.compute_captioning_batch(
+                    cap, cap_logits, cap_sem_enc, pos, pos_tag_seq_logits, v_enc = self.compute_captioning_batch(
                         clip_feats=clip_feats,
                         clip_len=clip_lens,
                         clip_global=clip_global,
+                        clip_context_v_enc=clip_context_v_enc,
                         gt_c=gt_c,
                         gt_p=gt_p,
                         max_cap=max_cap,
@@ -664,11 +673,13 @@ class DenseCaptioner(nn.Module):
                         caps_logits[vix, caps_count[vix], :, :] = cap_logits[i]
                         pos_tag_logits[vix, caps_count[vix], :, :] = pos_tag_seq_logits[i]
                         caps_sem_enc[vix, caps_count[vix], :] = cap_sem_enc[i]
+                        context_v_enc[vix, :] = v_enc[i]
                         caps_count[vix] += 1
 
                     clip_feats = [[] for _ in v_feats]
                     clip_lens = []
                     clip_global = []
+                    clip_context_v_enc = []
                     gt_c = []
                     gt_p = []
                     vixs = []
@@ -677,10 +688,11 @@ class DenseCaptioner(nn.Module):
 
         # compute captioning of last batch
         if len(vixs):
-            cap, cap_logits, cap_sem_enc, pos, pos_tag_seq_logits = self.compute_captioning_batch(
+            cap, cap_logits, cap_sem_enc, pos, pos_tag_seq_logits, v_enc = self.compute_captioning_batch(
                 clip_feats=clip_feats,
                 clip_len=clip_lens,
                 clip_global=clip_global,
+                clip_context_v_enc=clip_context_v_enc,
                 gt_c=gt_c,
                 gt_p=gt_p,
                 max_cap=max_cap,
@@ -694,6 +706,7 @@ class DenseCaptioner(nn.Module):
                 caps_logits[vix, caps_count[vix], :, :] = cap_logits[i]
                 pos_tag_logits[vix, caps_count[vix], :, :] = pos_tag_seq_logits[i]
                 caps_sem_enc[vix, caps_count[vix], :] = cap_sem_enc[i]
+                context_v_enc[vix, :] = v_enc[i]
                 caps_count[vix] += 1
 
         # if self.training:
