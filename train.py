@@ -223,29 +223,10 @@ class DenseVideo2TextTrainer(Trainer):
                 lr=self.trainer_config.learning_rate,
             )
         else:
+            lr = opt_conf.proposals_lr if self.dense_captioner.training_proposals else opt_conf.programmer_lr
             self.optimizer = optim.Adam(
                 [
-                    # {"params": self.dense_captioner.mm_enc.parameters(), "lr": opt_conf.programmer_lr,},
-                    {"params": self.dense_captioner.parameters(), "lr": opt_conf.proposals_lr,},
-                    # {"params": self.dense_captioner.embedding.parameters(), "lr": opt_conf.programmer_lr,},
-                    # {"params": self.dense_captioner.rnn_cell.parameters(), "lr": opt_conf.programmer_lr,},
-                    # {"params": self.dense_captioner.fc.parameters(), "lr": opt_conf.programmer_lr,},
-                    # {
-                    #     "params": self.dense_captioner.clip_captioner.avscn_dec.parameters(),
-                    #     "lr": opt_conf.captioning_lr,
-                    # },
-                    # {
-                    #     "params": self.dense_captioner.clip_captioner.semsynan_dec.parameters(),
-                    #     "lr": opt_conf.captioning_lr,
-                    # },
-                    # {
-                    #     "params": self.dense_captioner.clip_captioner.encoder.sem_model.parameters(),
-                    #     "lr": opt_conf.sem_enc_lr,
-                    # },
-                    # {
-                    #     "params": self.dense_captioner.clip_captioner.encoder.syn_model.parameters(),
-                    #     "lr": opt_conf.syn_enc_lr,
-                    # },
+                    {"params": self.dense_captioner.parameters(), "lr": lr,},
                 ],
                 lr=opt_conf.learning_rate,
             )  # , weight_decay=.0001)
