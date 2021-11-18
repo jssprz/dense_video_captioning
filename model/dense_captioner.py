@@ -368,7 +368,7 @@ class DenseCaptioner(nn.Module):
                 p.requires_grad = False
 
             self.progs_vocab_size = len(progs_vocab)
-            self.fc = nn.Linear(self.h_size, self.progs_vocab_size)
+            self.fc = nn.Linear(proposals_tagger_config.rnn_h_size, self.progs_vocab_size)
 
     def freeze(self, resume_config):
         if resume_config.freeze_captioning:
