@@ -24,7 +24,7 @@ from video_description_eval.densecap_eval import densecap_score
 
 def get_freer_gpu():
     if os.name == "posix":
-        os.system("nvidia-smi -q -d Memory |grep -A4 GPU|grep Free >tmp_gpu_freem")
+        os.system("nvidia-smi -q -d Memory |grep -A5 GPU|grep Free >tmp_gpu_freem")
         memory_available = [int(x.split()[2]) for x in open("tmp_gpu_freem", "r").readlines()]
     else:
         import subprocess
