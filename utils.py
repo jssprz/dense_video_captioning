@@ -275,12 +275,15 @@ def multilabel_evaluate_from_logits(gt_multihots, pred_logits, cap_counts):
 def multiclass_evaluate_from_logits(gt, pred_logits, lens):
     y_true = []
     y_pred = []
-    for v_gt, v_pred, l in zip(gt, pred_logits, lens):
-        y_true.append(v_gt[:l])
-        y_pred.append(torch.sigmoid(v_pred[:l]))
+    for batch_gt, batch_pred, batch_lens in zip(gt, pred_logits, lens):
+        for v_gt, v_pred, v_l in zip(batch_gt, batch_pred, batch_lens):
+            y_true.append(v_gt[:v_l])
+            y_pred.append(torch.argmax(v_pred[:v_l], dim=1))
 
     y_true = torch.cat(y_true, dim=0).numpy()
     y_pred = torch.cat(y_pred, dim=0).numpy()
+
+    print("SHAPES:", y_true.shape, y_pred.shape)
 
     precision_weighted = precision_score(y_true, y_pred, average="weighted")
     recall_weighted = recall_score(y_true, y_pred, average="weighted")

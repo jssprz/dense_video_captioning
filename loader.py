@@ -71,6 +71,7 @@ class DenseCaptioningDataset(Dataset):
             self.frame_tstamps = self.h5_dataset["frames_tstamp"]
 
             # (Sanity) include in blacklist the videos with feat_count=0
+            print("black-list:", self.vidxs_blcklist)
             for vidx in self.vidxs:
                 if self.feat_count[vidx] == 0 and vidx not in self.vidxs_blcklist:
                     self.vidxs_blcklist.append(vidx)
@@ -127,6 +128,7 @@ def extract_split_data_from_corpus(corpus, split=0):
     upos = split_data[7]
     cap_lens = [[len(c) for c in caps] for caps in split_data[6]]
 
+    # return vidxs[:400], cidxs[:400], intervals[:400], fps[:400], progs[:400], prog_lens[:400], caps[:400], pos[:400], upos[:400], cap_lens[:400]
     return vidxs, cidxs, intervals, fps, progs, prog_lens, caps, pos, upos, cap_lens
 
 
@@ -178,9 +180,7 @@ def data2tensors(
 
     intervals_t = torch.zeros((len(caps), max_caps, 2))
     for i, v_intervals in enumerate(intervals):
-        intervals_t[i, : len(v_intervals)] = torch.Tensor(
-            [[s, e] for s, e in v_intervals]
-        )
+        intervals_t[i, : len(v_intervals)] = torch.Tensor([[s, e] for s, e in v_intervals])
 
     progs_t = torch.zeros((len(caps), max_prog), dtype=torch.long)
     for i, v_prog in enumerate(progs):

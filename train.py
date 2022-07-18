@@ -92,7 +92,11 @@ class Trainer:
 
         self.datetime_str = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
         self.writer = SummaryWriter(
-            log_dir=os.path.join(self.out_folder, "log/runs/", f"{self.datetime_str} {trainer_config.str}",)
+            log_dir=os.path.join(
+                self.out_folder,
+                "log/runs/",
+                f"{self.datetime_str} {trainer_config.str}",
+            )
         )
         logging.basicConfig(
             filename=os.path.join(self.out_folder, f"log/output_{self.datetime_str}"),
@@ -226,7 +230,10 @@ class DenseVideo2TextTrainer(Trainer):
             lr = opt_conf.proposals_lr if self.dense_captioner.training_proposals else opt_conf.programmer_lr
             self.optimizer = optim.Adam(
                 [
-                    {"params": self.dense_captioner.parameters(), "lr": lr,},
+                    {
+                        "params": self.dense_captioner.parameters(),
+                        "lr": lr,
+                    },
                 ],
                 lr=opt_conf.learning_rate,
             )  # , weight_decay=.0001)
@@ -242,7 +249,10 @@ class DenseVideo2TextTrainer(Trainer):
         # lambda8 = lambda epoch: self.trainer_config.lr_decay_factor ** (epoch // 40)
         # lambda9 = lambda epoch: self.trainer_config.lr_decay_factor ** (epoch // 40)
 
-        self.lr_scheduler = optim.lr_scheduler.LambdaLR(optimizer=self.optimizer, lr_lambda=[lambda1],)
+        self.lr_scheduler = optim.lr_scheduler.LambdaLR(
+            optimizer=self.optimizer,
+            lr_lambda=[lambda1],
+        )
 
         # Loss function
         self.criterion = DenseCaptioningLoss(
@@ -310,7 +320,11 @@ class DenseVideo2TextTrainer(Trainer):
         for w in words_to_discard:
             del widx2count[self.caps_vocab(w)]
 
-        freq_words = heapq.nlargest(self.modules_config["sem_tagger_config"].out_size, widx2count, key=widx2count.get,)
+        freq_words = heapq.nlargest(
+            self.modules_config["sem_tagger_config"].out_size,
+            widx2count,
+            key=widx2count.get,
+        )
         self.sem_enc_keywords = [self.caps_vocab.idx_to_word(idx) for idx in freq_words]
 
         self.logger.info(f"TAGs-IDXs: {freq_words}")
@@ -491,12 +505,28 @@ class DenseVideo2TextTrainer(Trainer):
 
         # get train split data
         print(" initializing train split data loader...")
-        (vidxs, cidxs, intervals, fps, progs, prog_lens, caps, pos, upos, cap_lens,) = extract_split_data_from_corpus(
-            self.corpus, split=0
-        )
-        (cidxs_t, intervals_t, caps_count_t, progs_t, caps_t, _, _, _,) = data2tensors(
-            cidxs, intervals, progs, prog_lens, caps, pos, upos, cap_lens
-        )
+        (
+            vidxs,
+            cidxs,
+            intervals,
+            fps,
+            progs,
+            prog_lens,
+            caps,
+            pos,
+            upos,
+            cap_lens,
+        ) = extract_split_data_from_corpus(self.corpus, split=0)
+        (
+            cidxs_t,
+            intervals_t,
+            caps_count_t,
+            progs_t,
+            caps_t,
+            _,
+            _,
+            _,
+        ) = data2tensors(cidxs, intervals, progs, prog_lens, caps, pos, upos, cap_lens)
         self.max_prog = progs_t.size(1)
         self.max_caps = caps_t.size(1)
         self.max_words = caps_t.size(2)
@@ -552,15 +582,24 @@ class DenseVideo2TextTrainer(Trainer):
             event_proposals_e=event_e_mask_t,
             batch_size=self.trainer_config.train_batch_size,
             train=True,
-            num_workers=trainer_config.loader_num_workers,
-            pin_memory=trainer_config.loader_pin_memory,
+            num_workers=self.trainer_config.loader_num_workers,
+            pin_memory=self.trainer_config.loader_pin_memory,
         )
 
         # get valid split data
         print(" initializing valid split data loader...")
-        (vidxs, cidxs, intervals, fps, progs, prog_lens, caps, pos, upos, cap_lens,) = extract_split_data_from_corpus(
-            self.corpus, split=1
-        )
+        (
+            vidxs,
+            cidxs,
+            intervals,
+            fps,
+            progs,
+            prog_lens,
+            caps,
+            pos,
+            upos,
+            cap_lens,
+        ) = extract_split_data_from_corpus(self.corpus, split=1)
         (cidxs_t, intervals_t, caps_count_t, progs_t, caps_t, _, _, _,) = data2tensors(
             cidxs,
             intervals,
@@ -585,7 +624,10 @@ class DenseVideo2TextTrainer(Trainer):
 
         # determine the ground truth for event masking
         event_s_mask_t, event_e_mask_t, _, _, _ = self.__get_interval_mask(
-            intervals_t, caps_count_t, max_num_chunks=self.trainer_config.max_num_chunks, proposals=event_proposals,
+            intervals_t,
+            caps_count_t,
+            max_num_chunks=self.trainer_config.max_num_chunks,
+            proposals=event_proposals,
         )
 
         val_loader = get_dense_loader(
@@ -608,8 +650,8 @@ class DenseVideo2TextTrainer(Trainer):
             event_proposals_e=event_e_mask_t,
             batch_size=self.trainer_config.valid_batch_size,
             train=False,
-            num_workers=trainer_config.loader_num_workers,
-            pin_memory=trainer_config.loader_pin_memory,
+            num_workers=self.trainer_config.loader_num_workers,
+            pin_memory=self.trainer_config.loader_pin_memory,
         )
 
         self.logger.info(f"Max program len: {self.max_prog}")
@@ -867,7 +909,8 @@ class DenseVideo2TextTrainer(Trainer):
             last_best_epoch = self.last_best_saved_epoch[component][phase][metric_name]
             os.remove(
                 os.path.join(
-                    save_checkpoints_dir, f"best_chkpt_{last_best_epoch}_{phase}_{component}_{parsed_metric_name}.pt",
+                    save_checkpoints_dir,
+                    f"best_chkpt_{last_best_epoch}_{phase}_{component}_{parsed_metric_name}.pt",
                 )
             )
         elif not new_best and self.last_saved_epoch != -1:
@@ -1014,12 +1057,12 @@ class DenseVideo2TextTrainer(Trainer):
             for p in val_phases:
                 self.best_metrics["s_prop"][p] = {m: (0, 0) for m in s_prop_metrics}
                 self.best_metrics["e_prop"][p] = {m: (0, 0) for m in e_prop_metrics}
+                self.best_metrics["programmer"][p] = {m: (0, 0) for m in prog_metrics}
 
-        self.last_best_saved_epoch = {m: {} for m in ["s_prop", "e_prop", "prog"]}
-        for p in val_phases:
-            self.last_best_saved_epoch["s_prop"][p] = {m: -1 for m in s_prop_metrics}
-            self.last_best_saved_epoch["e_prop"][p] = {m: -1 for m in e_prop_metrics}
-            self.last_best_saved_epoch["prog"][p] = {m: -1 for m in prog_metrics}
+        self.last_best_saved_epoch = {
+            comp: {p: {m: -1 for m in metrics} for p in val_phases}
+            for comp, metrics in [("s_prop", s_prop_metrics), ("e_prop", e_prop_metrics), ("programmer", prog_metrics)]
+        }
 
         self.dense_captioner.to(self.device)
         print("\nParameters of Dense Captioner model:\n")
@@ -1027,7 +1070,7 @@ class DenseVideo2TextTrainer(Trainer):
         for n, p in self.dense_captioner.named_parameters():
             # print(n, p.size(), p.device)
             total_size += torch.numel(p)
-        print(" total size: ", (total_size * 8) / (1024 ** 3), "\n")
+        print(" total size: ", (total_size * 8) / (1024**3), "\n")
 
         # Start training process
         self.early_stop_count, self.last_saved_epoch = 0, -1
@@ -1062,11 +1105,15 @@ class DenseVideo2TextTrainer(Trainer):
                     # self.avg_caps //= len(self.loaders["train"])
                     # self.avg_feats //= len(self.loaders["train"])
                     self.writer.add_scalar(
-                        "proposals/{}-epochs-avg_truncation".format(phase), self.avg_truncation, epoch,
+                        "proposals/{}-epochs-avg_truncation".format(phase),
+                        self.avg_truncation,
+                        epoch,
                     )
                     self.writer.add_scalar("proposals/{}-epochs-avg_caps".format(phase), self.avg_caps, epoch)
                     self.writer.add_scalar(
-                        "proposals/{}-epochs-avg_feats".format(phase), self.avg_feats, epoch,
+                        "proposals/{}-epochs-avg_feats".format(phase),
+                        self.avg_feats,
+                        epoch,
                     )
 
                 # predicted_sentences = {}
@@ -1154,7 +1201,14 @@ class DenseVideo2TextTrainer(Trainer):
                     lrs = self.lr_scheduler.get_last_lr()
                     gpu_temp = get_gpu_temps(self.device)
                     log_msg = "\rEpoch:{0:03d} Phase:{1:6s} Iter:{2:04d}/{3:04d} avg-Time:{4:.1f}s lr:{5:.6f} gpu-temp:{6:02d} Loss:{7:9.4f} ".format(
-                        epoch, phase, i, len(self.loaders[phase]), total_time_iters / i, lrs[0], gpu_temp, loss.item(),
+                        epoch,
+                        phase,
+                        i,
+                        len(self.loaders[phase]),
+                        total_time_iters / i,
+                        lrs[0],
+                        gpu_temp,
+                        loss.item(),
                     )
 
                     if self.dense_captioner.training_proposals:
@@ -1270,19 +1324,34 @@ class DenseVideo2TextTrainer(Trainer):
                             all_gt_props_e, all_props_e, all_cap_counts
                         )
                         self.__process_results(
-                            s_prop_metrics_results, None, phase, epoch, save_checkpoints_dir, "s_prop",
+                            s_prop_metrics_results,
+                            None,
+                            phase,
+                            epoch,
+                            save_checkpoints_dir,
+                            "s_prop",
                         )
                         self.__process_results(
-                            e_prop_metrics_results, None, phase, epoch, save_checkpoints_dir, "e_prop",
+                            e_prop_metrics_results,
+                            None,
+                            phase,
+                            epoch,
+                            save_checkpoints_dir,
+                            "e_prop",
                         )
-                    
+
                     if self.dense_captioner.training_programmer:
                         print("evaluating programs...")
                         prog_metrics_results = multiclass_evaluate_from_logits(
                             all_gt_programs, all_programs, all_prog_lens
                         )
                         self.__process_results(
-                            prog_metrics_results, None, phase, epoch, save_checkpoints_dir, "prog",
+                            prog_metrics_results,
+                            None,
+                            phase,
+                            epoch,
+                            save_checkpoints_dir,
+                            "programmer",
                         )
 
                     #     # predicted_sentences = pool.apply_async(self.__get_sentences, [all_outputs, all_video_ids])
@@ -1400,43 +1469,10 @@ class DenseVideo2TextTrainer(Trainer):
         return self.best_metrics
 
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Train a model for dense video captioning")
-    parser.add_argument(
-        "-comp",
-        "--component",
-        type=str,
-        default="",
-        required=True,
-        help="Set the component of the model that you want to train model.",
-    )
-    parser.add_argument(
-        "-chkpt",
-        "--checkpoint_path",
-        type=str,
-        default="",
-        help="Set the path to pre-trained model (by default is empty).",
-    )
-    parser.add_argument(
-        "-data",
-        "--dataset_folder",
-        type=str,
-        default="data/MSVD",
-        help="Set the path to dataset folder (by default is data/MSVD).",
-    )
-    parser.add_argument(
-        "-out",
-        "--output_folder",
-        type=str,
-        default="results/MSVD",
-        help="Set the path to output folder (by default is results/MSVD).",
-    )
-
-    args = parser.parse_args()
-
+def main(dataset_folder, output_folder, checkpoint_path=""):
     # load hiper-parameters
     print("Loading configuration file...")
-    config_path = os.path.join(args.dataset_folder, "prop_train_config.json")
+    config_path = os.path.join(dataset_folder, "train_config.json")
     with open(config_path, "r") as f:
         config = json.load(f)
 
@@ -1498,13 +1534,13 @@ if __name__ == "__main__":
         "proposals_tagger_config": proposals_tagger_config,
     }
     # modules_config = [sem_tagger_config, syn_embedd_config, avscn_dec_config, semsynan_dec_config, vncl_cell_config]
-    trainer = DenseVideo2TextTrainer(trainer_config, modules_config, args.dataset_folder, args.output_folder)
+    trainer = DenseVideo2TextTrainer(trainer_config, modules_config, dataset_folder, output_folder)
 
     print("Training.........")
     # try:
     best_results = trainer.train_model(
-        resume=args.checkpoint_path != "",
-        checkpoint_path=args.checkpoint_path,
+        resume=checkpoint_path != "",
+        checkpoint_path=checkpoint_path,
         early_stop_limit=trainer_config.early_stop_limit,
     )
     print("Best results in the test set: {}".format(str(best_results)))
@@ -1514,3 +1550,40 @@ if __name__ == "__main__":
     #     trainer.h5_val.close()
 
     print("--- END ---")
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Train a model for dense video captioning")
+    parser.add_argument(
+        "-comp",
+        "--component",
+        type=str,
+        default="",
+        required=True,
+        help="Set the component of the model that you want to train model.",
+    )
+    parser.add_argument(
+        "-chkpt",
+        "--checkpoint_path",
+        type=str,
+        default="",
+        help="Set the path to pre-trained model (by default is empty).",
+    )
+    parser.add_argument(
+        "-data",
+        "--dataset_folder",
+        type=str,
+        default="data/MSVD",
+        help="Set the path to dataset folder (by default is data/MSVD).",
+    )
+    parser.add_argument(
+        "-out",
+        "--output_folder",
+        type=str,
+        default="results/MSVD",
+        help="Set the path to output folder (by default is results/MSVD).",
+    )
+
+    args = parser.parse_args()
+
+    main(args.dataset_folder, args.output_folder, args.checkpoint_path)
