@@ -377,7 +377,7 @@ class DenseVideo2TextTrainer(Trainer):
         # for determining the masks of validation split we use the proposals determined from training split
         if proposals is None:
             # determine clusters according to intervals length
-            print("computing event-proposals by the KernelDensity algorithm ")
+            print("PROPOSALS: Computing event-proposals by the KernelDensity algorithm ")
             kde = KernelDensity(kernel="gaussian", bandwidth=1.0).fit(data.unsqueeze(1).numpy())
             s = np.linspace(0, self.max_interval, num=num_estimates)
             e = kde.score_samples(s.reshape(-1, 1))
@@ -430,7 +430,7 @@ class DenseVideo2TextTrainer(Trainer):
         clusters_sizes = [(result == i).sum().item() for i in range(len(proposals) + 1)]
 
         if "filter_proposals_count" in dir():
-            # check results was costructed correctly
+            # check results were correctly created
             assert clusters_sizes == filter_proposals_count
 
         self.logger.info(f"PROPOSALS: Count of intervals per cluster: {clusters_sizes}")
@@ -457,9 +457,13 @@ class DenseVideo2TextTrainer(Trainer):
                     if intervals[i, k, 1] > s:
                         # interval that starts before and ends after the current interval starts
                         s_mask[i, s, result[i, k]] = 1
+                        if result[i,k] != 0:  # to help the low represented clusters, set the next frames too
+                            s_mask[i, s+1, result[i, k]] = 1
                     if intervals[i, k, 1] >= e:
                         # interval that starts before and ends after the current interval ends
                         e_mask[i, e, result[i, k]] = 1
+                        if result[i,k] != 0:  # to help the low represented clusters, set the prev frames too
+                            e_mask[i, e-1, result[i, k]] = 1
 
                 # set start and end proposals for current interval
                 s_mask[i, s, result[i, j]] = 1
@@ -481,9 +485,7 @@ class DenseVideo2TextTrainer(Trainer):
 
         # determine the number of negative examples per cluster, descarding the frames where we will not classify
         s_neg_mask = 1 - s_mask
-        print(s_neg_mask.size())
         s_frame_mask = (s_neg_mask.sum(dim=-1, keepdim=True) != (len(proposals) + 1)).repeat(1, 1, len(proposals) + 1)
-        print(s_frame_mask.size())
         s_neg_samples = (s_neg_mask * s_frame_mask).sum(dim=1).sum(dim=0)  # (len(proposals) + 1, )
 
         e_neg_mask = 1 - e_mask
@@ -497,6 +499,34 @@ class DenseVideo2TextTrainer(Trainer):
 
         s_prop_pos_weights = s_neg_samples / s_pos_samples
         e_prop_pos_weights = e_neg_samples / e_pos_samples
+
+        # save correlation matrices of start and end proposals
+        # print("PROPOSALS: generating correlation images...")
+        # s_mask_corr = torch.zeros((len(proposals)+1, len(proposals)+1))
+        # e_mask_corr = torch.zeros((len(proposals)+1, len(proposals)+1))
+        # for p1 in range(len(proposals)+1):
+        #     for p2 in range(p1):
+        #         s_mask_corr[p1,p2] = len(s_mask[(s_mask[:,:,p1]==1.) & (s_mask[:,:,p2]==1.)])
+        #         e_mask_corr[p1,p2] = len(e_mask[(e_mask[:,:,p1]==1.) & (e_mask[:,:,p2]==1.)])
+        # print("PROPOSALS: correlation data extracted")
+
+        # fig = plt.figure(figsize=((len(proposals)+1)//2, (len(proposals)+1)//2))
+        # threshold = s_mask_corr.max() / 2.0
+        # for i, j in itertools.product(range(s_mask_corr.shape[0]), range(s_mask_corr.shape[1])):
+        #     color = "black" if s_mask_corr[i, j] > threshold else "white"
+        #     plt.text(j, i, s_mask_corr[i, j].item(), horizontalalignment="center", color=color)
+        # plt.imshow(s_mask_corr)
+        # self.writer.add_figure(f"proposals/s-prop-corr", fig)
+        # print("PROPOSALS: correlation image saved (start positions)")
+
+        # fig = plt.figure(figsize=((len(proposals)+1)//2, (len(proposals)+1)//2))
+        # threshold = e_mask_corr.max() / 2.0
+        # for i, j in itertools.product(range(e_mask_corr.shape[0]), range(e_mask_corr.shape[1])):
+        #     color = "black" if e_mask_corr[i, j] > threshold else "white"
+        #     plt.text(j, i, e_mask_corr[i, j].item(), horizontalalignment="center", color=color)
+        # plt.imshow(e_mask_corr)
+        # self.writer.add_figure(f"proposals/e-prop-corr", fig)
+        # print("PROPOSALS: correlation image saved (end positions)")
 
         return s_mask, e_mask, proposals, s_prop_pos_weights, e_prop_pos_weights
 
@@ -930,9 +960,13 @@ class DenseVideo2TextTrainer(Trainer):
             if not "ml-conf-mat" in name:
                 self.writer.add_scalar(f"proposals/{phase}-{component}-{name}", result, epoch)
 
-            if name in self.best_metrics[component][phase] and (
-                (name in min_metrics and result < self.best_metrics[component][phase][name][1])
-                or (name not in min_metrics and result > self.best_metrics[component][phase][name][1])
+            if (
+                phase != "train"
+                and name in self.best_metrics[component][phase]
+                and (
+                    (name in min_metrics and result < self.best_metrics[component][phase][name][1])
+                    or (name not in min_metrics and result > self.best_metrics[component][phase][name][1])
+                )
             ):
                 self.best_metrics[component][phase][name] = (epoch, result)
                 if name in ["Bleu_4", "METEOR", "ROUGE_L", "CIDEr", "All_Metrics"]:
@@ -946,6 +980,13 @@ class DenseVideo2TextTrainer(Trainer):
 
                 if component in ["s_prop", "e_prop"]:
                     print(f"saving best checkpoint due to improvement on {component}-{name}...")
+                    self.early_stop_count = 0
+                    if not output_saved:
+                        with open(
+                            os.path.join(save_checkpoints_dir, f"chkpt_{epoch}_{component}_output.json"), "w"
+                        ) as f:
+                            json.dump(prediction, f)
+                        output_saved = True
                     self.__save_checkpoint(epoch, save_checkpoints_dir, phase, True, component, name)
 
         if "ml-conf-mat" in metrics_results:
@@ -958,7 +999,8 @@ class DenseVideo2TextTrainer(Trainer):
                 labels = np.around(norm_conf_mat, decimals=2)
 
                 # Use white text if squares are dark; otherwise black.
-                threshold = norm_conf_mat.max() / 1.5
+                threshold = norm_conf_mat.max() / 2.0
+                # threshold = norm_conf_mat.min() + (norm_conf_mat.max() - norm_conf_mat.min() / 2)
                 for i, j in itertools.product(range(norm_conf_mat.shape[0]), range(norm_conf_mat.shape[1])):
                     color = "white" if norm_conf_mat[i, j] > threshold else "black"
                     plt.text(j, i, labels[i, j], horizontalalignment="center", color=color)
@@ -984,6 +1026,16 @@ class DenseVideo2TextTrainer(Trainer):
                 plt.imshow(conf_mat, cmap="OrRd")
             fig.tight_layout(pad=1.0)
             self.writer.add_figure(f"proposals/{phase}-{component}-confusion-matrix", fig, epoch)
+
+    def parse_proposals_prediction(self, vidxs, gt_multihots, pred_logits, cap_counts):
+        predictions = {}
+        for batch_vidxs, batch_gt, batch_pred, batch_count in zip(vidxs, gt_multihots, pred_logits, cap_counts):
+            for v_idx, v_gt, v_pred, v_count in zip(batch_vidxs, batch_gt, batch_pred, batch_count):
+                predictions[v_idx] = (
+                    (v_gt[:v_count] == 1).nonzero().tolist(),
+                    (torch.sigmoid(v_pred[:v_count]) > 0.5).nonzero().tolist(),
+                )
+        return predictions
 
     def train_model(self, resume=False, checkpoint_path=None, min_num_epochs=50, early_stop_limit=10):
         # parallel_pool = Pool()
@@ -1125,6 +1177,7 @@ class DenseVideo2TextTrainer(Trainer):
                 all_caps_ids = []
                 all_intervals = []
                 all_tstamps = []
+                all_vidxs = []
                 all_props_s, all_gt_props_s = [], []
                 all_props_e, all_gt_props_e = [], []
                 all_cap_counts, all_prog_lens = [], []
@@ -1258,22 +1311,24 @@ class DenseVideo2TextTrainer(Trainer):
                     #     sample_diff = sum([s1 != s2 for s1, s2 in zip(pred.split(" "), gt.split(" "))])
                     #     self.logger.info(f"sample-pred-prog-diff: {sample_diff}")
 
-                    if phase != "train":
-                        all_cap_counts.append(caps_count.to("cpu"))
+                    all_cap_counts.append(caps_count.to("cpu"))
 
-                        if self.dense_captioner.training_proposals:
-                            # save proposals for computing evaluation metrics
-                            all_props_s.append(s_prop_logits.to("cpu"))
-                            all_gt_props_s.append(gt_prop_s.to("cpu"))
+                    if self.dense_captioner.training_proposals:
+                        all_vidxs.append(vidx.tolist())
 
-                            all_props_e.append(e_prop_logits.to("cpu"))
-                            all_gt_props_e.append(gt_prop_e.to("cpu"))
+                        # save s_proposals for computing evaluation metrics
+                        all_props_s.append(s_prop_logits.to("cpu").detach())
+                        all_gt_props_s.append(gt_prop_s.to("cpu"))
 
-                        if self.dense_captioner.training_programmer:
-                            # save programs for computing evaluation metrics
-                            all_programs.append(prog_logits.to("cpu"))
-                            all_gt_programs.append(gt_prog.to("cpu"))
-                            all_prog_lens.append(gt_prog_len.to("cpu"))
+                        # save e_proposals for computing evaluation metrics
+                        all_props_e.append(e_prop_logits.to("cpu").detach())
+                        all_gt_props_e.append(gt_prop_e.to("cpu"))
+
+                    if self.dense_captioner.training_programmer:
+                        # save programs for computing evaluation metrics
+                        all_programs.append(prog_logits.to("cpu").detach())
+                        all_gt_programs.append(gt_prog.to("cpu"))
+                        all_prog_lens.append(gt_prog_len.to("cpu"))
 
                     #     # save programs and the videos' idx for computing evaluation metrics
                     #     all_programs.append(program.to("cpu"))
@@ -1315,44 +1370,52 @@ class DenseVideo2TextTrainer(Trainer):
                 if phase != "train":
                     self.early_stop_count += 1
 
-                    if self.dense_captioner.training_proposals:
-                        print("evaluating proposals...")
-                        s_prop_metrics_results = multilabel_evaluate_from_logits(
-                            all_gt_props_s, all_props_s, all_cap_counts
-                        )
-                        e_prop_metrics_results = multilabel_evaluate_from_logits(
-                            all_gt_props_e, all_props_e, all_cap_counts
-                        )
-                        self.__process_results(
-                            s_prop_metrics_results,
-                            None,
-                            phase,
-                            epoch,
-                            save_checkpoints_dir,
-                            "s_prop",
-                        )
-                        self.__process_results(
-                            e_prop_metrics_results,
-                            None,
-                            phase,
-                            epoch,
-                            save_checkpoints_dir,
-                            "e_prop",
-                        )
+                if self.dense_captioner.training_proposals:
+                    print("evaluating s_proposals...")
+                    s_prop_metrics_results = multilabel_evaluate_from_logits(
+                        all_gt_props_s, all_props_s, all_cap_counts
+                    )
+                    s_prediction = self.parse_proposals_prediction(
+                        all_vidxs, all_gt_props_s, all_props_s, all_cap_counts
+                    )
+                    self.__process_results(
+                        s_prop_metrics_results,
+                        s_prediction,
+                        phase,
+                        epoch,
+                        save_checkpoints_dir,
+                        "s_prop",
+                    )
 
-                    if self.dense_captioner.training_programmer:
-                        print("evaluating programs...")
-                        prog_metrics_results = multiclass_evaluate_from_logits(
-                            all_gt_programs, all_programs, all_prog_lens
-                        )
-                        self.__process_results(
-                            prog_metrics_results,
-                            None,
-                            phase,
-                            epoch,
-                            save_checkpoints_dir,
-                            "programmer",
-                        )
+                    print("evaluating e_proposals...")
+                    e_prop_metrics_results = multilabel_evaluate_from_logits(
+                        all_gt_props_e, all_props_e, all_cap_counts
+                    )
+                    e_prediction = self.parse_proposals_prediction(
+                        all_vidxs, all_gt_props_e, all_props_e, all_cap_counts
+                    )
+                    self.__process_results(
+                        e_prop_metrics_results,
+                        e_prediction,
+                        phase,
+                        epoch,
+                        save_checkpoints_dir,
+                        "e_prop",
+                    )
+
+                if self.dense_captioner.training_programmer:
+                    print("evaluating programs...")
+                    prog_metrics_results = multiclass_evaluate_from_logits(
+                        all_gt_programs, all_programs, all_prog_lens
+                    )
+                    self.__process_results(
+                        prog_metrics_results,
+                        None,
+                        phase,
+                        epoch,
+                        save_checkpoints_dir,
+                        "programmer",
+                    )
 
                     #     # predicted_sentences = pool.apply_async(self.__get_sentences, [all_outputs, all_video_ids])
 
@@ -1460,8 +1523,8 @@ class DenseVideo2TextTrainer(Trainer):
         # close h5 files
         # self.h5_train.close()
         # self.h5_val.close()
-        for loader in self.loaders.values():
-            loader.dataset.close_h5_file()
+        for phase in ["train"] + val_phases:
+            self.loaders[phase].dataset.close_h5_file()
 
         # log best results
         self.logger.info("Best results: {}".format(str(self.best_metrics)))

@@ -39,26 +39,66 @@ class DenseCaptioningDataset(Dataset):
 
         self.h5_file_path = h5_file_path
         self.h5_file_group_name = h5_file_group_name
+
+        # (Sanity) include in blacklist the videos with feat_count=0
+        h5 = h5py.File(self.h5_file_path, "r")
+        h5_dataset = h5[self.h5_file_group_name]
+        feat_count = h5_dataset["count_features"]
+        for vidx in vidxs:
+            if feat_count[vidx] == 0 and vidx not in vidxs_blcklist:
+                vidxs_blcklist.append(vidx)
+                print(f"the {vidx}-th video was included in blacklist")
+        h5.close()
+
+        print("blacklist:", vidxs_blcklist)
+        self.filter_blcklist(vidxs, cidxs, vfps, intervals, caps_count, progs, prog_lens, event_proposals_s, event_proposals_e, vidxs_blcklist)
+
         self.h5_dataset = None
 
-        self.vidxs = vidxs
-        self.vidxs_blcklist = vidxs_blcklist
-        self.vfps = vfps
-        self.cidxs = cidxs
-        self.intervals = intervals
-        self.caps_count = caps_count
-        self.captions = captions
+        # self.captions = captions
         # self.caps_sem_enc = caps_sem_enc
         # self.pos = pos
         # self.upos = upos
         # self.cap_lens = cap_lens
-        self.progs = progs
-        self.prog_lens = prog_lens
-        self.event_proposals_s = event_proposals_s
-        self.event_proposals_e = event_proposals_e
+
+    def filter_blcklist(self, vidxs, cidxs, vfps, intervals, caps_count, progs, prog_lens, event_proposals_s, event_proposals_e, vidxs_blcklist=[]):
+        (
+            self.vidxs,
+            self.cidxs,
+            self.vfps,
+            self.intervals,
+            self.caps_count,
+            self.progs,
+            self.prog_lens,
+            self.event_proposals_s,
+            self.event_proposals_e,
+        ) = zip(
+            *[
+                t
+                for t in zip(
+                    vidxs, cidxs, vfps, intervals, caps_count, progs, prog_lens, event_proposals_s, event_proposals_e
+                )
+                if t[0] not in vidxs_blcklist
+            ]
+        )
+
+        assert all(
+            len(self.vidxs) == len(l)
+            for l in [
+                self.cidxs,
+                self.vfps,
+                self.intervals,
+                self.caps_count,
+                self.progs,
+                self.prog_lens,
+                self.event_proposals_s,
+                self.event_proposals_e,
+            ]
+        )
 
     def close_h5_file(self):
-        self.h5_dataset.close()
+        if self.h5_dataset is not None:
+            self.h5_dataset.close()
 
     def __getitem__(self, index):
         if self.h5_dataset is None:
@@ -70,41 +110,32 @@ class DenseCaptioningDataset(Dataset):
             self.feat_count = self.h5_dataset["count_features"]
             self.frame_tstamps = self.h5_dataset["frames_tstamp"]
 
-            # (Sanity) include in blacklist the videos with feat_count=0
-            print("black-list:", self.vidxs_blcklist)
-            for vidx in self.vidxs:
-                if self.feat_count[vidx] == 0 and vidx not in self.vidxs_blcklist:
-                    self.vidxs_blcklist.append(vidx)
-                    print(f"the {vidx}-th video was included in blacklist")
-
         # get the vidx for accessing to the h5_dataset arrays
         vidx = self.vidxs[index]
 
-        if vidx not in self.vidxs_blcklist:
-            return (
-                vidx,
-                self.cidxs[index],
-                self.cnn_feats[vidx],
-                self.c3d_feats[vidx],
-                self.feat_count[vidx],
-                self.frame_tstamps[vidx],
-                self.vfps[index],
-                self.intervals[index],
-                self.caps_count[index],
-                # self.captions[index],
-                # self.caps_sem_enc[index],
-                # self.pos[index],
-                # self.upos[index],
-                # self.cap_lens[index],
-                self.progs[index],
-                self.prog_lens[index],
-                self.event_proposals_s[index],
-                self.event_proposals_e[index],
-            )
-        return None
+        return (
+            vidx,
+            self.cidxs[index],
+            self.cnn_feats[vidx],
+            self.c3d_feats[vidx],
+            self.feat_count[vidx],
+            self.frame_tstamps[vidx],
+            self.vfps[index],
+            self.intervals[index],
+            self.caps_count[index],
+            # self.captions[index],
+            # self.caps_sem_enc[index],
+            # self.pos[index],
+            # self.upos[index],
+            # self.cap_lens[index],
+            self.progs[index],
+            self.prog_lens[index],
+            self.event_proposals_s[index],
+            self.event_proposals_e[index],
+        )
 
     def __len__(self):
-        return len(self.vidxs) - len(self.vidxs_blcklist)
+        return len(self.vidxs)
 
 
 def filter_blacklist_collate(batch):
@@ -243,7 +274,7 @@ def get_dense_loader(
     return DataLoader(
         dataset=dataset,
         batch_size=batch_size,
-        shuffle=train,
+        shuffle=False,
         collate_fn=filter_blacklist_collate,
         num_workers=num_workers,
         pin_memory=pin_memory,

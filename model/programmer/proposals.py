@@ -41,10 +41,10 @@ class ProposalsEncoder(nn.Module):
         self.prop_enc_s = TaggerMLP(
             v_size=proposals_tagger_config.rnn_h_size * 2,
             out_size=num_proposals,
-            h_sizes=proposals_tagger_config.mapping_h_sizes,
-            in_drop_p=proposals_tagger_config.mapping_in_drop_p,
-            drop_ps=proposals_tagger_config.mapping_drop_ps,
-            have_last_bn=proposals_tagger_config.have_last_bn,
+            h_sizes=proposals_tagger_config.s_prop_mapping.h_sizes,
+            in_drop_p=proposals_tagger_config.s_prop_mapping.in_drop_p,
+            drop_ps=proposals_tagger_config.s_prop_mapping.drop_ps,
+            have_last_bn=proposals_tagger_config.s_prop_mapping.have_last_bn,
         )
 
         # end proposals module
@@ -65,10 +65,10 @@ class ProposalsEncoder(nn.Module):
         self.prop_enc_e = TaggerMLP(
             v_size=proposals_tagger_config.rnn_h_size * 2,
             out_size=num_proposals,
-            h_sizes=proposals_tagger_config.mapping_h_sizes,
-            in_drop_p=proposals_tagger_config.mapping_in_drop_p,
-            drop_ps=proposals_tagger_config.mapping_drop_ps,
-            have_last_bn=proposals_tagger_config.have_last_bn,
+            h_sizes=proposals_tagger_config.e_prop_mapping.h_sizes,
+            in_drop_p=proposals_tagger_config.e_prop_mapping.in_drop_p,
+            drop_ps=proposals_tagger_config.e_prop_mapping.drop_ps,
+            have_last_bn=proposals_tagger_config.e_prop_mapping.have_last_bn,
         )
 
     def reset_internals(self, v_feats):
