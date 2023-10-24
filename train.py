@@ -1032,6 +1032,13 @@ class DenseVideo2TextTrainer(Trainer):
             checkpoint = torch.load(checkpoint_path, map_location="cpu")
             begin_epoch = checkpoint["epoch"] + 1
             self.best_metrics = checkpoint["best_metrics"]
+            #self.best_metrics = {"programmer": {}, "sem_enc": {}, "syn_enc": {}, "captioning": {}, "densecap": {}}
+            for p in val_phases:
+                #self.best_metrics["sem_enc"][p] = {m: (0, 0) for m in sem_enc_metrics}
+                #self.best_metrics["syn_enc"][p] = {m: (0, 0) for m in syn_enc_metrics}
+                self.best_metrics["captioning"][p] = {m: (0, 0) for m in cap_metrics}
+                self.best_metrics["densecap"][p] = {m: (0, 0) for m in densecap_metrics}
+
             self.avg_caps = checkpoint["avg_caps"]
 
             log_msg = f" (epoch {begin_epoch})"
@@ -1061,9 +1068,9 @@ class DenseVideo2TextTrainer(Trainer):
             pretrained_dict = {k: v for k, v in checkpoint["dense_captioner"].items() if k in model_dict}
 
             # 2. include in the dictionary to be loaded the new parameters in the current architecture
-            for k, v in model_dict.items():
-                if k not in pretrained_dict:  # or k[:2]=='fc':
-                    pretrained_dict[k] = v
+            #for k, v in model_dict.items():
+            #    if k not in pretrained_dict:  # or k[:2]=='fc':
+            #        pretrained_dict[k] = v
 
             # 3. load the new state dict
             self.dense_captioner.load_state_dict(pretrained_dict, self.trainer_config.resume_config)
@@ -1075,12 +1082,12 @@ class DenseVideo2TextTrainer(Trainer):
             if "trained_epochs" in checkpoint:
                 self.trained_epochs = checkpoint["trained_epochs"]
             else:
-                self.trained_epochs = {
-                    m: DenseVideo2TextTrainer.trained_epochs_per_module(
-                        begin_epoch, self.change_after, m, self.use_dynamic_backward
-                    )
-                    for m in ["cap_dec", "sem_enc", "syn_enc"]
-                }
+                self.trained_epochs = {"cap_dec": 0, "sem_enc": 20, "syn_enc": 10}
+                #    m: DenseVideo2TextTrainer.trained_epochs_per_module(
+                #        begin_epoch, self.change_after, m, self.use_dynamic_backward
+                #    )
+                #    for m in ["cap_dec", "sem_enc", "syn_enc"]
+                #}
         else:
             begin_epoch = 0
             self.best_metrics = {"programmer": {}, "sem_enc": {}, "syn_enc": {}, "captioning": {}, "densecap": {}}
