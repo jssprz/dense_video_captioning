@@ -25,7 +25,9 @@ from video_description_eval.densecap_eval import densecap_score
 def get_freer_gpu():
     if os.name == "posix":
         os.system("nvidia-smi -q -d Memory |grep -A5 GPU|grep Free >tmp_gpu_freem")
-        memory_available = [int(x.split()[2]) for x in open("tmp_gpu_freem", "r").readlines()]
+        memory_available = [
+            int(x.split()[2]) for x in open("tmp_gpu_freem", "r").readlines()
+        ]
     else:
         import subprocess
 
@@ -46,15 +48,21 @@ def get_freer_gpu():
             capture_output=True,
         )
         memory_available = [
-            int(x.split()[2]) for x in open("tmp_freem", "r", encoding="utf-16").readlines() if x != "\n"
+            int(x.split()[2])
+            for x in open("tmp_freem", "r", encoding="utf-16").readlines()
+            if x != "\n"
         ]
     return np.argmax(memory_available)
 
 
 def get_gpu_temps(device=None):
     if os.name == "posix":
-        os.system(f"nvidia-smi -q -d Temperature |grep -A4 GPU|grep 'GPU Current Temp' >tmp_gpu_temps_{device}")
-        temps = [int(x.split()[-2]) for x in open(f"tmp_gpu_temps_{device}", "r").readlines()]
+        os.system(
+            f"nvidia-smi -q -d Temperature |grep -A4 GPU|grep 'GPU Current Temp' >tmp_gpu_temps_{device}"
+        )
+        temps = [
+            int(x.split()[-2]) for x in open(f"tmp_gpu_temps_{device}", "r").readlines()
+        ]
     else:
         import subprocess
 
@@ -76,13 +84,21 @@ def get_gpu_temps(device=None):
         )
         temps = [
             int(x.split()[-2])
-            for x in open(f"tmp_gpu_temp_{device.index}", "r", encoding="utf-16").readlines()
+            for x in open(
+                f"tmp_gpu_temp_{device.index}", "r", encoding="utf-16"
+            ).readlines()
             if x != "\n"
         ]
-    return temps if device is None else (temps[device.index] if "cuda" == device.type else temps[0])
+    return (
+        temps
+        if device is None
+        else (temps[device.index] if "cuda" == device.type else temps[0])
+    )
 
 
-def decode_from_tokens(vocab, tokens, until_eos=True, max_length=10000, eos_token="<eos>"):
+def decode_from_tokens(
+    vocab, tokens, until_eos=True, max_length=10000, eos_token="<eos>"
+):
     words = []
     eos_token_id = vocab(eos_token)
     for token in tokens[:max_length]:
@@ -103,7 +119,9 @@ def get_sentences(vocab, outputs, gt_idxs, until_eos=True, eos_token="<eos>"):
         if torch.is_tensor(batch_outs):
             for pred_tokens, gt_idx in zip(batch_outs, batch_gt_idxs):
                 # print('tensor case', pred_tokens.size())
-                pred_sentences[gt_idx.item()] = [decode_from_tokens(vocab, pred_tokens, until_eos, 1000, eos_token)]
+                pred_sentences[gt_idx.item()] = [
+                    decode_from_tokens(vocab, pred_tokens, until_eos, 1000, eos_token)
+                ]
         elif type(batch_outs) is tuple:
             for v_output, v_caps_count, v_gt_caps_count, v_cidxs in zip(
                 batch_outs[0], batch_outs[1], batch_outs[2], batch_gt_idxs
@@ -111,7 +129,11 @@ def get_sentences(vocab, outputs, gt_idxs, until_eos=True, eos_token="<eos>"):
                 count = min(v_caps_count, v_gt_caps_count)
                 for pred_tokens, cidx in zip(v_output[:count], v_cidxs[:count]):
                     # print('tuple case', pred_tokens.size())
-                    pred_sentences[cidx.item()] = [decode_from_tokens(vocab, pred_tokens, until_eos, 1000, eos_token)]
+                    pred_sentences[cidx.item()] = [
+                        decode_from_tokens(
+                            vocab, pred_tokens, until_eos, 1000, eos_token
+                        )
+                    ]
         else:
             raise TypeError(f"wrong type {type(batch_outs)} for batch outputs")
     return pred_sentences
@@ -132,7 +154,9 @@ def get_scores(pred_sentences, ground_truth):
     return scores
 
 
-def evaluate_from_tokens(vocab, outputs, gt_idxs, ground_truth, until_eos=True, eos_token="<eos>"):
+def evaluate_from_tokens(
+    vocab, outputs, gt_idxs, ground_truth, until_eos=True, eos_token="<eos>"
+):
     pred_sentences = get_sentences(vocab, outputs, gt_idxs, until_eos, eos_token)
 
     # sanity
@@ -144,20 +168,33 @@ def evaluate_from_tokens(vocab, outputs, gt_idxs, ground_truth, until_eos=True, 
     return metrics_results, pred_sentences
 
 
-def densecap_evaluate_from_tokens(vocab, vidxs, pred_tstamps, pred_caps, ground_truth_dict):
+def densecap_evaluate_from_tokens(
+    vocab, vidxs, pred_tstamps, pred_caps, ground_truth_dict
+):
     prediction = {}
-    for batch_pred_caps, batch_vidxs, batch_tstamps in zip(pred_caps, vidxs, pred_tstamps):
+    for batch_pred_caps, batch_vidxs, batch_tstamps in zip(
+        pred_caps, vidxs, pred_tstamps
+    ):
         for v_caps, v_caps_count, vidx, v_tstamps in zip(
             batch_pred_caps[0], batch_pred_caps[1], batch_vidxs, batch_tstamps
         ):
             if v_caps_count > 0:
                 prediction[str(vidx.item())] = [
-                    {"sentence": decode_from_tokens(vocab, pred_tokens), "timestamp": [ts[0].item(), ts[1].item()],}
-                    for ts, pred_tokens in zip(v_tstamps[:v_caps_count], v_caps[:v_caps_count])
+                    {
+                        "sentence": decode_from_tokens(vocab, pred_tokens),
+                        "timestamp": [ts[0].item(), ts[1].item()],
+                    }
+                    for ts, pred_tokens in zip(
+                        v_tstamps[:v_caps_count], v_caps[:v_caps_count]
+                    )
                 ]
 
     scores = densecap_score(
-        args={"tiou": [0.3, 0.5, 0.7, 0.9], "max_proposals_per_video": 1000, "verbose": True,},
+        args={
+            "tiou": [0.3, 0.5, 0.7, 0.9],
+            "max_proposals_per_video": 1000,
+            "verbose": True,
+        },
         ref=ground_truth_dict,
         hypo=prediction,
     )
@@ -172,7 +209,9 @@ def densecap_evaluate_from_tokens(vocab, vidxs, pred_tstamps, pred_caps, ground_
         "Recall": 1.0,
         "Precision": 1.0,
     }
-    scores["All_Metrics"] = sum([scores[k] * weights[k] for k in scores.keys() if k in weights])
+    scores["All_Metrics"] = sum(
+        [scores[k] * weights[k] for k in scores.keys() if k in weights]
+    )
     return scores, prediction
 
 
@@ -214,7 +253,9 @@ def multilabel_evaluate_from_logits(gt_multihots, pred_logits, cap_counts):
 
     # confusion matrices
     ml_conf_mat = multilabel_confusion_matrix(y_true, y_pred_sparse)
-    norm_ml_conf_mat = ml_conf_mat.astype("float") / ml_conf_mat.sum(axis=2)[:, :, np.newaxis]
+    norm_ml_conf_mat = (
+        ml_conf_mat.astype("float") / ml_conf_mat.sum(axis=2)[:, :, np.newaxis]
+    )
 
     # remove not represented labels
     bad_labels = np.argwhere(np.all(y_true[..., :] == 0, axis=0))
@@ -223,14 +264,22 @@ def multilabel_evaluate_from_logits(gt_multihots, pred_logits, cap_counts):
     print(f"labels without positive samples: {bad_labels}")
 
     # average_precision_score (AP). AP summarizes a precision-recall curve
-    ap_micro = average_precision_score(y_true_filtered, y_pred_filtered, average="micro")
-    ap_macro = average_precision_score(y_true_filtered, y_pred_filtered, average="macro")
-    ap_weighted = average_precision_score(y_true_filtered, y_pred_filtered, average="weighted")
+    ap_micro = average_precision_score(
+        y_true_filtered, y_pred_filtered, average="micro"
+    )
+    ap_macro = average_precision_score(
+        y_true_filtered, y_pred_filtered, average="macro"
+    )
+    ap_weighted = average_precision_score(
+        y_true_filtered, y_pred_filtered, average="weighted"
+    )
 
     # roc_auc
     roc_auc_micro = roc_auc_score(y_true_filtered, y_pred_filtered, average="micro")
     roc_auc_macro = roc_auc_score(y_true_filtered, y_pred_filtered, average="macro")
-    roc_auc_weighted = roc_auc_score(y_true_filtered, y_pred_filtered, average="weighted")
+    roc_auc_weighted = roc_auc_score(
+        y_true_filtered, y_pred_filtered, average="weighted"
+    )
 
     # precision-recall-curve_auc
     # p,r,_ = precision_recall_curve(y_true, y_pred)
@@ -333,8 +382,7 @@ def get_init_weights(shape):
 
 
 def l2norm(X):
-    """L2-normalize columns of X
-    """
+    """L2-normalize columns of X"""
     norm = torch.pow(X, 2).sum(dim=1, keepdim=True).sqrt()
     X = torch.div(X, norm)
     return X
@@ -393,7 +441,9 @@ def get_rl_strategy_str(config):
 def get_tf_strategy_str(config):
     result = f".tf-{config.tf_strategy}"
     if config.tf_strategy == "classic":
-        result += f"-{config.classic_config.speed_factor}-{config.classic_config.min_ratio}"
+        result += (
+            f"-{config.classic_config.speed_factor}-{config.classic_config.min_ratio}"
+        )
     else:
         pass
     return result
@@ -415,7 +465,9 @@ def get_visual_enc_str(config):
 def get_sem_tagger_str(config):
     drops = str([config.mapping_in_drop_p] + config.mapping_h_drop_ps)
     hs = str(config.mapping_h_sizes)
-    return f"sem hs-{hs}.out-{config.out_size}.drops-{drops}.lastbn-{config.have_last_bn}"
+    return (
+        f"sem hs-{hs}.out-{config.out_size}.drops-{drops}.lastbn-{config.have_last_bn}"
+    )
 
 
 def get_syn_tagger_str(config):
@@ -461,8 +513,13 @@ def get_vncl_cell_str(config):
 
 
 def get_proposals_tagger_str(config):
-    drops = str([config.s_prop_mapping.in_drop_p] + config.s_prop_mapping.drop_ps) + ", " + str([config.e_prop_mapping.in_drop_p] + config.e_prop_mapping.drop_ps)
+    drops = (
+        str([config.s_prop_mapping.in_drop_p] + config.s_prop_mapping.drop_ps)
+        + ", "
+        + str([config.e_prop_mapping.in_drop_p] + config.e_prop_mapping.drop_ps)
+    )
     hs = str(config.s_prop_mapping.h_sizes) + ", " + str(config.e_prop_mapping.h_sizes)
-    have_last_bn = f"{config.s_prop_mapping.have_last_bn}, {config.e_prop_mapping.have_last_bn}"
+    have_last_bn = (
+        f"{config.s_prop_mapping.have_last_bn}, {config.e_prop_mapping.have_last_bn}"
+    )
     return f"sem hs-{hs}.drops-{drops}.lastbn-{have_last_bn}"
-

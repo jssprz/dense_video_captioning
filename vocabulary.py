@@ -29,7 +29,7 @@ class Vocabulary(object):
         Returns the id corresponding to the word
         """
         w = word.lower() if self.lowercase else word
-        return self.word2idx["<unk>"] if w not in self.word2idx else self.word2idx[w]
+        return self.word2idx[w] if w in self.word2idx else self.word2idx["<unk>"]
 
     def __len__(self):
         """

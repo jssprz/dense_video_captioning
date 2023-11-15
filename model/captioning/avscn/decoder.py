@@ -341,11 +341,11 @@ class SCNAttnDecoder(nn.Module):
 
     def forward(self, encoding, teacher_forcing_p=0.5, gt_captions=None):
         return self.forward_fn(
-            v_pool=videos_encodes[3],
-            s_tags=videos_encodes[2],
-            encoder_h=videos_encodes[1],
-            encoder_outputs=videos_encodes[0],
-            captions=captions,
+            v_pool=encoding[3],
+            s_tags=encoding[2],
+            encoder_h=encoding[1],
+            encoder_outputs=encoding[0],
+            captions=gt_captions,
             teacher_forcing_p=teacher_forcing_p,
         )
 
@@ -354,7 +354,9 @@ class SCNAttnDecoder(nn.Module):
 
 
 class AVSCNDecoder(nn.Module):
-    def __init__(self, config, vocab, pretrained_we=None, device=None):
+    def __init__(
+        self, config, vocab, with_embedding_layer=True, pretrained_we=None, device=None
+    ):
         super(AVSCNDecoder, self).__init__()
         self.vocab = vocab
         self.device = device
@@ -378,73 +380,74 @@ class AVSCNDecoder(nn.Module):
         self.in_v_drop = nn.Dropout(config.drop_p)
         self.in_s_drop = nn.Dropout(config.drop_p)
 
-        if pretrained_we is not None:
-            self.embedding = nn.Embedding.from_pretrained(pretrained_we)
-        else:
-            self.embedding = nn.Embedding(self.output_size, config.embedding_size)
-        self.embedd_drop = nn.Dropout(config.drop_p)
+        if with_embedding_layer:
+            if pretrained_we is not None:
+                self.embedding = nn.Embedding.from_pretrained(pretrained_we)
+            else:
+                self.embedding = nn.Embedding(self.output_size, self.embedding_size)
+            self.embedd_drop = nn.Dropout(config.drop_p)
 
         self.semantic_layer = SCNAttnDecoder(
-            config.in_seq_length,
-            config.n_feats,
-            config.n_tags,
-            config.embedding_size,
-            config.h_size,
-            config.rnn_in_size,
-            config.rnn_h_size,
-            vocab,
-            device,
-            config.encoder_num_layers,
-            config.encoder_bidirectional,
-            pretrained_we,
-            config.rnn_cell,
-            config.num_layers,
-            config.drop_p,
-            config.beam_size,
-            config.temperature,
-            config.train_sample_max,
-            config.test_sample_max,
-            config.beam_search_logic,
+            in_seq_length=config.in_seq_length,
+            n_feats=config.v_enc_size,
+            n_tags=config.sem_enc_size,
+            embedding_size=config.embedding_size,
+            h_size=config.h_size,
+            rnn_in_size=config.rnn_in_size,
+            rnn_h_size=config.rnn_h_size,
+            vocab=vocab,
+            device=device,
+            encoder_num_layers=config.encoder_num_layers,
+            encoder_bidirectional=config.encoder_bidirectional,
+            pretrained_embedding=pretrained_we,
+            rnn_cell=config.rnn_cell,
+            num_layers=config.num_layers,
+            drop_p=config.drop_p,
+            beam_size=config.beam_size,
+            temperature=config.temperature,
+            train_sample_max=config.train_sample_max,
+            test_sample_max=config.test_sample_max,
+            beam_search_logic=config.beam_search_logic,
         )
 
         # change n_feats and n_tags only
         self.visual_layer = SCNAttnDecoder(
-            config.in_seq_length,
-            config.n_tags,
-            config.n_feats,
-            config.embedding_size,
-            config.h_size,
-            config.rnn_in_size,
-            config.rnn_h_size,
-            vocab,
-            device,
-            config.encoder_num_layers,
-            config.encoder_bidirectional,
-            pretrained_we,
-            config.rnn_cell,
-            config.num_layers,
-            config.drop_p,
-            config.beam_size,
-            config.temperature,
-            config.train_sample_max,
-            config.test_sample_max,
-            config.beam_search_logic,
+            in_seq_length=config.in_seq_length,
+            n_feats=config.sem_enc_size,
+            n_tags=config.v_enc_size,
+            embedding_size=config.embedding_size,
+            h_size=config.h_size,
+            rnn_in_size=config.rnn_in_size,
+            rnn_h_size=config.rnn_h_size,
+            vocab=vocab,
+            device=device,
+            encoder_num_layers=config.encoder_num_layers,
+            encoder_bidirectional=config.encoder_bidirectional,
+            pretrained_embedding=pretrained_we,
+            rnn_cell=config.rnn_cell,
+            num_layers=config.num_layers,
+            drop_p=config.drop_p,
+            beam_size=config.beam_size,
+            temperature=config.temperature,
+            train_sample_max=config.train_sample_max,
+            test_sample_max=config.test_sample_max,
+            beam_search_logic=config.beam_search_logic,
         )
 
         self.attn1 = Attention(
-            self.in_seq_length,
-            self.embedding_size,
-            self.h_size,
-            self.num_layers,
-            self.num_directions,
+            seq_len=self.in_seq_length,
+            hidden_size=self.h_size,
+            embedding_size=self.embedding_size,
+            num_directions=self.num_directions,
+            n_layers=self.num_layers,
             mode="soft",
         )
         self.attn2 = Attention(
-            self.in_seq_length,
-            self.embedding_size,
-            self.h_size,
-            self.num_layers,
-            self.num_directions,
+            seq_len=self.in_seq_length,
+            hidden_size=self.h_size,
+            embedding_size=self.embedding_size,
+            num_directions=self.num_directions,
+            n_layers=self.num_layers,
             mode="soft",
         )
 
@@ -475,19 +478,54 @@ class AVSCNDecoder(nn.Module):
 
         return x.masked_fill(mask == 0, 0) * (1.0 / keep_prob)
 
-    def __adaptive_attn(self, v, s, v_attn, rnn_h, semantic_h, visual_h):
+    def __adaptive_attn(self, v_attn, rnn_h, semantic_h, visual_h):
         rnn_h = self.__dropout(rnn_h, 0.8, "rnn_h")
         v_attn = self.__dropout(v_attn, 0.5, "v_attn")
-        beta = torch.sigmoid(self.merge1(torch.cat((rnn_h, v_attn), dim=1)))
-
         visual_h = self.__dropout(visual_h, 0.8, "visual_h")
         semantic_h = self.__dropout(semantic_h, 0.8, "semantic_h")
 
+        beta = torch.sigmoid(self.merge1(torch.cat((rnn_h, v_attn), dim=1)))
         v_h = (torch.relu(self.v_fc(visual_h)) * semantic_h) + (beta * visual_h)
         s_h = (torch.relu(self.s_fc(semantic_h)) * visual_h) + ((1 - beta) * semantic_h)
-
         h = torch.cat((v_h, s_h), dim=1)
         return torch.relu(self.merge2(h))
+
+    def reset_internals(self, batch_size):
+        self.dropM = {}
+
+        self.semantic_h = torch.zeros(batch_size, self.h_size).to(self.device)
+        self.semantic_c = torch.zeros(batch_size, self.h_size).to(self.device)
+
+        self.visual_h = torch.zeros(batch_size, self.h_size).to(self.device)
+        self.visual_c = torch.zeros(batch_size, self.h_size).to(self.device)
+
+        self.rnn_h = torch.zeros(batch_size, self.h_size).to(self.device)
+        # rnn_c = torch.zeros(batch_size, self.h_size)
+
+    def precompute_mats(self, v_pool, s_tags):
+        s = self.in_s_drop(s_tags)
+        v = self.in_v_drop(v_pool)
+
+        self.semantic_layer.precompute_mats(v=v, s=s)
+        self.visual_layer.precompute_mats(v=s, s=v)
+
+    def step(self, v_feats, decoder_input):
+        self.visual_h, self.visual_c = self.visual_layer.step(
+            self.visual_h, self.visual_c, decoder_input
+        )
+        self.semantic_h, self.semantic_c = self.semantic_layer.step(
+            self.semantic_h, self.semantic_c, decoder_input
+        )
+        visual_attn1 = self.attn1(v_feats, self.visual_h)
+        visual_attn2 = self.attn2(v_feats, self.semantic_h)
+        self.rnn_h = self.__adaptive_attn(
+            (visual_attn1 + visual_attn2) / 2,
+            self.rnn_h,
+            self.semantic_h,
+            self.visual_h,
+        )
+
+        return self.rnn_h
 
     def forward_fn(
         self,
@@ -498,61 +536,27 @@ class AVSCNDecoder(nn.Module):
         gt_captions=None,
         max_words=None,
     ):
-        batch_size = v_pool.size(0)
+        bs = v_pool.size(0)
+        self.reset_internals(bs)
+        self.precompute_mats(v_pool, s_tags)
+
+        outputs, embedds, words = [], [], []
 
         # (batch_size x embedding_size)
-        decoder_input = torch.zeros(batch_size, self.embedding_size).to(self.device)
+        decoder_input = torch.zeros(bs, self.embedding_size).to(self.device)
 
-        # if type(encoder_h) is tuple:
-        #     # (encoder_n_layers * encoder_num_directions x batch_size x h_size) -> (encoder_n_layers x encoder_num_directions x batch_size x h_size)
-        #     rnn_h = encoder_h[0].view(self.encoder_num_layers, self.encoder_num_directions, batch_size, self.h_size)
-        #     rnn_c = encoder_h[1].view(self.encoder_num_layers, self.encoder_num_directions, batch_size, self.h_size)
-
-        # semantic_h = Variable(torch.cat([rnn_h[-i,0,:,:] for i in range(self.num_layers, 0, -1)], dim=0)).to(self.device)
-        # semantic_c = Variable(torch.cat([rnn_c[-i,0,:,:] for i in range(self.num_layers, 0, -1)], dim=0)).to(self.device)
-
-        # visual_h = Variable(torch.cat([rnn_h[-i,0,:,:] for i in range(self.num_layers, 0, -1)], dim=0)).to(self.device)
-        # visual_c = Variable(torch.cat([rnn_c[-i,0,:,:] for i in range(self.num_layers, 0, -1)], dim=0)).to(self.device)
-
-        # rnn_h = Variable(torch.cat([rnn_h[-i,0,:,:] for i in range(self.num_layers, 0, -1)], dim=0)).to(self.device)
-
-        semantic_h = torch.zeros(batch_size, self.h_size).to(self.device)
-        semantic_c = torch.zeros(batch_size, self.h_size).to(self.device)
-
-        visual_h = torch.zeros(batch_size, self.h_size).to(self.device)
-        visual_c = torch.zeros(batch_size, self.h_size).to(self.device)
-
-        rnn_h = torch.zeros(batch_size, self.h_size).to(self.device)
-        # rnn_c = torch.zeros(batch_size, self.h_size)
-
-        outputs, embedds = [], []
-
-        s = self.in_s_drop(s_tags)
-        v = self.in_v_drop(v_pool)
-
-        self.semantic_layer.precompute_mats(v, s)
-        self.visual_layer.precompute_mats(s, v)
-
-        self.dropM = {}
+        def append_temporals():
+            embedds.append(decoder_input)
+            outputs.append(word_logits)
+            words.append(word_id)
 
         if not self.training:
-            words = []
-            for step in range(max_words):
-                visual_h, visual_c = self.visual_layer.step(
-                    visual_h, visual_c, decoder_input
-                )
-                semantic_h, semantic_c = self.semantic_layer.step(
-                    semantic_h, semantic_c, decoder_input
-                )
-                visual_attn1 = self.attn1(v_feats, visual_h)
-                visual_attn2 = self.attn2(v_feats, semantic_h)
-                rnn_h = self.__adaptive_attn(
-                    v, s, (visual_attn1 + visual_attn2) / 2, rnn_h, semantic_h, visual_h
-                )
+            for _ in range(max_words):
+                self.step(v_feats, decoder_input)
 
                 # compute word_logits
                 # (batch_size x output_size)
-                word_logits = self.out(rnn_h)
+                word_logits = self.out(self.rnn_h)
 
                 # compute word probs
                 if self.test_sample_max:
@@ -568,70 +572,46 @@ class AVSCNDecoder(nn.Module):
 
                 # (batch_size) -> (batch_size x embedding_size)
                 decoder_input = self.embedding(word_id).squeeze(1)
-                embedds.append(decoder_input)
-
                 # decoder_input = self.embedd_drop(decoder_input)
 
-                outputs.append(word_logits)
-                words.append(word_id)
-
-            return (
-                torch.cat([o.unsqueeze(1) for o in outputs], dim=1).contiguous(),
-                torch.cat([w.unsqueeze(1) for w in words], dim=1).contiguous(),
-                torch.cat([e.unsqueeze(1) for e in embedds], dim=1).contiguous(),
-            )
+                append_temporals()
         else:
             for seq_pos in range(gt_captions.size(1)):
-                visual_h, visual_c = self.visual_layer.step(
-                    visual_h, visual_c, decoder_input
-                )
-                semantic_h, semantic_c = self.semantic_layer.step(
-                    semantic_h, semantic_c, decoder_input
-                )
-                visual_attn1 = self.attn1(v_feats, visual_h)
-                visual_attn2 = self.attn2(v_feats, semantic_h)
-                rnn_h = self.__adaptive_attn(
-                    v, s, (visual_attn1 + visual_attn2) / 2, rnn_h, semantic_h, visual_h
-                )
+                self.step(v_feats, decoder_input)
 
                 # compute word_logits
                 # (batch_size x output_size)
-                word_logits = self.out(rnn_h)
+                word_logits = self.out(self.rnn_h)
 
                 use_teacher_forcing = (
-                    True
-                    if random.random() < teacher_forcing_p or seq_pos == 0
-                    else False
+                    random.random() < teacher_forcing_p or seq_pos == 0
                 )
                 if use_teacher_forcing:
                     # use the correct words,
                     # (batch_size)
-                    decoder_input = gt_captions[:, seq_pos]
+                    word_id = gt_captions[:, seq_pos]
                 elif self.train_sample_max:
                     # select the words ids with the max probability,
                     # (batch_size)
-                    decoder_input = word_logits.max(1)[1]
+                    word_id = word_logits.max(1)[1]
                 else:
                     # sample words from probability distribution
                     # (batch_size)
-                    decoder_input = torch.multinomial(
+                    word_id = torch.multinomial(
                         torch.softmax(word_logits, dim=1), 1
                     ).squeeze(1)
 
                 # (batch_size) -> (batch_size x embedding_size)
-                decoder_input = self.embedding(decoder_input).squeeze(1)
-                embedds.append(decoder_input)
+                decoder_input = self.embedding(word_id).squeeze(1)
+                # decoder_input = self.embedd_drop(decoder_input)
 
-                decoder_input = self.embedd_drop(decoder_input)
+                append_temporals()
 
-                outputs.append(word_logits)
-
-            # (batch_size x out_seq_length x output_size), none
-            return (
-                torch.cat([o.unsqueeze(1) for o in outputs], dim=1).contiguous(),
-                None,
-                torch.cat([e.unsqueeze(1) for e in embedds], dim=1).contiguous(),
-            )
+        return (
+            torch.cat([o.unsqueeze(1) for o in outputs], dim=1).contiguous(),
+            torch.cat([w.unsqueeze(1) for w in words], dim=1).contiguous(),
+            torch.cat([e.unsqueeze(1) for e in embedds], dim=1).contiguous(),
+        )
 
     def forward(
         self, encoding, teacher_forcing_p=0.5, gt_captions=None, max_words=None

@@ -17,10 +17,10 @@ class DenseCaptioningDataset(Dataset):
         intervals,
         caps_count,
         captions,
-        # caps_sem_enc,
-        # pos,
-        # upos,
-        # cap_lens,
+        caps_sem_enc,
+        pos,
+        upos,
+        cap_lens,
         progs,
         prog_lens,
         event_proposals_s,
@@ -51,23 +51,55 @@ class DenseCaptioningDataset(Dataset):
         h5.close()
 
         print("blacklist:", vidxs_blcklist)
-        self.filter_blcklist(vidxs, cidxs, vfps, intervals, caps_count, progs, prog_lens, event_proposals_s, event_proposals_e, vidxs_blcklist)
+        self.filter_blcklist(
+            vidxs,
+            cidxs,
+            vfps,
+            intervals,
+            caps_count,
+            captions,
+            caps_sem_enc,
+            pos,
+            upos,
+            cap_lens,
+            progs,
+            prog_lens,
+            event_proposals_s,
+            event_proposals_e,
+            vidxs_blcklist,
+        )
 
         self.h5_dataset = None
 
-        # self.captions = captions
-        # self.caps_sem_enc = caps_sem_enc
-        # self.pos = pos
-        # self.upos = upos
-        # self.cap_lens = cap_lens
-
-    def filter_blcklist(self, vidxs, cidxs, vfps, intervals, caps_count, progs, prog_lens, event_proposals_s, event_proposals_e, vidxs_blcklist=[]):
+    def filter_blcklist(
+        self,
+        vidxs,
+        cidxs,
+        vfps,
+        intervals,
+        caps_count,
+        captions,
+        caps_sem_enc,
+        pos,
+        upos,
+        cap_lens,
+        progs,
+        prog_lens,
+        event_proposals_s,
+        event_proposals_e,
+        vidxs_blcklist=[],
+    ):
         (
             self.vidxs,
             self.cidxs,
             self.vfps,
             self.intervals,
             self.caps_count,
+            self.captions,
+            self.caps_sem_enc,
+            self.pos,
+            self.upos,
+            self.cap_lens,
             self.progs,
             self.prog_lens,
             self.event_proposals_s,
@@ -76,7 +108,20 @@ class DenseCaptioningDataset(Dataset):
             *[
                 t
                 for t in zip(
-                    vidxs, cidxs, vfps, intervals, caps_count, progs, prog_lens, event_proposals_s, event_proposals_e
+                    vidxs,
+                    cidxs,
+                    vfps,
+                    intervals,
+                    caps_count,
+                    captions,
+                    caps_sem_enc,
+                    pos,
+                    upos,
+                    cap_lens,
+                    progs,
+                    prog_lens,
+                    event_proposals_s,
+                    event_proposals_e,
                 )
                 if t[0] not in vidxs_blcklist
             ]
@@ -89,6 +134,11 @@ class DenseCaptioningDataset(Dataset):
                 self.vfps,
                 self.intervals,
                 self.caps_count,
+                self.captions,
+                self.caps_sem_enc,
+                self.pos,
+                self.upos,
+                self.cap_lens,
                 self.progs,
                 self.prog_lens,
                 self.event_proposals_s,
@@ -110,6 +160,12 @@ class DenseCaptioningDataset(Dataset):
             self.feat_count = self.h5_dataset["count_features"]
             self.frame_tstamps = self.h5_dataset["frames_tstamp"]
 
+            # (Sanity) include in blacklist the videos with feat_count=0
+            for vidx in self.vidxs:
+                if self.feat_count[vidx] == 0 and vidx not in self.vidxs_blcklist:
+                    self.vidxs_blcklist.append(vidx)
+                    print(f"the {vidx}-th video was included in blacklist")
+
         # get the vidx for accessing to the h5_dataset arrays
         vidx = self.vidxs[index]
 
@@ -123,11 +179,11 @@ class DenseCaptioningDataset(Dataset):
             self.vfps[index],
             self.intervals[index],
             self.caps_count[index],
-            # self.captions[index],
-            # self.caps_sem_enc[index],
-            # self.pos[index],
-            # self.upos[index],
-            # self.cap_lens[index],
+            self.captions[index],
+            self.caps_sem_enc[index],
+            self.pos[index],
+            self.upos[index],
+            self.cap_lens[index],
             self.progs[index],
             self.prog_lens[index],
             self.event_proposals_s[index],
@@ -211,7 +267,9 @@ def data2tensors(
 
     intervals_t = torch.zeros((len(caps), max_caps, 2))
     for i, v_intervals in enumerate(intervals):
-        intervals_t[i, : len(v_intervals)] = torch.Tensor([[s, e] for s, e in v_intervals])
+        intervals_t[i, : len(v_intervals)] = torch.Tensor(
+            [[s, e] for s, e in v_intervals]
+        )
 
     progs_t = torch.zeros((len(caps), max_prog), dtype=torch.long)
     for i, v_prog in enumerate(progs):
@@ -239,10 +297,10 @@ def get_dense_loader(
     intervals,
     caps_count,
     captions,
-    # caps_sem_enc,
-    # pos,
-    # upos,
-    # cap_lens,
+    caps_sem_enc,
+    pos,
+    upos,
+    cap_lens,
     progs,
     prog_lens,
     event_proposals_s,
@@ -262,10 +320,10 @@ def get_dense_loader(
         intervals,
         caps_count,
         captions,
-        # caps_sem_enc,
-        # pos,
-        # upos,
-        # cap_lens,
+        caps_sem_enc,
+        pos,
+        upos,
+        cap_lens,
         progs,
         prog_lens,
         event_proposals_s,

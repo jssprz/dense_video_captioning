@@ -131,7 +131,6 @@ if __name__ == "__main__":
     dense_captioner = DenseCaptioner(
         config=modules_config["dense_captioner_config"],
         sem_tagger_config=modules_config["sem_tagger_config"],
-        syn_embedd_config=modules_config["syn_embedd_config"],
         syn_tagger_config=modules_config["syn_tagger_config"],
         avscn_dec_config=modules_config["avscn_dec_config"],
         semsynan_dec_config=modules_config["semsynan_dec_config"],

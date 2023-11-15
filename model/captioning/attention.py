@@ -6,12 +6,24 @@ from utils import get_init_weights
 
 
 class Attention(nn.Module):
-    def __init__(self, seq_len, hidden_size, mode="basic", embedding_size=None, num_directions=None, n_layers=None):
+    def __init__(
+        self,
+        seq_len,
+        hidden_size,
+        embedding_size=None,
+        num_directions=None,
+        n_layers=None,
+        mode="basic",
+    ):
         super(Attention, self).__init__()
         self.mode = mode
 
         if mode == "basic":
-            self.fc = nn.Linear(embedding_size + hidden_size * n_layers * num_directions, seq_len, bias=False,)
+            self.fc = nn.Linear(
+                embedding_size + hidden_size * n_layers * num_directions,
+                seq_len,
+                bias=False,
+            )
         elif mode == "soft":
             self.W1 = get_init_weights((hidden_size, hidden_size))
             self.b1 = Parameter(torch.zeros(hidden_size))
@@ -65,4 +77,3 @@ class Attention(nn.Module):
         elif self.mode == "soft":
             return self.__soft_fn(inputs, hiddens)
         raise "Not implemented mode"
-
